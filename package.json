@@ -6,10 +6,12 @@
     "#/*": "./src/*"
   },
   "scripts": {
-    "dev": "vite dev --port 3000",
+    "dev": "vite dev --mode local --port 3000",
     "generate-routes": "tsr generate",
     "build": "vite build",
+    "build:dev": "vite build --mode dev",
     "start": "node .output/server/index.mjs",
+    "start:dev": "NODE_ENV=development node .output/server/index.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "format": "biome format",

@@ -5,9 +5,9 @@ import { z } from "zod";
  *
  * Only `VITE_`-prefixed vars are exposed to the client by Vite. The actual value
  * comes from the `.env.[mode]` file selected by the run mode:
- *   - `pnpm dev`                  -> mode "development" -> .env.development (local backend)
- *   - `vite build --mode staging` -> mode "staging"     -> .env.staging     (api-dev)
- *   - `pnpm build`                -> mode "production"   -> .env.production  (api)
+ *   - `pnpm dev`                     -> mode "local"      -> .env.local      (api-local)
+ *   - `pnpm build:dev` / `start:dev` -> mode "dev"        -> .env.dev        (api-dev)
+ *   - `pnpm build` / `start`         -> mode "production" -> .env.production (api)
  *
  * Override locally without committing via `.env.local` / `.env.development.local`.
  */

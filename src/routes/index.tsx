@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import TiptapEditor from "#/components/editor/tiptap-editor";
+import { env } from "#/lib/env";
 
 export const Route = createFileRoute("/")({ component: Home });
 
@@ -23,6 +24,13 @@ function Home() {
 				<p className="mt-2 text-muted-foreground">
 					Tiptap 기반 에디터입니다. 아래에서 입력하면 결과 HTML이 실시간으로
 					갱신됩니다.
+				</p>
+				{/* 테스트 전용: 현재 빌드에 주입된 API URL 표시 */}
+				<p
+					data-testid="api-url"
+					className="mt-3 inline-block rounded-md border bg-muted/40 px-3 py-1 font-mono text-xs"
+				>
+					API URL: <span className="font-semibold">{env.VITE_API_URL}</span>
 				</p>
 			</header>
 
