@@ -10,7 +10,11 @@ jobs:
 
     env:
       DEPLOY_SLOT: main
+      BUILD_COMMAND: pnpm run build
+      PM2_APP_NAME: app.kmaclinic.com
       PM2_PORT: 10111
+      NODE_ENV_VALUE: production
+      APP_ENV: main
       NODE_VERSION: '24'
 
     steps:
@@ -33,7 +37,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build SSR
-        run: pnpm build
+        run: ${{ env.BUILD_COMMAND }}
         env:
           CI: false
 
@@ -42,40 +46,33 @@ jobs:
         run: |
           set -euo pipefail
 
-          rm -rf build release.tar.gz
-          mkdir -p build
-
-          SERVER_ENTRY=""
-
-          if [[ -f "dist/server/index.mjs" ]]; then
-            cp -a dist build/dist
-            SERVER_ENTRY="./dist/server/index.mjs"
-          elif [[ -f ".output/server/index.mjs" ]]; then
-            cp -a .output build/.output
-            SERVER_ENTRY="./.output/server/index.mjs"
-          else
-            echo "SSR server entry not found."
-            echo "Expected one of:"
-            echo "  dist/server/index.mjs"
-            echo "  .output/server/index.mjs"
+          if [[ ! -f ".output/server/index.mjs" ]]; then
+            echo "SSR server entry not found: .output/server/index.mjs"
+            echo "Build output:"
             find . -maxdepth 4 -type f | sort
             exit 1
           fi
+
+          rm -rf build release.tar.gz
+          mkdir -p build
+
+          cp -a .output build/.output
 
           cat > build/ecosystem.config.cjs <<EOF
           module.exports = {
             apps: [
               {
-                name: "${{ secrets.PROJECT_NAME }}-${{ env.DEPLOY_SLOT }}",
+                name: "${{ env.PM2_APP_NAME }}",
                 cwd: __dirname,
-                script: "${SERVER_ENTRY}",
+                script: "./.output/server/index.mjs",
                 interpreter: "node",
                 exec_mode: "fork",
                 instances: 1,
                 autorestart: true,
                 max_memory_restart: "512M",
                 env: {
-                  NODE_ENV: "production",
+                  NODE_ENV: "${{ env.NODE_ENV_VALUE }}",
+                  APP_ENV: "${{ env.APP_ENV }}",
                   HOST: "127.0.0.1",
                   PORT: "${{ env.PM2_PORT }}",
                   NITRO_HOST: "127.0.0.1",
@@ -119,11 +116,11 @@ jobs:
 
             export NVM_DIR="/home/deployer/.nvm"
             . "$NVM_DIR/nvm.sh"
-            nvm use 24
+            nvm use --silent 24
 
             PROJECT_NAME="${{ secrets.PROJECT_NAME }}"
             DEPLOY_SLOT="${{ env.DEPLOY_SLOT }}"
-            PM2_NAME="${PROJECT_NAME}-${DEPLOY_SLOT}"
+            PM2_APP_NAME="${{ env.PM2_APP_NAME }}"
             TARGET_DIR="/data/${PROJECT_NAME}/${DEPLOY_SLOT}"
 
             rm -rf /home/deployer/build
@@ -134,11 +131,10 @@ jobs:
 
             cd "${TARGET_DIR}"
 
-            if pm2 describe "${PM2_NAME}" >/dev/null 2>&1; then
-              pm2 restart ecosystem.config.cjs --update-env
-            else
-              pm2 start ecosystem.config.cjs
+            if pm2 describe "${PM2_APP_NAME}" >/dev/null 2>&1; then
+              pm2 delete "${PM2_APP_NAME}"
             fi
 
+            pm2 start ecosystem.config.cjs
             pm2 save
             pm2 status
