@@ -1,0 +1,144 @@
+name: Deploy Main SSR
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      DEPLOY_SLOT: main
+      PM2_PORT: 10111
+      NODE_VERSION: '24'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build SSR
+        run: pnpm build
+        env:
+          CI: false
+
+      - name: Prepare release archive
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rm -rf build release.tar.gz
+          mkdir -p build
+
+          SERVER_ENTRY=""
+
+          if [[ -f "dist/server/index.mjs" ]]; then
+            cp -a dist build/dist
+            SERVER_ENTRY="./dist/server/index.mjs"
+          elif [[ -f ".output/server/index.mjs" ]]; then
+            cp -a .output build/.output
+            SERVER_ENTRY="./.output/server/index.mjs"
+          else
+            echo "SSR server entry not found."
+            echo "Expected one of:"
+            echo "  dist/server/index.mjs"
+            echo "  .output/server/index.mjs"
+            find . -maxdepth 4 -type f | sort
+            exit 1
+          fi
+
+          cat > build/ecosystem.config.cjs <<EOF
+          module.exports = {
+            apps: [
+              {
+                name: "${{ secrets.PROJECT_NAME }}-${{ env.DEPLOY_SLOT }}",
+                cwd: __dirname,
+                script: "${SERVER_ENTRY}",
+                interpreter: "node",
+                exec_mode: "fork",
+                instances: 1,
+                autorestart: true,
+                max_memory_restart: "512M",
+                env: {
+                  NODE_ENV: "production",
+                  HOST: "127.0.0.1",
+                  PORT: "${{ env.PM2_PORT }}",
+                  NITRO_HOST: "127.0.0.1",
+                  NITRO_PORT: "${{ env.PM2_PORT }}"
+                }
+              }
+            ]
+          }
+          EOF
+
+          tar -czf release.tar.gz build
+
+      - name: Clean remote temp
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: deployer
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+            rm -rf /home/deployer/build
+            rm -f /home/deployer/release.tar.gz
+
+      - name: Upload release
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: deployer
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: release.tar.gz
+          target: /home/deployer
+
+      - name: Deploy and restart PM2
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: deployer
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -euo pipefail
+
+            export NVM_DIR="/home/deployer/.nvm"
+            . "$NVM_DIR/nvm.sh"
+            nvm use 24
+
+            PROJECT_NAME="${{ secrets.PROJECT_NAME }}"
+            DEPLOY_SLOT="${{ env.DEPLOY_SLOT }}"
+            PM2_NAME="${PROJECT_NAME}-${DEPLOY_SLOT}"
+            TARGET_DIR="/data/${PROJECT_NAME}/${DEPLOY_SLOT}"
+
+            rm -rf /home/deployer/build
+            tar -xzf /home/deployer/release.tar.gz -C /home/deployer
+
+            sudo /bin/rm -rf "${TARGET_DIR}"
+            sudo /bin/mv /home/deployer/build "${TARGET_DIR}"
+
+            cd "${TARGET_DIR}"
+
+            if pm2 describe "${PM2_NAME}" >/dev/null 2>&1; then
+              pm2 restart ecosystem.config.cjs --update-env
+            else
+              pm2 start ecosystem.config.cjs
+            fi
+
+            pm2 save
+            pm2 status
