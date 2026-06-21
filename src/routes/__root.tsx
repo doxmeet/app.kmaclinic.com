@@ -14,9 +14,6 @@ interface MyRouterContext {
 	queryClient: QueryClient;
 }
 
-// devtools는 개발 모드에서만 렌더 (프로덕션 번들에서 제외)
-const SHOW_DEVTOOLS = import.meta.env.DEV;
-
 export const Route = createRootRouteWithContext<MyRouterContext>()({
 	head: () => ({
 		meta: [
@@ -50,20 +47,18 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 			<body>
 				{children}
 				<Toaster position="top-center" richColors />
-				{SHOW_DEVTOOLS ? (
-					<TanStackDevtools
-						config={{
-							position: "bottom-right",
-						}}
-						plugins={[
-							{
-								name: "Tanstack Router",
-								render: <TanStackRouterDevtoolsPanel />,
-							},
-							TanStackQueryDevtools,
-						]}
-					/>
-				) : null}
+				<TanStackDevtools
+					config={{
+						position: "bottom-right",
+					}}
+					plugins={[
+						{
+							name: "Tanstack Router",
+							render: <TanStackRouterDevtoolsPanel />,
+						},
+						TanStackQueryDevtools,
+					]}
+				/>
 				<Scripts />
 			</body>
 		</html>
