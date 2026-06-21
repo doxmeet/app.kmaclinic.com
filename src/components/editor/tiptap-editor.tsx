@@ -83,19 +83,19 @@ import {
 	useState,
 } from "react";
 import { toast } from "sonner";
-import { Button } from "#/components/ui/button";
-import { Checkbox } from "#/components/ui/checkbox";
+import { Button } from "#/components/ui/button.tsx";
+import { Checkbox } from "#/components/ui/checkbox.tsx";
 import {
 	Dialog,
 	DialogContent,
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
-} from "#/components/ui/dialog";
-import { Input } from "#/components/ui/input";
-import { Label } from "#/components/ui/label";
-import { useRequest } from "#/hooks/use-request";
-import { createUploadSession, uploadFile } from "#/lib/file-upload";
+} from "#/components/ui/dialog.tsx";
+import { Input } from "#/components/ui/input.tsx";
+import { Label } from "#/components/ui/label.tsx";
+import { useRequest } from "#/hooks/use-request.ts";
+import { createUploadSession, uploadFile } from "#/lib/file-upload.ts";
 import {
 	clearTiptapDraft,
 	formatDraftRelativeTime,
@@ -105,8 +105,8 @@ import {
 	saveTiptapDraft,
 	sweepExpiredTiptapDrafts,
 	type TiptapDraftRecord,
-} from "#/lib/tiptap-draft";
-import { cn } from "#/lib/utils";
+} from "#/lib/tiptap-draft.ts";
+import { cn } from "#/lib/utils.ts";
 
 // ─── Custom Extensions ──────────────────────────────────────────────
 
