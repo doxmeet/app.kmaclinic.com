@@ -91,7 +91,7 @@ export function OnboardingDashboard({
 					</p>
 				</div>
 				<div className="flex flex-col items-stretch gap-1.5 sm:items-end">
-					<div className="relative">
+					<div className="relative w-full sm:w-auto">
 						<Button
 							variant="brand"
 							size="2xl"
@@ -99,6 +99,7 @@ export function OnboardingDashboard({
 							disabled={!canStartNewDraft}
 							aria-expanded={menuOpen}
 							aria-haspopup="menu"
+							className="w-full sm:w-auto"
 						>
 							<Plus className="size-5" />
 							새로 작성
@@ -115,7 +116,7 @@ export function OnboardingDashboard({
 									className="fixed inset-0 z-10 cursor-default"
 									onClick={() => setMenuOpen(false)}
 								/>
-								<div className="absolute right-0 z-20 mt-2 w-64 overflow-hidden rounded-xl border border-line bg-surface p-1.5 shadow-[0_16px_40px_-12px_rgba(0,0,0,0.25)]">
+								<div className="absolute right-0 z-20 mt-2 w-full overflow-hidden rounded-xl border border-line bg-surface p-1.5 shadow-[0_16px_40px_-12px_rgba(0,0,0,0.25)] sm:w-64">
 									<button
 										type="button"
 										onClick={() => {
@@ -439,16 +440,33 @@ function HospitalCard({
 }
 
 function HospitalStatusBadge({ status }: { status: string }) {
+	// 카드의 flex-col 안에서 stretch되어 가로로 늘어나지 않도록 w-fit 고정.
 	if (status === "pending_payment") {
-		return <Badge variant="warning">결제 대기</Badge>;
+		return (
+			<Badge variant="warning" className="w-fit">
+				결제 대기
+			</Badge>
+		);
 	}
 	if (status === "ready_to_publish") {
-		return <Badge variant="soft">게시 대기</Badge>;
+		return (
+			<Badge variant="soft" className="w-fit">
+				게시 대기
+			</Badge>
+		);
 	}
 	if (status === "published") {
-		return <Badge variant="success">공개 중</Badge>;
+		return (
+			<Badge variant="success" className="w-fit">
+				공개 중
+			</Badge>
+		);
 	}
-	return <Badge variant="outline">{status}</Badge>;
+	return (
+		<Badge variant="outline" className="w-fit">
+			{status}
+		</Badge>
+	);
 }
 
 function HospitalMeta({ hospital }: { hospital: OverviewHospital }) {

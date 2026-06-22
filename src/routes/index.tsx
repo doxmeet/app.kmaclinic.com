@@ -112,12 +112,13 @@ function Hero() {
 						프로필과 병원 홈페이지가 자동으로 완성됩니다. 면허 인증부터 결제,
 						공개까지 한 흐름으로 이어집니다.
 					</p>
-					<div className="flex flex-col gap-3 sm:flex-row">
+					<div className="flex w-full flex-col gap-3 sm:flex-row">
 						<Button
 							nativeButton={false}
 							render={<Link to={isAuthenticated ? "/onboarding" : "/login"} />}
 							variant="brand"
 							size="cta"
+							className="w-full sm:w-auto"
 						>
 							{isAuthenticated ? "온보딩 이어가기" : "Doxmeet으로 시작하기"}
 							<ArrowRight className="size-5" />
@@ -127,6 +128,7 @@ function Hero() {
 							render={<Link to="/" hash="how" />}
 							variant="neutral-outline"
 							size="cta"
+							className="w-full sm:w-auto"
 						>
 							작동 방식 보기
 						</Button>
@@ -426,6 +428,7 @@ function Pricing() {
 					render={<Link to={isAuthenticated ? "/onboarding" : "/login"} />}
 					variant="brand"
 					size="cta"
+					className="w-full sm:w-auto"
 				>
 					{isAuthenticated ? "온보딩 이어가기" : "지금 시작하기"}
 					<ArrowRight className="size-5" />
@@ -455,7 +458,7 @@ function FinalCta() {
 					render={<Link to={isAuthenticated ? "/onboarding" : "/login"} />}
 					variant="neutral-outline"
 					size="cta"
-					className="border-transparent bg-surface text-brand hover:bg-surface/90"
+					className="w-full border-transparent bg-surface text-brand hover:bg-surface/90 sm:w-auto"
 				>
 					{isAuthenticated ? "온보딩 이어가기" : "Doxmeet으로 시작하기"}
 					<ArrowRight className="size-5" />

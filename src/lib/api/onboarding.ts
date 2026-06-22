@@ -57,8 +57,14 @@ export const SessionViewSchema = z.looseObject({
 	next_question: z.string().nullish(),
 	// true면 next_question이 백그라운드 분석의 이상점/충돌 확인 질문(가로채기). message 응답에서만 true.
 	interrupt: z.boolean().optional(),
+	// "대기" 구간(마지막 답변 추출 중/파일 분석 중 — 사용자가 답할 게 없음).
+	// 이 값으로만 폴링 시작/중단을 판단한다(문서 2026-06 §1). processing_*는 표시등 전용.
+	waiting: z.boolean().optional(),
 	progress_percent: numeric,
-	processing_files: numeric,
+	// 진행중 "답변" 깊은분석 수(표시등 전용). 답변 보낼 때마다 1↑. 폴링 트리거 아님.
+	processing_text: numeric,
+	// 진행중 "업로드 문서" 추출 수(표시등 전용).
+	processing_file: numeric,
 	is_clinic_owner: z.boolean().nullish(),
 	conflicts: z.array(OnboardingConflictSchema).nullish(),
 	// pending_payment 분기에서는 draft/history가 null로 옴 → null 허용(optional은 null 불가).
@@ -125,12 +131,19 @@ export async function sendMessage(
 	);
 }
 
-export async function commitSession(
-	hospitalAdminPassword?: string,
-): Promise<CommitResult> {
-	const body = hospitalAdminPassword
-		? { hospital_admin_password: hospitalAdminPassword }
-		: {};
+/**
+ * 프로필(+병원) 생성 확정. 관리자 계정(아이디·비밀번호)은 대화가 아닌 **이 단계에서만** 받는다
+ * (문서 2026-06 §2). 둘 다 draft에 저장되지 않고 commit 본문으로만 전달.
+ * - 병원 소유(is_clinic_owner): login_id + password 모두 필수.
+ * - 프로필만: 인자 없이 호출.
+ */
+export async function commitSession(args?: {
+	login_id?: string;
+	password?: string;
+}): Promise<CommitResult> {
+	const body: Record<string, string> = {};
+	if (args?.login_id) body.hospital_admin_login_id = args.login_id;
+	if (args?.password) body.hospital_admin_password = args.password;
 	return parse(
 		await http.post("onboarding/session/commit", body, {
 			timeout: AI_TIMEOUT,

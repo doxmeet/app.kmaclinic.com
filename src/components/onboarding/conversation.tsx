@@ -27,6 +27,7 @@ import { ApiError } from "#/lib/api";
 import {
 	type CommitResult,
 	commitSession,
+	getSession,
 	type SessionView,
 	sendMessage,
 	startSession,
@@ -65,6 +66,12 @@ type Conflict = {
 };
 
 const LOGIN_ID_HINT = "영문 소문자·숫자 4~20자";
+/** 관리자 아이디 형식: 영문 소문자·숫자 4~20자. */
+const LOGIN_ID_RE = /^[a-z0-9]{4,20}$/;
+
+/** 대기 구간 폴링 주기/최대 시간(문서 2026-06 §1). */
+const HOLDING_POLL_MS = 2000;
+const HOLDING_POLL_MAX_MS = 60000;
 
 export function OnboardingConversation({
 	onBackToDashboard,
@@ -78,6 +85,8 @@ export function OnboardingConversation({
 	const [text, setText] = useState("");
 	const [commitResult, setCommitResult] = useState<CommitResult | null>(null);
 	const [adminDialogOpen, setAdminDialogOpen] = useState(false);
+	// 대기 폴링이 안전장치(최대 시간)에 걸려 멈췄는지 — 멈추면 수동 새로고침 버튼 노출.
+	const [pollExpired, setPollExpired] = useState(false);
 
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	// 채팅 스크롤 컨테이너(ScrollArea의 Viewport) — 자동 하단 스크롤 제어용.
@@ -96,18 +105,24 @@ export function OnboardingConversation({
 			.catch((err) => setStartError(err));
 	}, []);
 
-	// 파일/긴 답변은 백그라운드 깊은 분석으로 처리되고, 그 결과는 **다음 메시지 턴**에 병합됩니다.
-	// (문서 §7.5 — 폴링하지 않음. 분석 중에는 인디케이터만 표시하고, 다음 답변을 보내면 반영됨)
-	const processingFiles = session?.processing_files ?? 0;
+	// 백그라운드 분석 진행 수(표시등 전용). waiting과 별개 — 폴링 트리거 아님(문서 2026-06 §1).
+	const processingText = session?.processing_text ?? 0;
+	const processingFile = session?.processing_file ?? 0;
 
 	const history = (session?.history as ChatMessage[] | undefined) ?? [];
 	const historyLength = history.length;
+
+	// 새 메시지/응답을 받으면 폴링 안전장치 플래그를 리셋(새 대기 구간을 위해).
+	function applySession(view: SessionView) {
+		setSession(view);
+		setPollExpired(false);
+	}
 
 	// ── 텍스트 전송 ─────────────────────────────────────────────────
 	const textMutation = useMutation({
 		mutationFn: (value: string) => sendMessage({ text: value }),
 		onSuccess: (view) => {
-			setSession(view);
+			applySession(view);
 			setText("");
 		},
 		onError: (err) => toastApiError(err),
@@ -127,7 +142,7 @@ export function OnboardingConversation({
 				purpose ? { file_urls: [url], purpose } : { file_urls: [url] },
 			);
 		},
-		onSuccess: (view) => setSession(view),
+		onSuccess: (view) => applySession(view),
 		onError: (err) =>
 			err instanceof ApiError
 				? toastApiError(err)
@@ -137,13 +152,15 @@ export function OnboardingConversation({
 	// ── 충돌 해소: 선택한 값을 다시 텍스트로 전송 ───────────────────
 	const conflictMutation = useMutation({
 		mutationFn: (value: string) => sendMessage({ text: value }),
-		onSuccess: (view) => setSession(view),
+		onSuccess: (view) => applySession(view),
 		onError: (err) => toastApiError(err),
 	});
 
 	// ── commit ──────────────────────────────────────────────────────
+	// 관리자 계정(아이디·비밀번호)은 이 단계에서만 받는다(문서 2026-06 §2).
 	const commitMutation = useMutation({
-		mutationFn: (password?: string) => commitSession(password),
+		mutationFn: (args?: { login_id?: string; password?: string }) =>
+			commitSession(args),
 		onSuccess: (result) => {
 			setCommitResult(result);
 			setAdminDialogOpen(false);
@@ -153,6 +170,14 @@ export function OnboardingConversation({
 
 	// ── 파생 상태 ───────────────────────────────────────────────────
 	const isClinicOwner = session?.is_clinic_owner === true;
+	// 관리자 아이디 prefill: 대화 중 언급했다면 draft에 있을 수 있음(비밀번호는 절대 안 옴).
+	const draftLoginId =
+		(
+			session?.draft as
+				| { hospital_admin?: { login_id?: string | null } }
+				| null
+				| undefined
+		)?.hospital_admin?.login_id?.trim() ?? "";
 	const conflicts = (session?.conflicts as Conflict[] | undefined) ?? [];
 	const progress = clampPercent(session?.progress_percent);
 	const nextQuestion = session?.next_question ?? null;
@@ -166,7 +191,10 @@ export function OnboardingConversation({
 	const isCommitting = commitMutation.isPending;
 	const isSending = textMutation.isPending || conflictMutation.isPending;
 	const isUploading = fileMutation.isPending;
-	const isProcessing = processingFiles > 0;
+	// 대기 구간(폴링 트리거): 답할 게 없고 백엔드가 마지막 답변/파일을 처리 중.
+	const waiting = session?.waiting === true;
+	// 분석 표시등(폴링과 무관): 진행중 답변/파일 추출이 있으면 "분석 중" 안내만.
+	const isAnalyzing = processingText > 0 || processingFile > 0;
 	// 전송 중일 때 낙관적으로 보여줄, 유저가 방금 보낸 메시지(React Query variables).
 	const pendingMessage = textMutation.isPending
 		? textMutation.variables
@@ -194,7 +222,8 @@ export function OnboardingConversation({
 		void historyLength;
 		void isSending;
 		void isUploading;
-		void isProcessing;
+		void isAnalyzing;
+		void waiting;
 		void nextQuestion;
 		const el = viewportRef.current;
 		if (!el) return;
@@ -202,13 +231,46 @@ export function OnboardingConversation({
 			el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
 		});
 		return () => cancelAnimationFrame(id);
-	}, [historyLength, isSending, isUploading, isProcessing, nextQuestion]);
+	}, [
+		historyLength,
+		isSending,
+		isUploading,
+		isAnalyzing,
+		waiting,
+		nextQuestion,
+	]);
 
 	// 응답이 도착해 history가 늘어나면 입력창으로 자동 포커스(연속 입력 편의).
 	useEffect(() => {
 		if (historyLength === 0) return;
 		inputRef.current?.focus();
 	}, [historyLength]);
+
+	// ── 대기 구간 폴링 (문서 2026-06 §1) ────────────────────────────
+	// waiting=true 동안만 GET /session 을 ~2s 간격으로 조회해 화면을 자동 갱신한다.
+	// 응답에 waiting=false가 오면 setSession→재렌더로 이 effect가 정리된다.
+	// 최대 시간 초과 시 멈추고 수동 새로고침 버튼(pollExpired)으로 전환.
+	useEffect(() => {
+		if (!waiting || pollExpired) return;
+		const startedAt = Date.now();
+		let cancelled = false;
+		const timer = setInterval(async () => {
+			if (Date.now() - startedAt > HOLDING_POLL_MAX_MS) {
+				setPollExpired(true); // deps 변경 → cleanup이 타이머 정리
+				return;
+			}
+			try {
+				const view = await getSession();
+				if (!cancelled) setSession(view);
+			} catch {
+				// 일시 오류는 무시하고 다음 주기에 재시도.
+			}
+		}, HOLDING_POLL_MS);
+		return () => {
+			cancelled = true;
+			clearInterval(timer);
+		};
+	}, [waiting, pollExpired]);
 
 	// commit 완료 화면(무료 또는 결제 유도). 결제는 Toss → /billing/callback → 대시보드 복귀.
 	if (commitResult) {
@@ -281,11 +343,21 @@ export function OnboardingConversation({
 	}
 
 	function handleCommit() {
-		// 병원 소유면 관리자 계정 모달, 프로필만이면 비번 없이 바로 commit
+		// 병원 소유면 관리자 계정(아이디+비번) 모달, 프로필만이면 본문 없이 바로 commit
 		if (isClinicOwner) {
 			setAdminDialogOpen(true);
 		} else {
-			commitMutation.mutate("");
+			commitMutation.mutate(undefined);
+		}
+	}
+
+	// 대기 폴링이 안전장치(최대 시간)에 걸려 멈춘 뒤 수동 새로고침. 여전히 waiting이면 폴링 재개.
+	async function handleManualRefresh() {
+		setPollExpired(false);
+		try {
+			setSession(await getSession());
+		} catch (err) {
+			toastApiError(err);
 		}
 	}
 
@@ -333,7 +405,8 @@ export function OnboardingConversation({
 				>
 					{history.length === 0 &&
 					!questionBubble &&
-					!isProcessing &&
+					!isAnalyzing &&
+					!waiting &&
 					!isSending &&
 					!isUploading ? (
 						<p className="m-auto text-center text-sm text-muted-fg">
@@ -385,13 +458,29 @@ export function OnboardingConversation({
 								</div>
 							) : null}
 
-							{/* 파일 분석 중: 백그라운드로 진행되며 막지 않는다. 다음 답변 턴에 반영됨. */}
-							{isProcessing ? (
+							{/* 분석/대기 표시등: 막지 않음. waiting이면 폴링이 자동으로 다음 단계로 넘긴다(§1). */}
+							{isAnalyzing || waiting ? (
 								<div className="mr-auto flex max-w-[90%] items-center gap-2 rounded-2xl rounded-bl-sm bg-app-bg px-4 py-2.5 text-xs text-body-soft">
 									<Loader2 className="size-3.5 shrink-0 animate-spin" />
-									올려주신 파일을 분석하고 있어요 ({processingFiles}개) · 계속
-									답변하셔도 됩니다
+									{processingFile > 0
+										? `올려주신 파일을 분석하고 있어요 (${processingFile}개)`
+										: "입력하신 내용을 정리하고 있어요"}
+									{waiting
+										? " · 잠시만 기다려 주세요"
+										: " · 계속 답변하셔도 됩니다"}
 								</div>
+							) : null}
+
+							{/* 대기 폴링이 안전장치(최대 시간)에 걸려 멈춘 경우: 수동 새로고침 */}
+							{pollExpired ? (
+								<button
+									type="button"
+									onClick={handleManualRefresh}
+									className="mr-auto inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-2 text-xs font-medium text-body transition-colors hover:bg-muted"
+								>
+									<Loader2 className="size-3.5 shrink-0" />
+									아직 처리 중이에요. 새로고침해서 확인하기
+								</button>
 							) : null}
 						</>
 					)}
@@ -429,7 +518,7 @@ export function OnboardingConversation({
 						variant="neutral-outline"
 						size="2xl"
 						className="shrink-0 px-0 w-14"
-						disabled={isUploading || isProcessing}
+						disabled={isUploading}
 						onClick={() => fileInputRef.current?.click()}
 						aria-label="파일 첨부"
 					>
@@ -471,7 +560,7 @@ export function OnboardingConversation({
 					variant="brand"
 					size="cta"
 					className="w-full"
-					disabled={isCommitting || isProcessing}
+					disabled={isCommitting || processingFile > 0}
 					onClick={handleCommit}
 				>
 					{isCommitting ? (
@@ -485,12 +574,15 @@ export function OnboardingConversation({
 				</Button>
 			) : null}
 
-			{/* 병원 관리자 아이디/비밀번호 모달 */}
+			{/* 병원 관리자 아이디/비밀번호 설정(commit 단계에서만 받음) */}
 			<AdminCredentialsDialog
 				open={adminDialogOpen}
 				onOpenChange={setAdminDialogOpen}
 				pending={isCommitting}
-				onSubmit={(password) => commitMutation.mutate(password)}
+				defaultLoginId={draftLoginId}
+				onSubmit={(login_id, password) =>
+					commitMutation.mutate({ login_id, password })
+				}
 			/>
 		</div>
 	);
@@ -620,25 +712,37 @@ function AdminCredentialsDialog({
 	open,
 	onOpenChange,
 	pending,
+	defaultLoginId,
 	onSubmit,
 }: {
 	open: boolean;
 	onOpenChange: (v: boolean) => void;
 	pending: boolean;
-	onSubmit: (password: string) => void;
+	defaultLoginId?: string;
+	onSubmit: (loginId: string, password: string) => void;
 }) {
+	const [loginId, setLoginId] = useState(defaultLoginId ?? "");
 	const [password, setPassword] = useState("");
 	const [confirm, setConfirm] = useState("");
+	const loginIdId = useId();
 	const pwId = useId();
 	const confirmId = useId();
 
+	// 다이얼로그가 열릴 때 draft 아이디로 prefill(사용자가 이미 입력했다면 유지).
+	useEffect(() => {
+		if (open && defaultLoginId) setLoginId((v) => v || defaultLoginId);
+	}, [open, defaultLoginId]);
+
+	const loginIdValid = LOGIN_ID_RE.test(loginId);
+	const loginIdInvalid = loginId.length > 0 && !loginIdValid;
 	const mismatch = confirm.length > 0 && password !== confirm;
-	const canSubmit = password.length >= 4 && password === confirm && !pending;
+	const canSubmit =
+		loginIdValid && password.length >= 4 && password === confirm && !pending;
 
 	function handleSubmit(e: React.FormEvent) {
 		e.preventDefault();
 		if (!canSubmit) return;
-		onSubmit(password);
+		onSubmit(loginId, password);
 	}
 
 	return (
@@ -649,12 +753,35 @@ function AdminCredentialsDialog({
 						병원 관리자 계정 설정
 					</DialogTitle>
 					<DialogDescription className="text-sm text-body">
-						병원 홈페이지를 관리할 관리자 비밀번호를 설정합니다. 아이디는
-						대화에서 입력한 값({LOGIN_ID_HINT})이 사용됩니다.
+						병원 홈페이지를 관리할 관리자 아이디와 비밀번호를 설정합니다.
 					</DialogDescription>
 				</DialogHeader>
 
 				<form onSubmit={handleSubmit} className="flex flex-col gap-4">
+					<div className="flex flex-col gap-2">
+						<label htmlFor={loginIdId} className="text-sm font-medium text-ink">
+							관리자 아이디
+						</label>
+						<FieldInput
+							id={loginIdId}
+							value={loginId}
+							onChange={(e) => setLoginId(e.target.value)}
+							placeholder="아이디"
+							autoComplete="username"
+							autoCapitalize="off"
+							spellCheck={false}
+							aria-invalid={loginIdInvalid || undefined}
+						/>
+						<p
+							className={
+								loginIdInvalid
+									? "text-sm text-danger-strong"
+									: "text-xs text-body-soft"
+							}
+						>
+							{LOGIN_ID_HINT}
+						</p>
+					</div>
 					<div className="flex flex-col gap-2">
 						<label htmlFor={pwId} className="text-sm font-medium text-ink">
 							관리자 비밀번호

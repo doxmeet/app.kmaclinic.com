@@ -15,6 +15,7 @@ const MESSAGES: Record<string, string> = {
 		"진행 중인 온보딩이 없습니다. 처음부터 시작해 주세요.",
 	ERROR_409_ONBOARDING_FILES_PROCESSING:
 		"업로드한 파일을 분석 중입니다. 분석이 끝나면 완료할 수 있어요.",
+	ERROR_400_ADMIN_LOGIN_ID_REQUIRED: "관리자 아이디를 입력해 주세요.",
 	ERROR_400_INVALID_LOGIN_ID:
 		"관리자 아이디는 영문 소문자·숫자 4~20자만 가능합니다.",
 	ERROR_400_ADMIN_PASSWORD_REQUIRED: "병원 관리자 비밀번호를 입력해 주세요.",
