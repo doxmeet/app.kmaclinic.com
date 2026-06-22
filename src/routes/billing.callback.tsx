@@ -72,8 +72,8 @@ function BillingCallbackPage() {
 						결제 정보가 올바르지 않습니다.
 					</p>
 					<p className="text-sm text-body">
-						카드 등록 결과(authKey·customerKey·병원 번호)가 전달되지 않았습니다.
-						온보딩에서 결제를 다시 시도해 주세요.
+						카드 등록 정보가 정상적으로 전달되지 않았습니다. 온보딩에서 결제를
+						다시 시도해 주세요.
 					</p>
 					<Button
 						variant="brand"
@@ -271,11 +271,9 @@ function BillingSuccess() {
 				<InfoCallout tone="success" className="w-full text-left">
 					<p className="text-sm">
 						이제{" "}
-						<span className="font-semibold text-ink">
-							&lt;slug&gt;.kmaclinic.com
-						</span>{" "}
-						에서 병원 홈페이지·게시판·문의를 관리할 수 있어요. (정확한 주소는
-						병원 관리 화면에서 확인하세요.)
+						<span className="font-semibold text-ink">내 병원 홈페이지</span>
+						에서 소개·진료안내·게시판·문의를 관리할 수 있어요. 공개된 주소는
+						병원 관리 화면에서 확인할 수 있습니다.
 					</p>
 				</InfoCallout>
 				<div className="flex w-full flex-col gap-3 sm:flex-row">

@@ -26,6 +26,7 @@ import {
 	type CommitResult,
 	type DirectOnboardingInput,
 	directOnboarding,
+	discardPending,
 	type PaymentIntent,
 	patchDraft,
 	startSession,
@@ -550,7 +551,14 @@ function DirectOnboardingForm() {
 	if (pendingPayment) {
 		return (
 			<AppShell userName={user?.name ?? "원장님"} maxWidth="820px">
-				<CommitComplete result={{ payment: pendingPayment }} />
+				<CommitComplete
+					result={{ payment: pendingPayment }}
+					onStartOver={async () => {
+						// 미결제 병원 폐기 후 빈 폼으로 새로 시작.
+						await discardPending();
+						setPendingPayment(null);
+					}}
+				/>
 			</AppShell>
 		);
 	}

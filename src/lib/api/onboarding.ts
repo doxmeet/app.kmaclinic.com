@@ -140,6 +140,20 @@ export async function resetSession(): Promise<void> {
 }
 
 /**
+ * 결제만 남은(미게시·미결제) 병원을 폐기하고 처음부터 다시 시작 — 문서 onboarding-discard-pending.
+ * reset과 달리 이미 만들어진(commit된) 미결제 병원/구독/세션까지 정리(soft-delete). 멱등.
+ * ⚠ 이미 공개됐거나 활성/연체 구독이 있는 병원은 건드리지 않음.
+ */
+export type DiscardPendingResult = {
+	ok: boolean;
+	discarded_hospital_no?: number | string | null;
+};
+
+export async function discardPending(): Promise<DiscardPendingResult> {
+	return http.post<DiscardPendingResult>("onboarding/discard-pending");
+}
+
+/**
  * 일괄(직접) 입력 one-shot — 문서 §8.3.
  * 대화형 루프 대신 전체 정보를 한 요청으로 보내 즉시 프로필(+병원)을 생성한다.
  * 응답은 commit과 동일(`{ profile, hospital, seeded, payment }`). 파일/AI 추출은 거치지 않음.

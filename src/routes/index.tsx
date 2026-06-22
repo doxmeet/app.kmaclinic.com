@@ -14,6 +14,7 @@ import {
 	Stethoscope,
 } from "lucide-react";
 import { BrandLogo } from "#/components/layout/brand-logo.tsx";
+import { UserMenu } from "#/components/layout/user-menu.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { useSession } from "#/lib/auth/use-session.ts";
@@ -39,7 +40,7 @@ function HomePage() {
 /* ─────────────────────────── 헤더 (세션 인식) ─────────────────────────── */
 
 function HomeHeader() {
-	const { isAuthenticated, isAdmin, user, logout } = useSession();
+	const { isAuthenticated } = useSession();
 
 	return (
 		<header className="sticky top-0 z-40 w-full border-b border-line bg-surface/90 backdrop-blur">
@@ -61,17 +62,6 @@ function HomeHeader() {
 				<div className="flex items-center gap-2">
 					{isAuthenticated ? (
 						<>
-							{isAdmin ? (
-								<Button
-									nativeButton={false}
-									render={<Link to="/admin/institutions" />}
-									variant="neutral-outline"
-									size="sm"
-									className="hidden sm:inline-flex"
-								>
-									운영자 콘솔
-								</Button>
-							) : null}
 							<Button
 								nativeButton={false}
 								render={<Link to="/onboarding" />}
@@ -80,18 +70,7 @@ function HomeHeader() {
 							>
 								온보딩 이어가기
 							</Button>
-							{user?.name ? (
-								<span className="hidden text-sm font-medium text-ink sm:inline">
-									{user.name}님
-								</span>
-							) : null}
-							<button
-								type="button"
-								onClick={() => logout()}
-								className="hidden cursor-pointer text-sm text-muted-fg transition-colors hover:text-ink sm:inline"
-							>
-								로그아웃
-							</button>
+							<UserMenu />
 						</>
 					) : (
 						<Button
@@ -316,7 +295,7 @@ function WhatYouGet() {
 					<CreateCard
 						icon={Stethoscope}
 						title="의사 공개 프로필"
-						domain="<slug>.kmadoc.com"
+						domain="***.kmadoc.com"
 						desc="경력·학력, 전문 자격, 진료 일정, 대표 논문까지. 환자가 신뢰할 수 있는 공개 프로필이 자동으로 구성됩니다."
 						bullets={["면허 인증 배지", "주간 진료 일정", "경력 타임라인"]}
 						to="/doctor/preview"
@@ -325,7 +304,7 @@ function WhatYouGet() {
 					<CreateCard
 						icon={LayoutGrid}
 						title="병원 홈페이지"
-						domain="<slug>.kmaclinic.com"
+						domain="***.kmaclinic.com"
 						desc="병원 소개, 진료 안내, 공지·칼럼 게시판을 갖춘 홈페이지. 구독 결제 후 즉시 공개됩니다."
 						bullets={[
 							"병원 소개·진료안내",

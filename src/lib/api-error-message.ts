@@ -4,7 +4,7 @@ import { ApiError } from "#/lib/api";
 /** error_code → 사용자 메시지 (문서 §11 "주요 에러코드 표"). */
 const MESSAGES: Record<string, string> = {
 	// 인증/권한
-	ERROR_401_TOKEN_EXPIRED: "세션이 만료되었습니다. 다시 로그인해 주세요.",
+	ERROR_401_TOKEN_EXPIRED: "로그인이 만료되었습니다. 다시 로그인해 주세요.",
 	ERROR_400_INVALID_TOKEN:
 		"로그인 정보가 올바르지 않습니다. 다시 로그인해 주세요.",
 	ERROR_401_AUTHORIZATION_HEADER_NOT_FOUND_IN_REQUEST: "로그인이 필요합니다.",
@@ -29,7 +29,7 @@ const MESSAGES: Record<string, string> = {
 	ERROR_409_SUBSCRIPTION_NOT_CANCELABLE:
 		"이미 종료된 구독은 취소할 수 없습니다.",
 	ERROR_400_SLUG_REQUIRED: "먼저 공개 주소(URL)를 설정해 주세요.",
-	ERROR_409_SLUG_TAKEN: "이미 사용 중인 URL(slug)입니다.",
+	ERROR_409_SLUG_TAKEN: "이미 사용 중인 주소입니다. 다른 주소를 입력해 주세요.",
 	// 운영자
 	ERROR_400_CANNOT_DEMOTE_SELF: "본인 권한은 강등할 수 없습니다.",
 	ERROR_404_LICENSE_NOT_FOUND_OR_NOT_PENDING: "대기 중인 면허 신청이 없습니다.",

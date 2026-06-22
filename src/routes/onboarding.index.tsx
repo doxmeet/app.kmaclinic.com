@@ -22,6 +22,7 @@ import { ApiError } from "#/lib/api";
 import {
 	type CommitResult,
 	commitSession,
+	discardPending,
 	resetSession,
 	type SessionView,
 	sendMessage,
@@ -171,6 +172,21 @@ function OnboardingChat() {
 		onError: (err) => toastApiError(err),
 	});
 
+	// ── 결제 화면 "병원 지우고 새로 시작": 미결제 병원 폐기 후 새 세션 ──
+	async function handleStartOver() {
+		await discardPending();
+		const view = await startSession();
+		setResumeOpen(false);
+		if (view.status === "pending_payment" && view.pending_payment) {
+			// (드물게) 또 다른 미결제 병원이 남은 경우 — 결제 화면 유지
+			setCommitResult({ payment: view.pending_payment });
+		} else {
+			setCommitResult(null);
+			setSession(view);
+			setResumeOpen(view.resumable === true);
+		}
+	}
+
 	// ── 파생 상태 ───────────────────────────────────────────────────
 	const isClinicOwner = session?.is_clinic_owner === true;
 	const conflicts = (session?.conflicts as Conflict[] | undefined) ?? [];
@@ -214,7 +230,7 @@ function OnboardingChat() {
 	if (commitResult) {
 		return (
 			<AppShell userName={user?.name ?? "원장님"} maxWidth="720px">
-				<CommitComplete result={commitResult} />
+				<CommitComplete result={commitResult} onStartOver={handleStartOver} />
 			</AppShell>
 		);
 	}
@@ -225,7 +241,7 @@ function OnboardingChat() {
 			<AppShell userName={user?.name ?? "원장님"} maxWidth="720px">
 				<SectionCard className="flex flex-col items-center gap-5 text-center">
 					<p className="text-lg font-semibold text-ink">
-						온보딩 세션을 시작하지 못했습니다.
+						온보딩을 시작하지 못했습니다.
 					</p>
 					<p className="text-sm text-body">
 						{startError instanceof ApiError

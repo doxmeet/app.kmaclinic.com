@@ -17,12 +17,21 @@ import type { CommitResult } from "#/lib/api/onboarding.ts";
  * - 프로필만 → 무료 완료 축하
  * 대화형 온보딩(`/onboarding`)과 일괄 입력(`/onboarding/direct`)이 공유한다.
  */
-export function CommitComplete({ result }: { result: CommitResult }) {
+export function CommitComplete({
+	result,
+	onStartOver,
+}: {
+	result: CommitResult;
+	/** 결제 화면에서 "병원 지우고 새로 시작" — 제공 시 결제 단계에 버튼 노출. */
+	onStartOver?: () => Promise<void>;
+}) {
 	const payment = result.payment;
 	const slug = extractSlug(result);
 
 	if (payment?.required === true) {
-		return <PaymentStep payment={payment} slug={slug} />;
+		return (
+			<PaymentStep payment={payment} slug={slug} onStartOver={onStartOver} />
+		);
 	}
 
 	return (
@@ -44,7 +53,7 @@ export function CommitComplete({ result }: { result: CommitResult }) {
 				<p className="text-sm">
 					프로필 관리:{" "}
 					<span className="font-semibold text-ink">
-						{slug ? `${slug}.kmadoc.com` : "<slug>.kmadoc.com"}
+						{slug ? `${slug}.kmadoc.com` : "***.kmadoc.com"}
 					</span>
 				</p>
 			</InfoCallout>
@@ -132,12 +141,30 @@ function loadTossSdk(): Promise<TossPaymentsFactory> {
 function PaymentStep({
 	payment,
 	slug,
+	onStartOver,
 }: {
 	payment: NonNullable<CommitResult["payment"]>;
 	slug: string | null;
+	onStartOver?: () => Promise<void>;
 }) {
 	const [loading, setLoading] = useState(false);
 	const [marketingConsent, setMarketingConsent] = useState(false);
+	const [startingOver, setStartingOver] = useState(false);
+
+	async function handleStartOver() {
+		if (!onStartOver) return;
+		const ok = window.confirm(
+			"지금 만든 병원 정보를 모두 지우고 처음부터 다시 시작할까요?\n결제 전 입력한 내용은 복구할 수 없습니다.",
+		);
+		if (!ok) return;
+		setStartingOver(true);
+		try {
+			await onStartOver();
+		} catch {
+			toast.error("새로 시작에 실패했어요. 잠시 후 다시 시도해 주세요.");
+			setStartingOver(false);
+		}
+	}
 	const clientKey = payment.toss_client_key;
 	const customerKey = payment.customer_key;
 	const hospitalNo = payment.hospital_no;
@@ -231,16 +258,24 @@ function PaymentStep({
 
 			<p className="text-center text-sm text-muted-fg">
 				결제가 완료되면 병원 홈페이지가 공개됩니다
-				{slug ? ` (${slug}.kmaclinic.com)` : " (<slug>.kmaclinic.com)"}.
+				{slug ? ` (${slug}.kmaclinic.com)` : ""}.
 			</p>
 
-			{/* 지금 결제하지 않고 빠져나갈 수 있는 탈출구(나중에 결제). */}
-			<Link
-				to="/"
-				className="mx-auto text-sm font-medium text-muted-fg underline-offset-4 transition-colors hover:text-ink hover:underline"
-			>
-				나중에 할게요 · 홈으로
-			</Link>
+			{/* 미결제 병원 폐기 후 처음부터 새로 시작(파괴적 → confirm 보호). */}
+			{onStartOver ? (
+				<div className="flex flex-col items-center border-t border-line pt-4">
+					<button
+						type="button"
+						disabled={startingOver}
+						onClick={handleStartOver}
+						className="cursor-pointer text-sm text-muted-fg underline-offset-4 transition-colors hover:text-danger-strong hover:underline disabled:opacity-50"
+					>
+						{startingOver
+							? "초기화 중…"
+							: "이 병원 지우고 처음부터 새로 시작하기"}
+					</button>
+				</div>
+			) : null}
 		</SectionCard>
 	);
 }

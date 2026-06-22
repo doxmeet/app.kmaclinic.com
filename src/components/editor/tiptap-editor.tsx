@@ -1413,7 +1413,7 @@ export default function TiptapEditor({
 			try {
 				sessionId = await ensureUploadSessionId();
 			} catch {
-				toast.error("이미지 업로드를 위한 세션 생성에 실패했습니다.");
+				toast.error("이미지 업로드 준비에 실패했습니다.");
 				return;
 			}
 
@@ -1462,7 +1462,7 @@ export default function TiptapEditor({
 			try {
 				sessionId = await ensureUploadSessionId();
 			} catch {
-				toast.error("이미지 업로드를 위한 세션 생성에 실패했습니다.");
+				toast.error("이미지 업로드 준비에 실패했습니다.");
 				return;
 			}
 
@@ -1528,7 +1528,7 @@ export default function TiptapEditor({
 				try {
 					sessionId = await ensureUploadSessionId();
 				} catch {
-					toast.error("이미지 업로드를 위한 세션 생성에 실패했습니다.");
+					toast.error("이미지 업로드 준비에 실패했습니다.");
 					// 이미지 없이 텍스트만 삽입
 					const cleaned = html.replace(
 						/<img[^>]*src\s*=\s*["']file:\/\/\/[^"']*["'][^>]*>/gi,
