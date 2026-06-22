@@ -63,7 +63,7 @@ export function CommitComplete({
 					render={<Link to="/doctor/preview" />}
 					variant="brand"
 					size="xl"
-					className="w-full"
+					className="w-full sm:flex-1"
 				>
 					공개 프로필 예시 보기
 				</Button>
@@ -72,7 +72,7 @@ export function CommitComplete({
 					render={<Link to="/" />}
 					variant="neutral-outline"
 					size="xl"
-					className="w-full"
+					className="w-full sm:flex-1"
 				>
 					홈으로
 				</Button>
@@ -179,7 +179,9 @@ function PaymentStep({
 			const factory = await loadTossSdk();
 			const toss = factory(clientKey);
 			const origin = window.location.origin;
-			const successUrl = `${origin}/billing/callback?hospital_no=${hospitalNo}&customerKey=${encodeURIComponent(
+			// ⚠ Toss는 successUrl의 예약 파라미터(customerKey 등)를 떼어내고 자기 값(authKey)만 다시 붙인다.
+			// 그래서 customerKey를 그대로 넣으면 콜백에서 사라진다 → 예약 안 된 이름(ck)으로 전달한다.
+			const successUrl = `${origin}/billing/callback?hospital_no=${hospitalNo}&ck=${encodeURIComponent(
 				customerKey,
 			)}${marketingConsent ? "&marketing_consent=1" : ""}`;
 			const failUrl = `${origin}/billing/callback?fail=1`;

@@ -9,27 +9,34 @@ import {
 } from "#/components/common/section-card.tsx";
 import { AppShell } from "#/components/layout/app-shell.tsx";
 import { Button } from "#/components/ui/button.tsx";
-import { createSubscription, issueBilling } from "#/lib/api/billing.ts";
-import { toastApiError } from "#/lib/api-error-message.ts";
+import { ApiError } from "#/lib/api";
+import { createSubscription } from "#/lib/api/billing.ts";
+import { apiErrorMessage } from "#/lib/api-error-message.ts";
+import { useSession } from "#/lib/auth/use-session.ts";
 
 /**
- * 결제(Toss) 콜백 — 문서 onboarding-frontend-guide §6.
+ * 결제(Toss) 콜백 — 단일 호출 (2026-06 최종).
  * Toss requestBillingAuth 성공 시 successUrl 로 리다이렉트되며 authKey/customerKey 가 쿼리로 전달된다.
- * 여기서 빌링키 발급 → 구독 생성(첫 결제)까지 한다.
+ * `POST /subscription { hospital_no, authKey, customerKey, marketing_consent }` **한 번**으로
+ * 빌링키 발급 + 구독 + 첫 결제까지 끝낸다.
  *
- *   issueBilling({authKey, customerKey}) → createSubscription(hospital_no)
- *
- * 구독이 생성되면 병원은 ready_to_publish 상태가 되고, **게시(slug 설정 + publish)는 대시보드에서**
- * 별도로 진행한다(자동 게시하지 않음). 완료 후 /onboarding 대시보드로 보낸다.
- * 단계별 실패는 toastApiError + 재시도(실패한 단계부터 다시 시작). fail=1 이면 결제 실패 안내.
+ * 재시도 규칙: 토스 authKey는 1회용 → 재시도 시 authKey 없이 `{ hospital_no }`만 보낸다
+ * (빌링키는 이미 저장됨). 저장된 빌링키가 없거나 카드 거절이면 카드부터 다시 등록.
+ * 구독 성공 시 병원은 ready_to_publish → **게시(slug+publish)는 대시보드에서** 별도. fail=1 이면 실패 안내.
  */
 
 export const Route = createFileRoute("/billing/callback")({
 	component: BillingCallbackPage,
 	validateSearch: (search: Record<string, unknown>) => ({
 		authKey: typeof search.authKey === "string" ? search.authKey : undefined,
+		// 우리는 customerKey를 예약 안 된 이름 `ck`로 넘긴다(Toss가 customerKey는 떼어냄).
+		// 혹시 Toss가 customerKey를 붙여주는 환경이면 그것도 fallback으로 받는다.
 		customerKey:
-			typeof search.customerKey === "string" ? search.customerKey : undefined,
+			typeof search.ck === "string" && search.ck
+				? search.ck
+				: typeof search.customerKey === "string"
+					? search.customerKey
+					: undefined,
 		hospital_no: toNumber(search.hospital_no),
 		marketing_consent:
 			search.marketing_consent === "1" || search.marketing_consent === 1
@@ -39,15 +46,11 @@ export const Route = createFileRoute("/billing/callback")({
 	}),
 });
 
-type Step = "issue" | "subscription" | "done";
-
-const STEP_LABELS: Record<Step, string> = {
-	issue: "카드(빌링키) 등록",
-	subscription: "구독 생성 및 첫 결제",
-	done: "완료",
-};
-
-const STEP_ORDER: Step[] = ["issue", "subscription", "done"];
+// 재시도가 무의미한(카드부터 다시 등록해야 하는) 에러 — authKey는 1회용.
+const RE_REGISTER_CODES = new Set([
+	"ERROR_402_TOSS_PAYMENT_FAILED",
+	"ERROR_400_BILLING_KEY_REQUIRED",
+]);
 
 function BillingCallbackPage() {
 	const { authKey, customerKey, hospital_no, marketing_consent, fail } =
@@ -104,146 +107,180 @@ function BillingFlow({
 	hospitalNo: number;
 	marketingConsent: boolean;
 }) {
-	// 현재 진행 중인 단계(완료되면 다음 단계로). "done" 이면 성공.
-	const [step, setStep] = useState<Step>("issue");
-	const [failedStep, setFailedStep] = useState<Step | null>(null);
+	const navigate = useNavigate();
+	// 토스 리다이렉트는 전체 새로고침이라 메모리의 액세스 토큰이 사라진다.
+	// useSession이 refresh 토큰으로 액세스 토큰을 재발급(bootstrap)하므로 그 준비가 끝난 뒤 호출한다.
+	const { isLoading: sessionLoading, isAuthenticated } = useSession();
 	const running = useRef(false);
+	const [done, setDone] = useState(false);
+	const [needsLogin, setNeedsLogin] = useState(false);
+	const [error, setError] = useState<{
+		code: string | null;
+		message: string;
+	} | null>(null);
 
 	const mutation = useMutation({
-		mutationFn: async (from: Step) => {
-			// 실패한 단계부터 순차 재개. 이미 통과한 단계는 멱등 가정 하에 다시 호출.
-			if (from === "issue") {
-				await issueBilling({ authKey, customerKey });
-				setStep("subscription");
-			}
-			await createSubscription(hospitalNo, {
+		// useAuthKey=true: 최초(빌링키 발급+구독+첫 결제). false: 재시도(authKey는 1회용 → 저장된 빌링키 재사용).
+		mutationFn: (useAuthKey: boolean) =>
+			createSubscription(hospitalNo, {
+				...(useAuthKey ? { authKey, customerKey } : {}),
 				marketing_consent: marketingConsent,
-			});
-			// 구독 생성까지만. 게시(slug + publish)는 대시보드에서 별도로.
-			setStep("done");
+			}),
+		onSuccess: () => {
+			setError(null);
+			setDone(true);
 		},
-		onError: (err, from) => {
-			setFailedStep(from);
-			toastApiError(err);
+		onError: (err) => {
+			const code = err instanceof ApiError ? err.errorCode : null;
+			// 이미 활성 구독이면 결제는 끝난 상태 → 성공으로 간주(게시 단계로).
+			if (code === "ERROR_409_SUBSCRIPTION_ALREADY_ACTIVE") {
+				setError(null);
+				setDone(true);
+				return;
+			}
+			setError({ code, message: apiErrorMessage(err) });
 		},
 	});
 
-	// 진입 시 1회 자동 시작. running ref로 StrictMode 이중 실행/재렌더 재실행을 막는다.
-	// biome-ignore lint/correctness/useExhaustiveDependencies: mount 시 1회만 실행해야 하며 running ref로 보장한다.
+	// 세션 부트스트랩(토큰 재발급)이 끝난 뒤 1회 자동 시작. 그래야 POST에 Bearer 토큰이 실린다.
+	// running ref로 StrictMode 이중 실행/재렌더 재실행을 막는다.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: mutation은 stable, running ref로 1회 보장.
 	useEffect(() => {
 		if (running.current) return;
+		if (sessionLoading) return; // 액세스 토큰 재발급 대기
 		running.current = true;
-		mutation.mutate("issue");
-	}, []);
+		if (!isAuthenticated) {
+			setNeedsLogin(true); // refresh 토큰까지 만료 → 재로그인 필요
+			return;
+		}
+		mutation.mutate(true);
+	}, [sessionLoading, isAuthenticated]);
 
-	function handleRetry() {
-		const from = failedStep ?? "issue";
-		setFailedStep(null);
-		setStep(from);
-		mutation.mutate(from);
+	if (needsLogin) {
+		return (
+			<AppShell maxWidth="560px">
+				<SectionCard className="flex flex-col items-center gap-5 text-center">
+					<p className="text-lg font-semibold text-ink">로그인이 만료됐어요</p>
+					<p className="text-sm text-body">
+						다시 로그인한 뒤 결제를 이어서 진행해 주세요. 등록한 카드가 있다면
+						대시보드의 결제하기에서 한 번에 이어집니다.
+					</p>
+					<Button
+						variant="brand"
+						size="2xl"
+						onClick={() => navigate({ to: "/login" })}
+					>
+						로그인하러 가기
+					</Button>
+				</SectionCard>
+			</AppShell>
+		);
 	}
 
-	if (step === "done") {
-		return <BillingSuccess />;
-	}
+	if (done) return <BillingSuccess />;
 
-	const currentIndex = STEP_ORDER.indexOf(step);
+	if (error) {
+		return (
+			<BillingError
+				code={error.code}
+				message={error.message}
+				pending={mutation.isPending}
+				onRetry={() => mutation.mutate(false)}
+				onReRegister={() => navigate({ to: "/onboarding" })}
+			/>
+		);
+	}
 
 	return (
 		<AppShell maxWidth="560px">
-			<SectionCard className="flex flex-col gap-6">
-				<SectionTitle>결제 처리 중</SectionTitle>
-
-				<ol className="flex flex-col gap-3">
-					{STEP_ORDER.filter((s) => s !== "done").map((s, idx) => {
-						const done = idx < currentIndex;
-						const active = s === step && !failedStep;
-						const isFailed = failedStep === s;
-						return (
-							<li
-								key={s}
-								className="flex items-center gap-3 rounded-xl border border-line bg-app-bg px-4 py-3"
-							>
-								<StepIcon done={done} active={active} failed={isFailed} />
-								<span
-									className={
-										done || active
-											? "text-sm font-medium text-ink"
-											: "text-sm text-body-soft"
-									}
-								>
-									{STEP_LABELS[s]}
-								</span>
-							</li>
-						);
-					})}
-				</ol>
-
-				{failedStep ? (
-					<>
-						<InfoCallout tone="danger">
-							<p className="text-sm">
-								<span className="font-semibold text-ink">
-									{STEP_LABELS[failedStep]}
-								</span>{" "}
-								단계에서 문제가 발생했습니다. 다시 시도해 주세요.
-							</p>
-						</InfoCallout>
-						<Button
-							variant="brand"
-							size="2xl"
-							className="w-full"
-							disabled={mutation.isPending}
-							onClick={handleRetry}
-						>
-							{mutation.isPending ? (
-								<Loader2 className="size-5 animate-spin" />
-							) : null}
-							다시 시도
-						</Button>
-					</>
-				) : (
-					<p className="text-center text-sm text-muted-fg">
-						결제를 처리하고 있어요. 창을 닫지 말고 잠시만 기다려 주세요.
+			<SectionCard className="flex flex-col items-center gap-5 py-10 text-center">
+				<Loader2 className="size-8 animate-spin text-brand" />
+				<div className="flex flex-col gap-1.5">
+					<SectionTitle>결제 처리 중</SectionTitle>
+					<p className="text-sm text-body-soft">
+						카드 등록과 결제를 한 번에 처리하고 있어요. 창을 닫지 말고 잠시만
+						기다려 주세요.
 					</p>
-				)}
+				</div>
 			</SectionCard>
 		</AppShell>
 	);
 }
 
-function StepIcon({
-	done,
-	active,
-	failed,
+function BillingError({
+	code,
+	message,
+	pending,
+	onRetry,
+	onReRegister,
 }: {
-	done: boolean;
-	active: boolean;
-	failed: boolean;
+	code: string | null;
+	message: string;
+	pending: boolean;
+	onRetry: () => void;
+	onReRegister: () => void;
 }) {
-	if (failed) {
-		return (
-			<span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-danger-bg">
-				<X className="size-3.5 text-danger-strong" strokeWidth={2.5} />
-			</span>
-		);
-	}
-	if (done) {
-		return (
-			<span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-success-bg">
-				<CheckCircle2 className="size-4 text-success" />
-			</span>
-		);
-	}
-	if (active) {
-		return (
-			<span className="flex size-6 shrink-0 items-center justify-center">
-				<Loader2 className="size-4 animate-spin text-brand" />
-			</span>
-		);
-	}
+	const mustReRegister = code != null && RE_REGISTER_CODES.has(code);
+	const forbidden = code === "ERROR_403_FORBIDDEN";
+
 	return (
-		<span className="flex size-6 shrink-0 items-center justify-center rounded-full border border-line-strong" />
+		<AppShell maxWidth="560px">
+			<SectionCard className="flex flex-col items-center gap-6 text-center">
+				<div className="flex size-16 items-center justify-center rounded-full bg-danger-bg">
+					<X className="size-8 text-danger-strong" strokeWidth={2.5} />
+				</div>
+				<div className="flex flex-col gap-2">
+					<h1 className="text-2xl font-bold text-ink">
+						결제를 완료하지 못했어요
+					</h1>
+					<p className="text-[15px] leading-7 text-body-soft">{message}</p>
+				</div>
+
+				<div className="flex w-full flex-col gap-3">
+					{forbidden ? (
+						<Button
+							variant="brand"
+							size="cta"
+							className="w-full"
+							onClick={onReRegister}
+						>
+							대시보드로 돌아가기
+						</Button>
+					) : mustReRegister ? (
+						<Button
+							variant="brand"
+							size="cta"
+							className="w-full"
+							onClick={onReRegister}
+						>
+							카드 다시 등록하기
+						</Button>
+					) : (
+						<>
+							<Button
+								variant="brand"
+								size="cta"
+								className="w-full"
+								disabled={pending}
+								onClick={onRetry}
+							>
+								{pending ? <Loader2 className="size-5 animate-spin" /> : null}
+								다시 시도
+							</Button>
+							<Button
+								variant="neutral-outline"
+								size="2xl"
+								className="w-full"
+								disabled={pending}
+								onClick={onReRegister}
+							>
+								카드 다시 등록하기
+							</Button>
+						</>
+					)}
+				</div>
+			</SectionCard>
+		</AppShell>
 	);
 }
 

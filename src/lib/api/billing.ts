@@ -1,8 +1,8 @@
 import { http } from "#/lib/api";
 
 /**
- * 결제 / 구독 — 문서 §3. 병원 게시(publish)에만 게이트.
- * 권장 순서: billing/issue → subscription → hospital/:no/publish
+ * 결제 / 구독 — 병원 게시(publish)에만 게이트.
+ * `POST /subscription` **한 번**으로 빌링키 발급 + 구독 + 첫 결제까지 끝낸다(2026-06 최종).
  */
 
 export type BillingKey = {
@@ -30,22 +30,29 @@ export type Payment = {
 	[key: string]: unknown;
 };
 
-/** 토스 빌링키 발급/재발급. */
-export function issueBilling(input: { authKey: string; customerKey: string }) {
-	return http.post<BillingKey>("billing/issue", input);
-}
-
 export function listBilling() {
 	return http.get<BillingKey[]>("billing");
 }
 
-/** 병원 구독 생성 + 첫 결제 → active. (문서 §8.7) */
+/**
+ * 구독 생성 — **단일 호출**로 토스 빌링키 발급 + 구독 + 첫 결제까지 처리(2026-06 최종).
+ * - 최초: `authKey`(+`customerKey`)를 함께 보내 빌링키를 발급한다.
+ * - 재시도: 토스 authKey는 **1회용**이라 재사용 불가. 결제 단계에서만 실패했다면 빌링키는
+ *   이미 저장돼 있으므로 `authKey` 없이 `{ hospital_no }`(+marketing_consent)만 다시 보낸다.
+ *   저장된 빌링키가 없으면 `ERROR_400_BILLING_KEY_REQUIRED` → 카드부터 다시 등록.
+ */
 export function createSubscription(
 	hospitalNo: number,
-	opts: { marketing_consent?: boolean } = {},
+	opts: {
+		authKey?: string;
+		customerKey?: string;
+		marketing_consent?: boolean;
+	} = {},
 ) {
 	return http.post<Subscription>("subscription", {
 		hospital_no: hospitalNo,
+		...(opts.authKey ? { authKey: opts.authKey } : {}),
+		...(opts.customerKey ? { customerKey: opts.customerKey } : {}),
 		...(opts.marketing_consent !== undefined
 			? { marketing_consent: opts.marketing_consent }
 			: {}),
