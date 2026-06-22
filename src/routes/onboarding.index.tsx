@@ -1,22 +1,14 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import {
-	CheckCircle2,
-	Loader2,
-	Paperclip,
-	PartyPopper,
-	SendHorizontal,
-} from "lucide-react";
+import { CheckCircle2, Loader2, Paperclip, SendHorizontal } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AuthGuard } from "#/components/auth/auth-guard.tsx";
 import { InfoCallout } from "#/components/common/info-callout.tsx";
-import {
-	SectionCard,
-	SectionTitle,
-} from "#/components/common/section-card.tsx";
+import { SectionCard } from "#/components/common/section-card.tsx";
 import { FieldInput } from "#/components/form/field-input.tsx";
 import { AppShell } from "#/components/layout/app-shell.tsx";
+import { CommitComplete } from "#/components/onboarding/commit-complete.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import {
@@ -30,7 +22,7 @@ import { ApiError } from "#/lib/api";
 import {
 	type CommitResult,
 	commitSession,
-	getSession,
+	resetSession,
 	type SessionView,
 	sendMessage,
 	startSession,
@@ -39,7 +31,7 @@ import { toastApiError } from "#/lib/api-error-message.ts";
 import { useSession } from "#/lib/auth/use-session.ts";
 import { uploadFileToStorage } from "#/lib/upload.ts";
 
-export const Route = createFileRoute("/onboarding")({
+export const Route = createFileRoute("/onboarding/")({
 	component: OnboardingPage,
 });
 
@@ -54,17 +46,20 @@ function OnboardingPage() {
 /** history 항목 타입(view의 history는 looseObject라 좁혀 사용). */
 type ChatMessage = { role: string; text?: string };
 
-/** conflicts 항목을 화면용으로 좁힌 타입. */
+/** conflicts 항목을 화면용으로 좁힌 타입(불일치 또는 이상점). */
 type Conflict = {
 	field: string;
 	current?: unknown;
 	from_file?: unknown;
+	note?: string;
+	question?: string;
+	asked?: boolean;
 };
 
 const LOGIN_ID_HINT = "영문 소문자·숫자 4~20자";
 
 function OnboardingChat() {
-	const { account } = useSession();
+	const { user } = useSession();
 	const queryClient = useQueryClient();
 
 	// 첫 진입 시 세션 시작. 이후 폴링/메시지 응답으로 갱신되는 단일 진실원.
@@ -73,45 +68,37 @@ function OnboardingChat() {
 	const [text, setText] = useState("");
 	const [commitResult, setCommitResult] = useState<CommitResult | null>(null);
 	const [adminDialogOpen, setAdminDialogOpen] = useState(false);
+	const [resumeOpen, setResumeOpen] = useState(false);
 
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const started = useRef(false);
 
-	// ── 세션 시작(1회) ──────────────────────────────────────────────
+	// ── 진입 시 1회: 저장된 세션 분기(문서 §2) ──────────────────────
+	//  · pending_payment → 결제만 복귀(결제 위젯)
+	//  · resumable → 이어하기/새로시작 모달
+	//  · 그 외 → 새 세션으로 바로 시작
 	useEffect(() => {
 		if (started.current) return;
 		started.current = true;
 		startSession()
-			.then(setSession)
+			.then((view) => {
+				if (view.status === "pending_payment" && view.pending_payment) {
+					setCommitResult({ payment: view.pending_payment });
+				} else {
+					setSession(view);
+					if (view.resumable === true) setResumeOpen(true);
+				}
+			})
 			.catch((err) => setStartError(err));
 	}, []);
 
-	// ── 처리 중 파일이 있으면 getSession 폴링 ────────────────────────
+	// 파일/긴 답변은 백그라운드 깊은 분석으로 처리되고, 그 결과는 **다음 메시지 턴**에 병합됩니다.
+	// (문서 §7.5 — 폴링하지 않음. 분석 중에는 인디케이터만 표시하고, 다음 답변을 보내면 반영됨)
 	const processingFiles = session?.processing_files ?? 0;
-	const pollQuery = useQuery({
-		queryKey: ["onboarding", "session", "poll"],
-		queryFn: getSession,
-		enabled: processingFiles > 0 && !commitResult,
-		refetchInterval: 2500,
-	});
 
-	useEffect(() => {
-		if (pollQuery.data) setSession(pollQuery.data);
-	}, [pollQuery.data]);
-
-	// ── 새 메시지가 들어오면 맨 아래로 스크롤 ────────────────────────
 	const history = (session?.history as ChatMessage[] | undefined) ?? [];
 	const historyLength = history.length;
-	useEffect(() => {
-		// historyLength / processingFiles 변화를 트리거로 사용(값 자체는 스크롤 계산에 불필요).
-		void historyLength;
-		void processingFiles;
-		scrollRef.current?.scrollTo({
-			top: scrollRef.current.scrollHeight,
-			behavior: "smooth",
-		});
-	}, [historyLength, processingFiles]);
 
 	// ── 텍스트 전송 ─────────────────────────────────────────────────
 	const textMutation = useMutation({
@@ -162,20 +149,71 @@ function OnboardingChat() {
 		onError: (err) => toastApiError(err),
 	});
 
+	// ── "새로 시작": 진행중 세션(초안) 폐기 후 다시 분기 ──────────────
+	// ⚠ reset은 in_progress 초안만 폐기. 이미 생성된(commit된) 병원은 그대로라,
+	//   결제만 남은 병원이 있으면 startSession이 다시 pending_payment를 돌려준다(문서 §6).
+	const resetMutation = useMutation({
+		mutationFn: resetSession,
+		onSuccess: async () => {
+			setResumeOpen(false);
+			try {
+				const view = await startSession();
+				if (view.status === "pending_payment" && view.pending_payment) {
+					setCommitResult({ payment: view.pending_payment });
+				} else {
+					setSession(view);
+					setResumeOpen(view.resumable === true);
+				}
+			} catch (err) {
+				setStartError(err);
+			}
+		},
+		onError: (err) => toastApiError(err),
+	});
+
 	// ── 파생 상태 ───────────────────────────────────────────────────
 	const isClinicOwner = session?.is_clinic_owner === true;
 	const conflicts = (session?.conflicts as Conflict[] | undefined) ?? [];
 	const progress = clampPercent(session?.progress_percent);
 	const nextQuestion = session?.next_question ?? null;
+	// interrupt=true면 next_question이 백그라운드 분석의 이상점/충돌 확인 질문(문서 §7.6).
+	const interrupt = session?.interrupt === true;
+	// 입력값 vs 분석값 불일치(current/from_file 둘 다 존재)만 빠른 선택 카드로 노출.
+	// 이상점(note/question)은 interrupt 질문으로 처리되므로 카드로는 안 띄움.
+	const pickConflicts = conflicts.filter(
+		(c) => c.current != null && c.from_file != null && c.asked !== true,
+	);
 	const isCommitting = commitMutation.isPending;
 	const isSending = textMutation.isPending || conflictMutation.isPending;
 	const isUploading = fileMutation.isPending;
 	const isProcessing = processingFiles > 0;
+	// 전송 중일 때 낙관적으로 보여줄, 유저가 방금 보낸 메시지(React Query variables).
+	const pendingMessage = textMutation.isPending
+		? textMutation.variables
+		: conflictMutation.isPending
+			? conflictMutation.variables
+			: null;
+
+	// 메시지 전송("전송 중…" 표시)·수신(history 증가)·파일 분석 상태가 바뀌면
+	// 채팅 영역을 맨 아래로 스크롤. rAF로 DOM 반영 후 스크롤해 안정적으로 동작.
+	useEffect(() => {
+		// 아래 값들은 스크롤 트리거로만 사용(값 자체는 계산에 불필요).
+		void historyLength;
+		void isSending;
+		void isUploading;
+		void isProcessing;
+		const el = scrollRef.current;
+		if (!el) return;
+		const id = requestAnimationFrame(() => {
+			el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+		});
+		return () => cancelAnimationFrame(id);
+	}, [historyLength, isSending, isUploading, isProcessing]);
 
 	// commit 완료 화면(무료 또는 결제 유도)
 	if (commitResult) {
 		return (
-			<AppShell userName={account?.name ?? "원장님"} maxWidth="720px">
+			<AppShell userName={user?.name ?? "원장님"} maxWidth="720px">
 				<CommitComplete result={commitResult} />
 			</AppShell>
 		);
@@ -184,7 +222,7 @@ function OnboardingChat() {
 	// 세션 시작 실패
 	if (startError) {
 		return (
-			<AppShell userName={account?.name ?? "원장님"} maxWidth="720px">
+			<AppShell userName={user?.name ?? "원장님"} maxWidth="720px">
 				<SectionCard className="flex flex-col items-center gap-5 text-center">
 					<p className="text-lg font-semibold text-ink">
 						온보딩 세션을 시작하지 못했습니다.
@@ -215,7 +253,7 @@ function OnboardingChat() {
 	// 세션 로딩 중
 	if (!session) {
 		return (
-			<AppShell userName={account?.name ?? "원장님"} maxWidth="720px">
+			<AppShell userName={user?.name ?? "원장님"} maxWidth="720px">
 				<div className="flex flex-col items-center gap-4 py-24 text-center">
 					<Loader2 className="size-7 animate-spin text-brand" />
 					<p className="text-base text-body">온보딩을 준비하고 있어요…</p>
@@ -242,7 +280,7 @@ function OnboardingChat() {
 		if (isClinicOwner) {
 			setAdminDialogOpen(true);
 		} else {
-			commitMutation.mutate(undefined);
+			commitMutation.mutate("");
 		}
 	}
 
@@ -250,13 +288,21 @@ function OnboardingChat() {
 	const readyToCommit = isReadyToCommit(nextQuestion, progress);
 
 	return (
-		<AppShell userName={account?.name ?? "원장님"} maxWidth="720px">
+		<AppShell userName={user?.name ?? "원장님"} maxWidth="720px">
 			<div className="flex flex-col gap-5">
 				{/* 진행바 */}
 				<div className="flex flex-col gap-2">
 					<div className="flex items-center justify-between text-sm">
 						<span className="font-semibold text-ink">대화형 온보딩</span>
-						<span className="text-body-soft">{progress}% 완료</span>
+						<div className="flex items-center gap-3">
+							<span className="text-body-soft">{progress}% 완료</span>
+							<Link
+								to="/onboarding/direct"
+								className="text-xs font-medium text-brand transition-colors hover:underline"
+							>
+								한 번에 입력하기
+							</Link>
+						</div>
 					</div>
 					<div className="h-2 w-full overflow-hidden rounded-full bg-line-soft">
 						<div
@@ -297,30 +343,37 @@ function OnboardingChat() {
 							</div>
 						) : null}
 
-						{/* 전송 중(낙관적 표시) */}
+						{/* 전송 중: 유저가 보낸 메시지를 낙관적으로 표시(응답 도착 시 history 버블로 교체) */}
 						{isSending ? (
-							<div className="ml-auto flex max-w-[85%] items-center gap-2 rounded-2xl rounded-br-sm bg-brand px-4 py-3 text-sm text-brand-foreground opacity-70">
-								<Loader2 className="size-4 animate-spin" />
-								전송 중…
+							<div className="ml-auto flex max-w-[85%] items-end gap-2">
+								<p className="whitespace-pre-wrap break-words rounded-2xl rounded-br-sm bg-brand px-4 py-2.5 text-sm text-brand-foreground opacity-80">
+									{pendingMessage?.trim() ? pendingMessage : "전송 중…"}
+								</p>
+								<Loader2 className="size-4 shrink-0 animate-spin text-muted-fg" />
 							</div>
 						) : null}
 					</div>
 
-					{/* 다음 질문 강조 */}
+					{/* 다음 질문 강조 (interrupt면 분석이 찾은 확인 질문으로 강조) */}
 					{nextQuestion ? (
-						<InfoCallout tone="info">
+						<InfoCallout tone={interrupt ? "warning" : "info"}>
+							{interrupt ? (
+								<p className="mb-1 text-xs font-bold text-amber-700">
+									확인이 필요해요
+								</p>
+							) : null}
 							<p className="text-[15px] font-medium text-ink">{nextQuestion}</p>
 						</InfoCallout>
 					) : null}
 
-					{/* 충돌 비교 카드 */}
-					{conflicts.length > 0 ? (
+					{/* 충돌 비교 카드: 입력값 vs 분석값 불일치만 빠른 선택으로 노출.
+					    이상점(note/question)은 위 확인 질문(interrupt)으로 처리됨 */}
+					{pickConflicts.length > 0 ? (
 						<div className="flex flex-col gap-3">
 							<p className="text-sm font-semibold text-ink">
-								입력값과 파일에서 추출한 값이 다릅니다. 사용할 값을 선택해
-								주세요.
+								입력하신 값과 분석 결과가 다릅니다. 사용할 값을 선택해 주세요.
 							</p>
-							{conflicts.map((c) => (
+							{pickConflicts.map((c) => (
 								<ConflictCard
 									key={c.field}
 									conflict={c}
@@ -400,6 +453,43 @@ function OnboardingChat() {
 					</Button>
 				) : null}
 			</div>
+
+			{/* 이어하기 / 새로 시작 모달 (문서 §2(A)) */}
+			<Dialog open={resumeOpen} onOpenChange={setResumeOpen}>
+				<DialogContent className="sm:max-w-md">
+					<DialogHeader>
+						<DialogTitle className="text-lg font-bold text-ink">
+							이전에 입력하던 내용이 있어요
+						</DialogTitle>
+						<DialogDescription className="text-sm text-body">
+							진행 중이던 온보딩이 저장되어 있습니다. 이어서 작성할까요? 새로
+							시작하면 저장된 내용은 사라집니다.
+						</DialogDescription>
+					</DialogHeader>
+					<div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+						<Button
+							variant="neutral-outline"
+							size="xl"
+							className="w-full sm:w-auto"
+							disabled={resetMutation.isPending}
+							onClick={() => resetMutation.mutate()}
+						>
+							{resetMutation.isPending ? (
+								<Loader2 className="size-4 animate-spin" />
+							) : null}
+							새로 시작
+						</Button>
+						<Button
+							variant="brand"
+							size="xl"
+							className="w-full sm:w-auto"
+							onClick={() => setResumeOpen(false)}
+						>
+							이어하기
+						</Button>
+					</div>
+				</DialogContent>
+			</Dialog>
 
 			{/* 병원 관리자 아이디/비밀번호 모달 */}
 			<AdminCredentialsDialog
@@ -507,8 +597,8 @@ function AdminCredentialsDialog({
 						병원 관리자 계정 설정
 					</DialogTitle>
 					<DialogDescription className="text-sm text-body">
-						병원 홈페이지를 관리할 관리자 비밀번호를 설정합니다.
-						아이디(login_id)는 대화에서 입력한 값({LOGIN_ID_HINT})이 사용됩니다.
+						병원 홈페이지를 관리할 관리자 비밀번호를 설정합니다. 아이디는
+						대화에서 입력한 값({LOGIN_ID_HINT})이 사용됩니다.
 					</DialogDescription>
 				</DialogHeader>
 
@@ -572,211 +662,6 @@ function AdminCredentialsDialog({
 	);
 }
 
-function CommitComplete({ result }: { result: CommitResult }) {
-	const payment = result.payment;
-	const slug = extractSlug(result);
-
-	// 병원 결제 필요 → 결제 단계
-	if (payment?.required === true) {
-		return <PaymentStep payment={payment} slug={slug} />;
-	}
-
-	// 프로필만 → 무료 완료 축하
-	return (
-		<SectionCard className="flex flex-col items-center gap-6 text-center">
-			<div className="flex size-16 items-center justify-center rounded-full bg-success-bg">
-				<PartyPopper className="size-8 text-success" />
-			</div>
-			<div className="flex flex-col gap-2">
-				<h1 className="text-2xl font-bold text-ink">
-					프로필 생성이 완료됐어요!
-				</h1>
-				<p className="text-[15px] leading-7 text-body-soft">
-					의사 프로필이 무료로 만들어졌습니다.
-					<br />
-					이제 본인 프로필 도메인에서 자유롭게 편집할 수 있어요.
-				</p>
-			</div>
-			<InfoCallout tone="success" className="w-full text-left">
-				<p className="text-sm">
-					프로필 관리:{" "}
-					<span className="font-semibold text-ink">
-						{slug ? `${slug}.kmadoc.com` : "<slug>.kmadoc.com"}
-					</span>
-				</p>
-			</InfoCallout>
-			<div className="flex w-full flex-col gap-3 sm:flex-row">
-				<Button
-					nativeButton={false}
-					render={<Link to="/doctor/preview" />}
-					variant="brand"
-					size="xl"
-					className="w-full"
-				>
-					공개 프로필 예시 보기
-				</Button>
-				<Button
-					nativeButton={false}
-					render={<Link to="/" />}
-					variant="neutral-outline"
-					size="xl"
-					className="w-full"
-				>
-					홈으로
-				</Button>
-			</div>
-		</SectionCard>
-	);
-}
-
-// ─────────────────────────────────────────────────────────────────────
-// 결제(Toss) 단계 — commit 후 병원이면 카드(빌링키) 등록으로 유도
-// ─────────────────────────────────────────────────────────────────────
-
-/** Toss SDK v2 standard 의 최소 인터페이스(좁은 타입). */
-type TossPaymentsInstance = {
-	payment: (options: { customerKey: string }) => {
-		requestBillingAuth: (options: {
-			method: "CARD";
-			successUrl: string;
-			failUrl: string;
-		}) => Promise<void>;
-	};
-};
-type TossPaymentsFactory = (clientKey: string) => TossPaymentsInstance;
-
-declare global {
-	interface Window {
-		TossPayments?: TossPaymentsFactory;
-	}
-}
-
-const TOSS_SDK_URL = "https://js.tosspayments.com/v2/standard";
-
-/** Toss SDK 동적 로드(CDN script). 새 의존성 추가 없이 window.TossPayments 사용. */
-function loadTossSdk(): Promise<TossPaymentsFactory> {
-	return new Promise((resolve, reject) => {
-		if (window.TossPayments) {
-			resolve(window.TossPayments);
-			return;
-		}
-		const existing = document.querySelector<HTMLScriptElement>(
-			`script[src="${TOSS_SDK_URL}"]`,
-		);
-		if (existing) {
-			existing.addEventListener("load", () => {
-				window.TossPayments
-					? resolve(window.TossPayments)
-					: reject(new Error("Toss SDK 로드 실패"));
-			});
-			existing.addEventListener("error", () =>
-				reject(new Error("Toss SDK 로드 실패")),
-			);
-			return;
-		}
-		const script = document.createElement("script");
-		script.src = TOSS_SDK_URL;
-		script.async = true;
-		script.onload = () =>
-			window.TossPayments
-				? resolve(window.TossPayments)
-				: reject(new Error("Toss SDK 로드 실패"));
-		script.onerror = () => reject(new Error("Toss SDK 로드 실패"));
-		document.head.appendChild(script);
-	});
-}
-
-function PaymentStep({
-	payment,
-	slug,
-}: {
-	payment: NonNullable<CommitResult["payment"]>;
-	slug: string | null;
-}) {
-	const [loading, setLoading] = useState(false);
-	const clientKey = payment.toss_client_key;
-	const customerKey = payment.customer_key;
-	const hospitalNo = payment.hospital_no;
-	const amount = payment.amount;
-
-	const ready = Boolean(clientKey && customerKey && hospitalNo != null);
-
-	async function handlePay() {
-		if (!ready || !clientKey || !customerKey || hospitalNo == null) return;
-		setLoading(true);
-		try {
-			const factory = await loadTossSdk();
-			const toss = factory(clientKey);
-			const origin = window.location.origin;
-			const successUrl = `${origin}/billing/callback?hospital_no=${hospitalNo}&customerKey=${encodeURIComponent(
-				customerKey,
-			)}`;
-			const failUrl = `${origin}/billing/callback?fail=1`;
-			await toss.payment({ customerKey }).requestBillingAuth({
-				method: "CARD",
-				successUrl,
-				failUrl,
-			});
-			// requestBillingAuth 성공 시 successUrl 로 리다이렉트되므로 이 아래는 보통 실행 안 됨.
-		} catch (err) {
-			toast.error(
-				err instanceof Error && err.message
-					? err.message
-					: "결제 모듈을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.",
-			);
-			setLoading(false);
-		}
-	}
-
-	return (
-		<SectionCard className="flex flex-col gap-6">
-			<div className="flex flex-col gap-2">
-				<SectionTitle>병원 홈페이지 결제</SectionTitle>
-				<p className="text-[15px] leading-7 text-body-soft">
-					프로필과 병원이 생성됐어요. 병원 홈페이지를 공개하려면 정기 결제용
-					카드를 등록해 주세요.
-				</p>
-			</div>
-
-			<div className="rounded-xl border border-line bg-app-bg p-5">
-				<div className="flex items-center justify-between">
-					<span className="text-sm text-body-soft">월 정기 결제</span>
-					<span className="text-lg font-bold text-ink">
-						{typeof amount === "number"
-							? `${amount.toLocaleString("ko-KR")}원 / 월`
-							: "월 정기 결제"}
-					</span>
-				</div>
-			</div>
-
-			{ready ? (
-				<Button
-					variant="brand"
-					size="cta"
-					className="w-full"
-					disabled={loading}
-					onClick={handlePay}
-				>
-					{loading ? <Loader2 className="size-5 animate-spin" /> : null}
-					카드 등록하고 결제하기
-				</Button>
-			) : (
-				<InfoCallout tone="warning">
-					<p className="text-sm">
-						결제 정보(클라이언트 키·고객 키·병원 번호)가 충분하지 않아 결제를
-						시작할 수 없습니다. 백엔드 응답을 확인해 주세요.
-					</p>
-				</InfoCallout>
-			)}
-
-			<p className="text-center text-sm text-muted-fg">
-				결제가 완료되면 병원 홈페이지가 공개됩니다
-				{slug ? ` (${slug}.kmaclinic.com)` : " (<slug>.kmaclinic.com)"}.
-			</p>
-		</SectionCard>
-	);
-}
-
 // ─────────────────────────────────────────────────────────────────────
 // 헬퍼
 // ─────────────────────────────────────────────────────────────────────
@@ -835,14 +720,3 @@ function formatValue(value: unknown): string {
 }
 
 /** commit 결과에서 slug 후보를 best-effort 추출(타입은 looseObject). */
-function extractSlug(result: CommitResult): string | null {
-	const profile = result.profile as Record<string, unknown> | null | undefined;
-	const hospital = result.hospital as
-		| Record<string, unknown>
-		| null
-		| undefined;
-	const candidate =
-		(hospital?.slug as string | undefined) ??
-		(profile?.slug as string | undefined);
-	return typeof candidate === "string" && candidate ? candidate : null;
-}

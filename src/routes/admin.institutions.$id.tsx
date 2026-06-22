@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import {
 	AlertCircle,
@@ -10,6 +10,8 @@ import {
 	RotateCcw,
 } from "lucide-react";
 import type * as React from "react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { AuthGuard } from "#/components/auth/auth-guard.tsx";
 import {
 	SectionCard,
@@ -18,7 +20,21 @@ import {
 import { AdminShell } from "#/components/layout/admin-shell.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
-import { type AdminSubscription, adminApi } from "#/lib/api/admin.ts";
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from "#/components/ui/table.tsx";
+import { Textarea } from "#/components/ui/textarea.tsx";
+import {
+	type AdminPayment,
+	type AdminSubscription,
+	type AdminSubscriptionDetail,
+	adminApi,
+} from "#/lib/api/admin.ts";
 import { toastApiError } from "#/lib/api-error-message.ts";
 import { cn } from "#/lib/utils.ts";
 
@@ -28,9 +44,23 @@ export const Route = createFileRoute("/admin/institutions/$id")({
 
 const STATUS_LABEL: Record<string, string> = {
 	active: "이용중",
+	past_due: "결제지연",
 	canceled: "해지",
 	expired: "만료",
-	past_due: "결제 지연",
+};
+
+const BILLING_CYCLE_LABEL: Record<string, string> = {
+	monthly: "월간",
+	annual: "연간",
+	one_time: "일시",
+};
+
+const PAYMENT_STATUS_LABEL: Record<string, string> = {
+	paid: "완료",
+	pending: "대기",
+	failed: "실패",
+	canceled: "취소",
+	refunded: "환불",
 };
 
 function str(v: unknown): string {
@@ -52,6 +82,14 @@ function formatAmount(value: unknown): string {
 	const n = Number(value);
 	if (Number.isNaN(n)) return str(value);
 	return `₩ ${n.toLocaleString("ko-KR")}`;
+}
+
+/** ISO 문자열 → ko-KR 날짜. 값 없으면 "-". */
+function formatDate(value: unknown): string {
+	if (value === undefined || value === null || value === "") return "-";
+	const d = new Date(String(value));
+	if (Number.isNaN(d.getTime())) return str(value);
+	return d.toLocaleDateString("ko-KR");
 }
 
 /** 읽기 전용 정보 필드 (라벨 + 입력형 박스) — 상세 페이지 전용 소품 */
@@ -100,20 +138,134 @@ function Breadcrumb({ id }: { id: string }) {
 	);
 }
 
+/** 결제 이력 테이블(문서 §10.2 payments[]). */
+function PaymentsTable({ payments }: { payments: AdminPayment[] }) {
+	return (
+		<div className="overflow-x-auto">
+			<Table className="min-w-[760px]">
+				<TableHeader>
+					<TableRow className="border-t-2 border-t-ink bg-[#eef2f7] hover:bg-[#eef2f7]">
+						<TableHead className="text-[15px] font-medium text-ink">
+							주문번호
+						</TableHead>
+						<TableHead className="text-[15px] font-medium text-ink">
+							금액
+						</TableHead>
+						<TableHead className="text-[15px] font-medium text-ink">
+							결제수단
+						</TableHead>
+						<TableHead className="text-[15px] font-medium text-ink">
+							상태
+						</TableHead>
+						<TableHead className="text-[15px] font-medium text-ink">
+							결제일
+						</TableHead>
+						<TableHead className="text-[15px] font-medium text-ink">
+							실패사유
+						</TableHead>
+					</TableRow>
+				</TableHeader>
+				<TableBody>
+					{payments.length === 0 ? (
+						<TableRow className="hover:bg-transparent">
+							<TableCell
+								colSpan={6}
+								className="py-10 text-center text-[15px] text-body-soft"
+							>
+								결제 이력이 없습니다.
+							</TableCell>
+						</TableRow>
+					) : (
+						payments.map((p, idx) => {
+							const statusValue = str(p.status);
+							const failure =
+								str(p.failure_reason) !== "-"
+									? str(p.failure_reason)
+									: str(p.failure_code);
+							return (
+								<TableRow
+									key={String(p.no ?? p.order_id ?? `pay-${idx}`)}
+									className="border-b-line-strong/50"
+								>
+									<TableCell className="text-body">{str(p.order_id)}</TableCell>
+									<TableCell className="text-[15px] text-ink">
+										{formatAmount(p.amount)}
+									</TableCell>
+									<TableCell className="text-body">{str(p.method)}</TableCell>
+									<TableCell>
+										<Badge
+											size="lg"
+											variant={
+												statusValue === "paid"
+													? "success"
+													: statusValue === "failed"
+														? "destructive"
+														: statusValue === "refunded" ||
+																statusValue === "canceled"
+															? "soft"
+															: "warning"
+											}
+											className="rounded-full"
+										>
+											{PAYMENT_STATUS_LABEL[statusValue] ?? statusValue}
+										</Badge>
+									</TableCell>
+									<TableCell className="text-body">
+										{formatDate(p.paid_at)}
+									</TableCell>
+									<TableCell className="text-body">{failure}</TableCell>
+								</TableRow>
+							);
+						})
+					)}
+				</TableBody>
+			</Table>
+		</div>
+	);
+}
+
 function InstitutionDetailPage() {
 	const { id } = useParams({ from: "/admin/institutions/$id" });
+	const qc = useQueryClient();
 	const no = Number(id);
 	const validNo = Number.isFinite(no) && no > 0;
 
-	const query = useQuery<AdminSubscription>({
+	const query = useQuery<AdminSubscriptionDetail>({
 		queryKey: ["admin", "subscription", no],
 		queryFn: () => adminApi.getSubscription(no),
 		enabled: validNo,
 	});
 
-	const data = query.data;
-	const statusValue = data ? str(getField(data, ["status"])) : "-";
+	const subscription = query.data?.subscription;
+	const payments = query.data?.payments ?? [];
+
+	const [memo, setMemo] = useState("");
+	// 데이터 로드 시 메모 초기값 동기화(편집 중 갱신 충돌 회피 위해 fetchStatus idle일 때만).
+	useEffect(() => {
+		if (subscription)
+			setMemo(
+				str(subscription.memo) === "-" ? "" : String(subscription.memo ?? ""),
+			);
+	}, [subscription]);
+
+	const memoMutation = useMutation({
+		mutationFn: (value: string) => adminApi.updateMemo(no, value),
+		onSuccess: () => {
+			toast.success("메모를 저장했습니다.");
+			qc.invalidateQueries({ queryKey: ["admin", "subscription", no] });
+			qc.invalidateQueries({ queryKey: ["admin", "subscriptions"] });
+		},
+		onError: (err) => toastApiError(err),
+	});
+
+	const statusValue = subscription
+		? str(getField(subscription, ["status"]))
+		: "-";
 	const statusLabel = STATUS_LABEL[statusValue] ?? statusValue;
+	const cycleValue = subscription
+		? str(getField(subscription, ["billing_cycle"]))
+		: "-";
+	const cycleLabel = BILLING_CYCLE_LABEL[cycleValue] ?? cycleValue;
 
 	return (
 		<AdminShell active="institutions">
@@ -197,26 +349,23 @@ function InstitutionDetailPage() {
 							<div className="grid gap-6 p-6 sm:grid-cols-3 sm:p-8">
 								<ReadField
 									label="요양기관명 (병원명)"
-									value={str(
-										getField(data, ["hospital_name", "name", "title"]),
-									)}
+									value={str(getField(subscription, ["hospital_name"]))}
+								/>
+								<ReadField
+									label="대표자"
+									value={str(getField(subscription, ["owner_name"]))}
+								/>
+								<ReadField
+									label="지역"
+									value={str(getField(subscription, ["hospital_region"]))}
 								/>
 								<ReadField
 									label="병원 번호"
-									value={str(getField(data, ["hospital_no"]))}
+									value={str(getField(subscription, ["hospital_no"]))}
 								/>
 								<ReadField
 									label="구독 번호"
-									value={str(getField(data, ["no", "id"]))}
-								/>
-								<ReadField
-									label="등록된 주소"
-									value={str(getField(data, ["address", "location"]))}
-									className="sm:col-span-2"
-								/>
-								<ReadField
-									label="담당자 연락처"
-									value={str(getField(data, ["phone", "manager_phone"]))}
+									value={str(getField(subscription, ["no"]))}
 								/>
 							</div>
 						</SectionCard>
@@ -236,10 +385,11 @@ function InstitutionDetailPage() {
 											variant={
 												statusValue === "active"
 													? "success"
-													: statusValue === "expired" ||
-															statusValue === "past_due"
+													: statusValue === "expired"
 														? "destructive"
-														: "warning"
+														: statusValue === "past_due"
+															? "warning"
+															: "soft"
 											}
 											className="rounded-full"
 										>
@@ -247,30 +397,79 @@ function InstitutionDetailPage() {
 										</Badge>
 									}
 								/>
+								<ReadField label="구독 유형" value={cycleLabel} />
 								<ReadField
 									label="결제 금액"
-									value={formatAmount(
-										getField(data, ["amount", "price", "last_amount"]),
+									value={formatAmount(getField(subscription, ["amount"]))}
+								/>
+								<ReadField
+									label="가입일"
+									value={formatDate(getField(subscription, ["created_at"]))}
+								/>
+								<ReadField
+									label="갱신 예정일"
+									value={formatDate(
+										getField(subscription, [
+											"current_period_end",
+											"next_billing_at",
+										]),
 									)}
-								/>
-								<ReadField
-									label="구독 유형"
-									value={str(getField(data, ["plan", "type", "interval"]))}
-								/>
-								<ReadField
-									label="시작일"
-									value={str(getField(data, ["started_at", "created_at"]))}
 								/>
 								<ReadField
 									label="다음 결제일"
-									value={str(
-										getField(data, ["next_payment_at", "current_period_end"]),
+									value={formatDate(
+										getField(subscription, ["next_billing_at"]),
 									)}
 								/>
 								<ReadField
-									label="만료일"
-									value={str(getField(data, ["expires_at", "ends_at"]))}
+									label="최근 결제수단"
+									value={str(getField(subscription, ["last_payment_method"]))}
 								/>
+								<ReadField
+									label="최근 결제금액"
+									value={formatAmount(
+										getField(subscription, ["last_payment_amount"]),
+									)}
+								/>
+								<ReadField
+									label="최근 결제일"
+									value={formatDate(getField(subscription, ["last_paid_at"]))}
+								/>
+							</div>
+						</SectionCard>
+
+						<SectionCard className="p-0">
+							<div className="border-b border-line-strong/40 bg-[#eef2f7] px-6 py-5 sm:px-8">
+								<h2 className="text-[18px] font-bold text-ink">운영자 메모</h2>
+							</div>
+							<div className="flex flex-col gap-4 p-6 sm:p-8">
+								<Textarea
+									value={memo}
+									onChange={(e) => setMemo(e.target.value)}
+									placeholder="운영 메모를 입력하세요."
+									className="min-h-28 rounded-lg border-line-soft bg-app-bg text-[15px]"
+								/>
+								<div className="flex justify-end">
+									<Button
+										variant="brand"
+										disabled={memoMutation.isPending}
+										onClick={() => memoMutation.mutate(memo)}
+									>
+										{memoMutation.isPending ? (
+											<Loader2 className="size-4 animate-spin" />
+										) : null}
+										메모 저장
+									</Button>
+								</div>
+							</div>
+						</SectionCard>
+
+						<SectionCard className="p-0">
+							<div className="border-b border-line-strong/40 bg-[#eef2f7] px-6 py-5 sm:px-8">
+								<h2 className="text-[18px] font-bold text-ink">결제 이력</h2>
+							</div>
+							<div className="p-6 sm:p-8">
+								<PaymentsTable payments={payments} />
 							</div>
 						</SectionCard>
 					</>

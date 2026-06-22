@@ -39,9 +39,17 @@ export function listBilling() {
 	return http.get<BillingKey[]>("billing");
 }
 
-/** 병원 구독 생성 + 첫 결제 → active. */
-export function createSubscription(hospitalNo: number) {
-	return http.post<Subscription>("subscription", { hospital_no: hospitalNo });
+/** 병원 구독 생성 + 첫 결제 → active. (문서 §8.7) */
+export function createSubscription(
+	hospitalNo: number,
+	opts: { marketing_consent?: boolean } = {},
+) {
+	return http.post<Subscription>("subscription", {
+		hospital_no: hospitalNo,
+		...(opts.marketing_consent !== undefined
+			? { marketing_consent: opts.marketing_consent }
+			: {}),
+	});
 }
 
 export function listSubscriptions(status?: string) {

@@ -1,8 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useStore } from "@tanstack/react-store";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
-	type Account,
+	type AccountMe,
 	bootstrapSession,
 	fetchAccount,
 	logout as logoutRequest,
@@ -21,6 +21,7 @@ let bootstrapPromise: Promise<boolean> | null = null;
 export function useSession() {
 	const { accessToken, refreshToken } = useStore(authStore);
 	const [ready, setReady] = useState(bootstrapped);
+	const queryClient = useQueryClient();
 
 	useEffect(() => {
 		if (bootstrapped) {
@@ -35,7 +36,7 @@ export function useSession() {
 
 	const hasToken = Boolean(accessToken || refreshToken);
 
-	const query = useQuery<Account>({
+	const query = useQuery<AccountMe>({
 		queryKey: ["account", "me"],
 		queryFn: fetchAccount,
 		enabled: ready && hasToken,
@@ -45,13 +46,20 @@ export function useSession() {
 
 	const account = query.data ?? null;
 
+	// 로그아웃: 서버 refresh 토큰 폐기 + 토큰/계정 캐시 제거(UI 즉시 로그아웃 반영).
+	const logout = useCallback(async () => {
+		await logoutRequest();
+		queryClient.removeQueries({ queryKey: ["account", "me"] });
+	}, [queryClient]);
+
 	return {
 		account,
+		user: account?.user ?? null,
 		isLoading: !ready || (hasToken && query.isLoading),
 		isAuthenticated: Boolean(account),
-		isAdmin: (account?.level ?? 0) >= 9,
+		isAdmin: (account?.user?.level ?? 0) >= 9,
 		hasToken,
-		logout: logoutRequest,
+		logout,
 		refetch: query.refetch,
 	};
 }

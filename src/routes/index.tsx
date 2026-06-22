@@ -39,7 +39,7 @@ function HomePage() {
 /* ─────────────────────────── 헤더 (세션 인식) ─────────────────────────── */
 
 function HomeHeader() {
-	const { isAuthenticated, isAdmin, account, logout } = useSession();
+	const { isAuthenticated, isAdmin, user, logout } = useSession();
 
 	return (
 		<header className="sticky top-0 z-40 w-full border-b border-line bg-surface/90 backdrop-blur">
@@ -80,12 +80,17 @@ function HomeHeader() {
 							>
 								온보딩 이어가기
 							</Button>
+							{user?.name ? (
+								<span className="hidden text-sm font-medium text-ink sm:inline">
+									{user.name}님
+								</span>
+							) : null}
 							<button
 								type="button"
 								onClick={() => logout()}
-								className="hidden text-sm text-muted-fg transition-colors hover:text-ink sm:inline"
+								className="hidden cursor-pointer text-sm text-muted-fg transition-colors hover:text-ink sm:inline"
 							>
-								{account?.name ? `${account.name} · 로그아웃` : "로그아웃"}
+								로그아웃
 							</button>
 						</>
 					) : (

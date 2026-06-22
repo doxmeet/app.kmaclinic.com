@@ -38,7 +38,8 @@ export class ApiError extends Error {
 
 const baseOptions = {
 	prefix: env.VITE_API_URL,
-	timeout: 20_000,
+	// 기본 60초. AI(온보딩) 호출처럼 더 긴 작업은 호출부에서 per-call timeout으로 늘린다.
+	timeout: 60_000,
 } satisfies Options;
 
 /** 모든 응답에서 토큰 헤더가 있으면 저장(로테이션 투명 처리). ky v2 afterResponse: ({ response }) */
@@ -152,26 +153,41 @@ async function run<T>(thunk: () => Promise<unknown>, authed: boolean) {
 
 type Json = Record<string, unknown> | unknown[];
 
+/** per-call 옵션. 느린(AI) 엔드포인트는 `timeout`을 늘리거나 false(무제한)로. */
+type CallOpts = { timeout?: number | false };
+
 /** 인증 클라이언트 helper (data 언랩 + 401 자동 refresh + ApiError). */
 export const http = {
-	get: <T = unknown>(path: string, searchParams?: Options["searchParams"]) =>
-		run<T>(() => api.get(path, { searchParams }), true),
-	post: <T = unknown>(path: string, json?: Json) =>
-		run<T>(() => api.post(path, json ? { json } : {}), true),
-	patch: <T = unknown>(path: string, json?: Json) =>
-		run<T>(() => api.patch(path, json ? { json } : {}), true),
-	put: <T = unknown>(path: string, json?: Json) =>
-		run<T>(() => api.put(path, json ? { json } : {}), true),
-	del: <T = unknown>(path: string, json?: Json) =>
-		run<T>(() => api.delete(path, json ? { json } : {}), true),
+	get: <T = unknown>(
+		path: string,
+		searchParams?: Options["searchParams"],
+		opts?: CallOpts,
+	) => run<T>(() => api.get(path, { searchParams, ...opts }), true),
+	post: <T = unknown>(path: string, json?: Json, opts?: CallOpts) =>
+		run<T>(() => api.post(path, { ...(json ? { json } : {}), ...opts }), true),
+	patch: <T = unknown>(path: string, json?: Json, opts?: CallOpts) =>
+		run<T>(() => api.patch(path, { ...(json ? { json } : {}), ...opts }), true),
+	put: <T = unknown>(path: string, json?: Json, opts?: CallOpts) =>
+		run<T>(() => api.put(path, { ...(json ? { json } : {}), ...opts }), true),
+	del: <T = unknown>(path: string, json?: Json, opts?: CallOpts) =>
+		run<T>(
+			() => api.delete(path, { ...(json ? { json } : {}), ...opts }),
+			true,
+		),
 };
 
 /** 공개(비인증) 클라이언트 helper. */
 export const publicHttp = {
-	get: <T = unknown>(path: string, searchParams?: Options["searchParams"]) =>
-		run<T>(() => publicApi.get(path, { searchParams }), false),
-	post: <T = unknown>(path: string, json?: Json) =>
-		run<T>(() => publicApi.post(path, json ? { json } : {}), false),
+	get: <T = unknown>(
+		path: string,
+		searchParams?: Options["searchParams"],
+		opts?: CallOpts,
+	) => run<T>(() => publicApi.get(path, { searchParams, ...opts }), false),
+	post: <T = unknown>(path: string, json?: Json, opts?: CallOpts) =>
+		run<T>(
+			() => publicApi.post(path, { ...(json ? { json } : {}), ...opts }),
+			false,
+		),
 };
 
 /** zod로 신뢰 경계 검증. */

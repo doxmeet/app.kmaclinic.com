@@ -20,6 +20,13 @@ import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Input } from "#/components/ui/input.tsx";
 import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "#/components/ui/select.tsx";
+import {
 	Table,
 	TableBody,
 	TableCell,
@@ -31,6 +38,7 @@ import {
 	type AdminSubscription,
 	adminApi,
 	type Paginated,
+	type SubscriptionFilters,
 } from "#/lib/api/admin.ts";
 import { toastApiError } from "#/lib/api-error-message.ts";
 
@@ -41,14 +49,23 @@ export const Route = createFileRoute("/admin/institutions/")({
 const PAGE_SIZE = 10;
 
 /**
- * 구독 상태 필터(문서 §3 구독 상태값).
+ * 구독 상태 필터(문서 §10.2 status: active/past_due/canceled/expired).
  * "전체"는 status 쿼리 미전송.
  */
 const STATUS_FILTERS = [
 	{ value: "", label: "전체" },
 	{ value: "active", label: "이용중" },
+	{ value: "past_due", label: "결제지연" },
 	{ value: "canceled", label: "해지" },
 	{ value: "expired", label: "만료" },
+] as const;
+
+/** 결제 주기 필터(문서 §10.2 billing_cycle: monthly/annual/one_time). */
+const BILLING_CYCLE_FILTERS = [
+	{ value: "", label: "전체" },
+	{ value: "monthly", label: "월간" },
+	{ value: "annual", label: "연간" },
+	{ value: "one_time", label: "일시" },
 ] as const;
 
 const STATUS_BADGE: Record<
@@ -56,12 +73,10 @@ const STATUS_BADGE: Record<
 	{ label: string; variant: "success" | "warning" | "destructive" | "soft" }
 > = {
 	active: { label: "이용중", variant: "success" },
-	canceled: { label: "해지", variant: "warning" },
+	past_due: { label: "결제지연", variant: "warning" },
+	canceled: { label: "해지", variant: "soft" },
 	expired: { label: "만료", variant: "destructive" },
 };
-
-/** 결제 방법 필터·엑셀 다운로드·메모 편집은 문서상 미구현 → UI만 노출하고 비활성. */
-const PAYMENT_FILTERS = ["전체", "토스페이", "계좌이체", "신용카드"] as const;
 
 function str(v: unknown): string {
 	if (v === null || v === undefined || v === "") return "-";
@@ -76,11 +91,12 @@ function getField(row: AdminSubscription, keys: string[]): unknown {
 	return undefined;
 }
 
-function formatAmount(value: unknown): string {
+/** ISO 문자열 → ko-KR 날짜. 값 없으면 "-". */
+function formatDate(value: unknown): string {
 	if (value === undefined || value === null || value === "") return "-";
-	const n = Number(value);
-	if (Number.isNaN(n)) return str(value);
-	return `₩ ${n.toLocaleString("ko-KR")}`;
+	const d = new Date(String(value));
+	if (Number.isNaN(d.getTime())) return str(value);
+	return d.toLocaleDateString("ko-KR");
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -167,7 +183,7 @@ function Pagination({
 function StateRow({ children }: { children: React.ReactNode }) {
 	return (
 		<TableRow className="hover:bg-transparent">
-			<TableCell colSpan={6} className="py-16">
+			<TableCell colSpan={8} className="py-16">
 				<div className="flex flex-col items-center justify-center gap-3 text-center">
 					{children}
 				</div>
@@ -181,52 +197,107 @@ function InstitutionsPage() {
 	const [keywordInput, setKeywordInput] = useState("");
 	const [statusInput, setStatusInput] =
 		useState<(typeof STATUS_FILTERS)[number]["value"]>("");
+	const [billingInput, setBillingInput] =
+		useState<(typeof BILLING_CYCLE_FILTERS)[number]["value"]>("");
+	const [dateFromInput, setDateFromInput] = useState("");
+	const [dateToInput, setDateToInput] = useState("");
 
 	// 실제 쿼리에 적용된 상태
 	const [keyword, setKeyword] = useState("");
 	const [status, setStatus] =
 		useState<(typeof STATUS_FILTERS)[number]["value"]>("");
+	const [billingCycle, setBillingCycle] =
+		useState<(typeof BILLING_CYCLE_FILTERS)[number]["value"]>("");
+	const [dateFrom, setDateFrom] = useState("");
+	const [dateTo, setDateTo] = useState("");
 	const [page, setPage] = useState(1);
 
+	const [exporting, setExporting] = useState(false);
+
+	// 서버 필터(문서 §10.2). 빈 값은 전송하지 않음(adminApi.qs가 제거).
+	const filters: SubscriptionFilters = {
+		status: status || undefined,
+		billing_cycle: billingCycle || undefined,
+		keyword: keyword || undefined,
+		date_from: dateFrom || undefined,
+		date_to: dateTo || undefined,
+		page,
+	};
+
 	const query = useQuery<Paginated<AdminSubscription>>({
-		queryKey: ["admin", "subscriptions", { status, page }],
-		queryFn: () =>
-			adminApi.listSubscriptions({ status: status || undefined, page }),
+		queryKey: [
+			"admin",
+			"subscriptions",
+			{ status, billingCycle, keyword, dateFrom, dateTo, page },
+		],
+		queryFn: () => adminApi.listSubscriptions(filters),
 	});
 
 	const items = query.data?.items ?? [];
-	// 문서상 키워드 전용 엔드포인트가 없어 클라이언트 측에서 보조 필터링.
-	const filtered = keyword
-		? items.filter((row) => {
-				const name = str(
-					getField(row, ["hospital_name", "name", "title"]),
-				).toLowerCase();
-				return name.includes(keyword.toLowerCase());
-			})
-		: items;
 
 	const pagination = query.data?.pagination;
-	const total = pagination?.total ?? filtered.length;
+	const total = pagination?.total ?? items.length;
 	const limit = pagination?.limit ?? PAGE_SIZE;
 	const totalPages = Math.max(1, Math.ceil(total / limit));
 
 	const runSearch = () => {
 		setKeyword(keywordInput.trim());
 		setStatus(statusInput);
+		setBillingCycle(billingInput);
+		setDateFrom(dateFromInput);
+		setDateTo(dateToInput);
 		setPage(1);
 	};
 
 	const resetFilters = () => {
 		setKeywordInput("");
 		setStatusInput("");
+		setBillingInput("");
+		setDateFromInput("");
+		setDateToInput("");
 		setKeyword("");
 		setStatus("");
+		setBillingCycle("");
+		setDateFrom("");
+		setDateTo("");
 		setPage(1);
+	};
+
+	// 현재 적용된 필터로 CSV 내보내기(blob 다운로드, Authorization 헤더 자동).
+	const handleExport = async () => {
+		setExporting(true);
+		try {
+			const blob = await adminApi.exportSubscriptionsCsv({
+				status: status || undefined,
+				billing_cycle: billingCycle || undefined,
+				keyword: keyword || undefined,
+				date_from: dateFrom || undefined,
+				date_to: dateTo || undefined,
+			});
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement("a");
+			a.href = url;
+			a.download = "subscriptions.csv";
+			document.body.appendChild(a);
+			a.click();
+			a.remove();
+			URL.revokeObjectURL(url);
+		} catch (err) {
+			toastApiError(err);
+		} finally {
+			setExporting(false);
+		}
 	};
 
 	const activeFilters = [
 		status ? STATUS_FILTERS.find((f) => f.value === status)?.label : null,
+		billingCycle
+			? BILLING_CYCLE_FILTERS.find((f) => f.value === billingCycle)?.label
+			: null,
 		keyword ? `검색: ${keyword}` : null,
+		dateFrom || dateTo
+			? `가입일: ${dateFrom || "처음"}~${dateTo || "끝"}`
+			: null,
 	].filter(Boolean) as string[];
 
 	const rangeStart = total === 0 ? 0 : (page - 1) * limit + 1;
@@ -280,35 +351,69 @@ function InstitutionsPage() {
 						</div>
 
 						<div className="flex flex-wrap items-center gap-x-5 gap-y-3">
-							<span className="text-[15px] text-ink">결제 방법</span>
-							<div className="flex flex-wrap items-center gap-2">
-								{PAYMENT_FILTERS.map((label) => (
-									<Button
-										key={label}
-										type="button"
-										variant="neutral-outline"
-										disabled
-										title="준비중"
-										className="h-12 rounded-md px-5 text-[15px] font-medium"
-									>
-										{label}
-									</Button>
-								))}
-								<Badge variant="secondary" className="rounded-full">
-									준비중
-								</Badge>
+							<span className="text-[15px] text-ink">구독 유형</span>
+							<Select
+								value={billingInput}
+								onValueChange={(v) =>
+									setBillingInput(
+										v as (typeof BILLING_CYCLE_FILTERS)[number]["value"],
+									)
+								}
+							>
+								<SelectTrigger
+									size="lg"
+									className="w-40 border-body-soft bg-surface text-[15px]"
+								>
+									<SelectValue placeholder="전체" />
+								</SelectTrigger>
+								<SelectContent>
+									{BILLING_CYCLE_FILTERS.map((filter) => (
+										<SelectItem
+											key={filter.value || "all"}
+											value={filter.value}
+										>
+											{filter.label}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
+
+						<div className="flex flex-wrap items-end gap-x-5 gap-y-3">
+							<div className="flex flex-col gap-2">
+								<span className="text-[15px] text-ink">가입일</span>
+								<div className="flex items-center gap-2">
+									<Input
+										type="date"
+										value={dateFromInput}
+										max={dateToInput || undefined}
+										onChange={(e) => setDateFromInput(e.target.value)}
+										className="h-12 w-44 rounded-md border-body-soft bg-surface text-[15px]"
+									/>
+									<span className="text-muted-fg">~</span>
+									<Input
+										type="date"
+										value={dateToInput}
+										min={dateFromInput || undefined}
+										onChange={(e) => setDateToInput(e.target.value)}
+										className="h-12 w-44 rounded-md border-body-soft bg-surface text-[15px]"
+									/>
+								</div>
 							</div>
-							<div className="relative">
-								<Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-fg" />
-								<Input
-									value={keywordInput}
-									onChange={(e) => setKeywordInput(e.target.value)}
-									onKeyDown={(e) => {
-										if (e.key === "Enter") runSearch();
-									}}
-									placeholder="요양기관명을 검색하세요."
-									className="h-12 w-72 rounded-md border-body-soft bg-surface pl-9 text-[15px]"
-								/>
+							<div className="flex flex-col gap-2">
+								<span className="text-[15px] text-ink">검색어</span>
+								<div className="relative">
+									<Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-fg" />
+									<Input
+										value={keywordInput}
+										onChange={(e) => setKeywordInput(e.target.value)}
+										onKeyDown={(e) => {
+											if (e.key === "Enter") runSearch();
+										}}
+										placeholder="병원명 또는 대표자를 검색하세요."
+										className="h-12 w-72 rounded-md border-body-soft bg-surface pl-9 text-[15px]"
+									/>
+								</div>
 							</div>
 							<Button
 								variant="brand"
@@ -355,12 +460,16 @@ function InstitutionsPage() {
 						</p>
 						<Button
 							variant="brand-outline"
-							disabled
-							title="준비중"
+							disabled={exporting}
+							onClick={handleExport}
 							className="h-10 rounded-md px-4 text-[15px] font-medium"
 						>
-							<Download className="size-4" />
-							엑셀 다운로드 (준비중)
+							{exporting ? (
+								<Loader2 className="size-4 animate-spin" />
+							) : (
+								<Download className="size-4" />
+							)}
+							CSV 내보내기
 						</Button>
 					</div>
 
@@ -370,24 +479,27 @@ function InstitutionsPage() {
 								<TableRow className="border-t-2 border-t-ink bg-[#eef2f7] hover:bg-[#eef2f7]">
 									<TableHead className="text-[17px] font-medium text-ink">
 										<span className="inline-flex items-center gap-1">
-											NO
-											<ChevronsUpDown className="size-3.5 text-muted-fg" />
-										</span>
-									</TableHead>
-									<TableHead className="text-[17px] font-medium text-ink">
-										<span className="inline-flex items-center gap-1">
 											요양기관명
 											<ChevronsUpDown className="size-3.5 text-muted-fg" />
 										</span>
 									</TableHead>
 									<TableHead className="text-[17px] font-medium text-ink">
+										대표자
+									</TableHead>
+									<TableHead className="text-[17px] font-medium text-ink">
 										구독 상태
 									</TableHead>
 									<TableHead className="text-[17px] font-medium text-ink">
-										결제 금액
+										결제수단
 									</TableHead>
 									<TableHead className="text-[17px] font-medium text-ink">
-										메모 (비고)
+										갱신예정일
+									</TableHead>
+									<TableHead className="text-[17px] font-medium text-ink">
+										가입일
+									</TableHead>
+									<TableHead className="text-[17px] font-medium text-ink">
+										메모
 									</TableHead>
 									<TableHead className="text-center text-[15px] font-medium text-ink">
 										관리
@@ -420,7 +532,7 @@ function InstitutionsPage() {
 											다시 시도
 										</Button>
 									</StateRow>
-								) : filtered.length === 0 ? (
+								) : items.length === 0 ? (
 									<StateRow>
 										<Inbox className="size-7 text-muted-fg" />
 										<p className="text-[15px] text-body-soft">
@@ -428,56 +540,48 @@ function InstitutionsPage() {
 										</p>
 									</StateRow>
 								) : (
-									filtered.map((row, idx) => {
-										const no = getField(row, ["no", "id"]);
-										const subscriptionNo = getField(row, ["no", "id"]);
-										const name = str(
-											getField(row, ["hospital_name", "name", "title"]),
-										);
-										const location = str(
-											getField(row, ["address", "location", "region"]),
-										);
+									items.map((row, idx) => {
+										const subscriptionNo = getField(row, ["no"]);
+										const name = str(getField(row, ["hospital_name"]));
+										const region = str(getField(row, ["hospital_region"]));
+										const owner = str(getField(row, ["owner_name"]));
 										const statusValue = str(getField(row, ["status"]));
-										const amount = formatAmount(
-											getField(row, ["amount", "price", "last_amount"]),
+										const method = str(getField(row, ["last_payment_method"]));
+										const renewAt = formatDate(
+											getField(row, ["current_period_end", "next_billing_at"]),
 										);
-										const memo = str(getField(row, ["memo", "note"]));
+										const createdAt = formatDate(getField(row, ["created_at"]));
+										const memo = str(getField(row, ["memo"]));
 										const rowKey = subscriptionNo ?? `row-${idx}`;
 										return (
 											<TableRow
 												key={String(rowKey)}
 												className="border-b-line-strong/50"
 											>
-												<TableCell className="text-body-soft">
-													{str(no)}
-												</TableCell>
 												<TableCell>
 													<div className="flex flex-col gap-0.5">
 														<span className="text-[15px] text-ink">{name}</span>
-														{location !== "-" ? (
+														{region !== "-" ? (
 															<span className="text-[13px] text-muted-fg">
-																{location}
+																{region}
 															</span>
 														) : null}
 													</div>
 												</TableCell>
+												<TableCell className="text-[15px] text-ink">
+													{owner}
+												</TableCell>
 												<TableCell>
 													<StatusBadge status={statusValue} />
 												</TableCell>
-												<TableCell className="text-[17px] text-ink">
-													{amount}
+												<TableCell className="text-body">{method}</TableCell>
+												<TableCell className="text-body">{renewAt}</TableCell>
+												<TableCell className="text-body">{createdAt}</TableCell>
+												<TableCell className="max-w-[200px] truncate text-body">
+													{memo}
 												</TableCell>
-												<TableCell className="text-body">{memo}</TableCell>
 												<TableCell>
 													<div className="flex items-center justify-center gap-2">
-														<Button
-															variant="neutral-outline"
-															size="sm"
-															disabled
-															title="준비중"
-														>
-															삭제
-														</Button>
 														{subscriptionNo !== undefined ? (
 															<Button
 																render={

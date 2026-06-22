@@ -13,16 +13,46 @@ import { env } from "#/lib/env.ts";
  * 토큰은 응답 헤더(KCLINIC-*)로 내려오며 api 레이어의 captureHook이 저장.
  */
 
-export type Account = {
-	no?: number;
-	email?: string | null;
+/** GET /account/me 응답(문서 §7.1) — { user, profile, hospitals }. */
+export type AccountUser = {
+	no: number;
+	id?: string;
 	name?: string | null;
 	phone?: string | null;
-	level?: number;
+	hospital_name?: string | null;
+	level: number;
+	is_withdrawn?: boolean;
+	created_at?: string;
 	[key: string]: unknown;
 };
 
-/** Doxmeet code → 토큰 교환(로그인 완료). */
+export type AccountProfile = {
+	no?: number;
+	slug?: string | null;
+	is_published?: boolean;
+	completion_percent?: number;
+	[key: string]: unknown;
+} | null;
+
+export type AccountHospital = {
+	no: number;
+	slug?: string | null;
+	name?: string;
+	is_published?: boolean;
+	subscription_no?: number | null;
+	subscription_status?: "active" | "past_due" | string | null;
+	next_billing_at?: string | null;
+	current_period_end?: string | null;
+	[key: string]: unknown;
+};
+
+export type AccountMe = {
+	user: AccountUser;
+	profile: AccountProfile;
+	hospitals: AccountHospital[];
+};
+
+/** Doxmeet code → 토큰 교환(로그인 완료). 백엔드 엔드포인트는 POST /oauth/callback. */
 export async function exchangeOAuthCode(
 	code: string,
 	site = "doxmeet",
@@ -31,12 +61,15 @@ export async function exchangeOAuthCode(
 }
 
 /** 내 계정 + 프로필 요약 + 소유 병원/구독 상태. */
-export async function fetchAccount(): Promise<Account> {
-	return http.get<Account>("account/me");
+export async function fetchAccount(): Promise<AccountMe> {
+	return http.get<AccountMe>("account/me");
 }
 
-export async function updatePhone(phone: string): Promise<Account> {
-	return http.patch<Account>("account/me", { phone });
+/** 전화번호 수정 → { user: { no, phone } }. */
+export async function updatePhone(
+	phone: string,
+): Promise<{ user: Partial<AccountUser> }> {
+	return http.patch<{ user: Partial<AccountUser> }>("account/me", { phone });
 }
 
 /** 새로고침 후 부트스트랩: refresh 토큰이 있으면 access를 갱신. */
@@ -87,12 +120,13 @@ export function startDoxmeetLogin(): boolean {
 	const redirectUri =
 		env.VITE_OAUTH_REDIRECT_URI ??
 		(typeof window !== "undefined"
-			? `${window.location.origin}/oauth/callback`
+			? `${window.location.origin}/oauth/doxmeet/callback`
 			: "");
 	const url = new URL(authorize);
 	url.searchParams.set("client_id", clientId);
 	url.searchParams.set("redirect_uri", redirectUri);
 	url.searchParams.set("response_type", "code");
+	url.searchParams.set("scope", env.VITE_DOXMEET_SCOPE ?? "read:user");
 	if (typeof window !== "undefined") window.location.href = url.toString();
 	return true;
 }

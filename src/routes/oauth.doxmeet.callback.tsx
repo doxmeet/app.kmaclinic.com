@@ -2,10 +2,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { toastApiError } from "#/lib/api-error-message.ts";
+import { apiErrorMessage, toastApiError } from "#/lib/api-error-message.ts";
 import { exchangeOAuthCode } from "#/lib/auth/session.ts";
 
-export const Route = createFileRoute("/oauth/callback")({
+export const Route = createFileRoute("/oauth/doxmeet/callback")({
 	component: OAuthCallbackPage,
 	validateSearch: (search: Record<string, unknown>) => ({
 		code: typeof search.code === "string" ? search.code : undefined,
@@ -19,6 +19,7 @@ function OAuthCallbackPage() {
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
 	const [failed, setFailed] = useState(false);
+	const [reason, setReason] = useState<string | null>(null);
 	const ran = useRef(false);
 
 	useEffect(() => {
@@ -26,6 +27,9 @@ function OAuthCallbackPage() {
 		ran.current = true;
 
 		if (error || !code) {
+			setReason(
+				error ? `인가 서버 오류: ${error}` : "인증 코드(code)가 없습니다.",
+			);
 			setFailed(true);
 			return;
 		}
@@ -36,6 +40,7 @@ function OAuthCallbackPage() {
 			})
 			.catch((e) => {
 				toastApiError(e);
+				setReason(apiErrorMessage(e));
 				setFailed(true);
 			});
 	}, [code, site, error, navigate, queryClient]);
@@ -48,7 +53,7 @@ function OAuthCallbackPage() {
 						로그인에 실패했습니다.
 					</p>
 					<p className="text-sm text-body">
-						인증 코드가 없거나 만료되었습니다. 다시 시도해 주세요.
+						{reason ?? "잠시 후 다시 시도해 주세요."}
 					</p>
 					<button
 						type="button"

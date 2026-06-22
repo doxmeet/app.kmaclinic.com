@@ -34,6 +34,10 @@ export const Route = createFileRoute("/billing/callback")({
 		customerKey:
 			typeof search.customerKey === "string" ? search.customerKey : undefined,
 		hospital_no: toNumber(search.hospital_no),
+		marketing_consent:
+			search.marketing_consent === "1" || search.marketing_consent === 1
+				? true
+				: undefined,
 		fail: search.fail === "1" || search.fail === 1 ? true : undefined,
 	}),
 });
@@ -50,7 +54,8 @@ const STEP_LABELS: Record<Step, string> = {
 const STEP_ORDER: Step[] = ["issue", "subscription", "publish", "done"];
 
 function BillingCallbackPage() {
-	const { authKey, customerKey, hospital_no, fail } = Route.useSearch();
+	const { authKey, customerKey, hospital_no, marketing_consent, fail } =
+		Route.useSearch();
 	const navigate = useNavigate();
 
 	// 결제 실패 콜백
@@ -87,6 +92,7 @@ function BillingCallbackPage() {
 			authKey={authKey}
 			customerKey={customerKey}
 			hospitalNo={hospital_no}
+			marketingConsent={marketing_consent === true}
 		/>
 	);
 }
@@ -95,10 +101,12 @@ function BillingFlow({
 	authKey,
 	customerKey,
 	hospitalNo,
+	marketingConsent,
 }: {
 	authKey: string;
 	customerKey: string;
 	hospitalNo: number;
+	marketingConsent: boolean;
 }) {
 	// 현재 진행 중인 단계(완료되면 다음 단계로). "done" 이면 성공.
 	const [step, setStep] = useState<Step>("issue");
@@ -112,7 +120,9 @@ function BillingFlow({
 				await issueBilling({ authKey, customerKey });
 				setStep("subscription");
 			}
-			await createSubscription(hospitalNo);
+			await createSubscription(hospitalNo, {
+				marketing_consent: marketingConsent,
+			});
 			setStep("publish");
 			await publishHospital(hospitalNo);
 			setStep("done");

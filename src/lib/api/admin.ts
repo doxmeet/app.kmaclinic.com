@@ -1,4 +1,4 @@
-import { http } from "#/lib/api";
+import { api, http } from "#/lib/api";
 
 /**
  * 플랫폼 운영자 콘솔 — 문서 §4 (Doxmeet ADMIN, level 9). USER는 403.
@@ -16,15 +16,69 @@ export type AdminUser = Record<string, unknown> & {
 	level?: number;
 };
 
+/**
+ * 구독 목록/상세 항목(문서 §10.2). 구독 컬럼 + 병원/결제 조인 컬럼.
+ * 추가 컬럼이 와도 안전하도록 Record 인덱스 시그니처 유지.
+ */
 export type AdminSubscription = Record<string, unknown> & {
 	no?: number;
-	hospital_no?: number;
 	status?: string;
+	billing_cycle?: string;
+	amount?: number;
+	current_period_end?: string | null;
+	next_billing_at?: string | null;
+	memo?: string | null;
+	created_at?: string;
+	hospital_no?: number;
+	hospital_slug?: string;
+	hospital_name?: string;
+	hospital_region?: string;
+	owner_name?: string;
+	last_payment_method?: string | null;
+	last_payment_amount?: number | null;
+	last_paid_at?: string | null;
 };
 
+/** 결제 이력 항목(문서 §10.2 구독 상세 payments[], §10.3). */
 export type AdminPayment = Record<string, unknown> & {
 	no?: number;
+	payment_key?: string;
+	order_id?: string;
+	amount?: number;
+	method?: string | null;
 	status?: string;
+	paid_at?: string | null;
+	failure_code?: string | null;
+	failure_reason?: string | null;
+	refunded_amount?: number | null;
+	created_at?: string;
+};
+
+/** 구독 상세 응답 봉투(문서 §10.2 `GET /admin/subscriptions/:no`). */
+export type AdminSubscriptionDetail = {
+	subscription: AdminSubscription;
+	payments: AdminPayment[];
+};
+
+/** 구독/결제 목록 필터(문서 §10.2/§10.3). */
+export type SubscriptionFilters = {
+	status?: string;
+	hospital_no?: number;
+	billing_cycle?: string;
+	keyword?: string;
+	date_from?: string;
+	date_to?: string;
+	page?: number;
+	limit?: number;
+};
+
+export type PaymentFilters = {
+	status?: string;
+	subscription_no?: number;
+	method?: string;
+	date_from?: string;
+	date_to?: string;
+	page?: number;
 };
 
 export type LicensePending = Record<string, unknown> & { no?: number };
@@ -46,15 +100,27 @@ export const adminApi = {
 			is_withdrawn: isWithdrawn,
 		}),
 
-	listSubscriptions: (
-		p: { status?: string; hospital_no?: number; page?: number } = {},
-	) => http.get<Paginated<AdminSubscription>>("admin/subscriptions", qs(p)),
+	listSubscriptions: (p: SubscriptionFilters = {}) =>
+		http.get<Paginated<AdminSubscription>>("admin/subscriptions", qs(p)),
 	getSubscription: (no: number) =>
-		http.get<AdminSubscription>(`admin/subscriptions/${no}`),
+		http.get<AdminSubscriptionDetail>(`admin/subscriptions/${no}`),
+	updateMemo: (no: number, memo: string) =>
+		http.patch<{ subscription: { no: number; memo: string } }>(
+			`admin/subscriptions/${no}/memo`,
+			{ memo },
+		),
 
-	listPayments: (
-		p: { status?: string; subscription_no?: number; page?: number } = {},
-	) => http.get<Paginated<AdminPayment>>("admin/payments", qs(p)),
+	/**
+	 * 구독 현황 CSV 내보내기(문서 §10.2). 봉투 없이 raw CSV(UTF-8 BOM).
+	 * 401 자동갱신 래퍼(http)를 거치지 않고 ky 인스턴스(Bearer access 자동첨부)로 blob 직접 수신.
+	 */
+	exportSubscriptionsCsv: (filters: SubscriptionFilters = {}) => {
+		const searchParams = qs(filters) ?? {};
+		return api.get("admin/subscriptions/export", { searchParams }).blob();
+	},
+
+	listPayments: (p: PaymentFilters = {}) =>
+		http.get<Paginated<AdminPayment>>("admin/payments", qs(p)),
 
 	licensePending: () =>
 		http.get<Paginated<LicensePending>>("admin/profile/license/pending"),

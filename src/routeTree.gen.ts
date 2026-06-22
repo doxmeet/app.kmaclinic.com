@@ -9,16 +9,16 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as FindPasswordRouteImport } from './routes/find-password'
 import { Route as FindIdRouteImport } from './routes/find-id'
 import { Route as DemoRouteImport } from './routes/demo'
 import { Route as ComponentsRouteImport } from './routes/components'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as OnboardingIndexRouteImport } from './routes/onboarding.index'
 import { Route as BoardIndexRouteImport } from './routes/board.index'
 import { Route as PlaygroundEditorRouteImport } from './routes/playground.editor'
-import { Route as OauthCallbackRouteImport } from './routes/oauth.callback'
+import { Route as OnboardingDirectRouteImport } from './routes/onboarding.direct'
 import { Route as Landing5RouteImport } from './routes/landing.5'
 import { Route as Landing4RouteImport } from './routes/landing.4'
 import { Route as Landing3RouteImport } from './routes/landing.3'
@@ -38,13 +38,9 @@ import { Route as BillingCallbackRouteImport } from './routes/billing.callback'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as AdminLicensesRouteImport } from './routes/admin.licenses'
 import { Route as AdminInstitutionsIndexRouteImport } from './routes/admin.institutions.index'
+import { Route as OauthDoxmeetCallbackRouteImport } from './routes/oauth.doxmeet.callback'
 import { Route as AdminInstitutionsIdRouteImport } from './routes/admin.institutions.$id'
 
-const OnboardingRoute = OnboardingRouteImport.update({
-  id: '/onboarding',
-  path: '/onboarding',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -75,6 +71,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OnboardingIndexRoute = OnboardingIndexRouteImport.update({
+  id: '/onboarding/',
+  path: '/onboarding/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const BoardIndexRoute = BoardIndexRouteImport.update({
   id: '/board/',
   path: '/board/',
@@ -85,9 +86,9 @@ const PlaygroundEditorRoute = PlaygroundEditorRouteImport.update({
   path: '/playground/editor',
   getParentRoute: () => rootRouteImport,
 } as any)
-const OauthCallbackRoute = OauthCallbackRouteImport.update({
-  id: '/oauth/callback',
-  path: '/oauth/callback',
+const OnboardingDirectRoute = OnboardingDirectRouteImport.update({
+  id: '/onboarding/direct',
+  path: '/onboarding/direct',
   getParentRoute: () => rootRouteImport,
 } as any)
 const Landing5Route = Landing5RouteImport.update({
@@ -185,6 +186,11 @@ const AdminInstitutionsIndexRoute = AdminInstitutionsIndexRouteImport.update({
   path: '/admin/institutions/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OauthDoxmeetCallbackRoute = OauthDoxmeetCallbackRouteImport.update({
+  id: '/oauth/doxmeet/callback',
+  path: '/oauth/doxmeet/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminInstitutionsIdRoute = AdminInstitutionsIdRouteImport.update({
   id: '/admin/institutions/$id',
   path: '/admin/institutions/$id',
@@ -198,7 +204,6 @@ export interface FileRoutesByFullPath {
   '/find-id': typeof FindIdRoute
   '/find-password': typeof FindPasswordRoute
   '/login': typeof LoginRoute
-  '/onboarding': typeof OnboardingRoute
   '/admin/licenses': typeof AdminLicensesRoute
   '/admin/users': typeof AdminUsersRoute
   '/billing/callback': typeof BillingCallbackRoute
@@ -217,10 +222,12 @@ export interface FileRoutesByFullPath {
   '/landing/3': typeof Landing3Route
   '/landing/4': typeof Landing4Route
   '/landing/5': typeof Landing5Route
-  '/oauth/callback': typeof OauthCallbackRoute
+  '/onboarding/direct': typeof OnboardingDirectRoute
   '/playground/editor': typeof PlaygroundEditorRoute
   '/board/': typeof BoardIndexRoute
+  '/onboarding/': typeof OnboardingIndexRoute
   '/admin/institutions/$id': typeof AdminInstitutionsIdRoute
+  '/oauth/doxmeet/callback': typeof OauthDoxmeetCallbackRoute
   '/admin/institutions/': typeof AdminInstitutionsIndexRoute
 }
 export interface FileRoutesByTo {
@@ -230,7 +237,6 @@ export interface FileRoutesByTo {
   '/find-id': typeof FindIdRoute
   '/find-password': typeof FindPasswordRoute
   '/login': typeof LoginRoute
-  '/onboarding': typeof OnboardingRoute
   '/admin/licenses': typeof AdminLicensesRoute
   '/admin/users': typeof AdminUsersRoute
   '/billing/callback': typeof BillingCallbackRoute
@@ -249,10 +255,12 @@ export interface FileRoutesByTo {
   '/landing/3': typeof Landing3Route
   '/landing/4': typeof Landing4Route
   '/landing/5': typeof Landing5Route
-  '/oauth/callback': typeof OauthCallbackRoute
+  '/onboarding/direct': typeof OnboardingDirectRoute
   '/playground/editor': typeof PlaygroundEditorRoute
   '/board': typeof BoardIndexRoute
+  '/onboarding': typeof OnboardingIndexRoute
   '/admin/institutions/$id': typeof AdminInstitutionsIdRoute
+  '/oauth/doxmeet/callback': typeof OauthDoxmeetCallbackRoute
   '/admin/institutions': typeof AdminInstitutionsIndexRoute
 }
 export interface FileRoutesById {
@@ -263,7 +271,6 @@ export interface FileRoutesById {
   '/find-id': typeof FindIdRoute
   '/find-password': typeof FindPasswordRoute
   '/login': typeof LoginRoute
-  '/onboarding': typeof OnboardingRoute
   '/admin/licenses': typeof AdminLicensesRoute
   '/admin/users': typeof AdminUsersRoute
   '/billing/callback': typeof BillingCallbackRoute
@@ -282,10 +289,12 @@ export interface FileRoutesById {
   '/landing/3': typeof Landing3Route
   '/landing/4': typeof Landing4Route
   '/landing/5': typeof Landing5Route
-  '/oauth/callback': typeof OauthCallbackRoute
+  '/onboarding/direct': typeof OnboardingDirectRoute
   '/playground/editor': typeof PlaygroundEditorRoute
   '/board/': typeof BoardIndexRoute
+  '/onboarding/': typeof OnboardingIndexRoute
   '/admin/institutions/$id': typeof AdminInstitutionsIdRoute
+  '/oauth/doxmeet/callback': typeof OauthDoxmeetCallbackRoute
   '/admin/institutions/': typeof AdminInstitutionsIndexRoute
 }
 export interface FileRouteTypes {
@@ -297,7 +306,6 @@ export interface FileRouteTypes {
     | '/find-id'
     | '/find-password'
     | '/login'
-    | '/onboarding'
     | '/admin/licenses'
     | '/admin/users'
     | '/billing/callback'
@@ -316,10 +324,12 @@ export interface FileRouteTypes {
     | '/landing/3'
     | '/landing/4'
     | '/landing/5'
-    | '/oauth/callback'
+    | '/onboarding/direct'
     | '/playground/editor'
     | '/board/'
+    | '/onboarding/'
     | '/admin/institutions/$id'
+    | '/oauth/doxmeet/callback'
     | '/admin/institutions/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -329,7 +339,6 @@ export interface FileRouteTypes {
     | '/find-id'
     | '/find-password'
     | '/login'
-    | '/onboarding'
     | '/admin/licenses'
     | '/admin/users'
     | '/billing/callback'
@@ -348,10 +357,12 @@ export interface FileRouteTypes {
     | '/landing/3'
     | '/landing/4'
     | '/landing/5'
-    | '/oauth/callback'
+    | '/onboarding/direct'
     | '/playground/editor'
     | '/board'
+    | '/onboarding'
     | '/admin/institutions/$id'
+    | '/oauth/doxmeet/callback'
     | '/admin/institutions'
   id:
     | '__root__'
@@ -361,7 +372,6 @@ export interface FileRouteTypes {
     | '/find-id'
     | '/find-password'
     | '/login'
-    | '/onboarding'
     | '/admin/licenses'
     | '/admin/users'
     | '/billing/callback'
@@ -380,10 +390,12 @@ export interface FileRouteTypes {
     | '/landing/3'
     | '/landing/4'
     | '/landing/5'
-    | '/oauth/callback'
+    | '/onboarding/direct'
     | '/playground/editor'
     | '/board/'
+    | '/onboarding/'
     | '/admin/institutions/$id'
+    | '/oauth/doxmeet/callback'
     | '/admin/institutions/'
   fileRoutesById: FileRoutesById
 }
@@ -394,7 +406,6 @@ export interface RootRouteChildren {
   FindIdRoute: typeof FindIdRoute
   FindPasswordRoute: typeof FindPasswordRoute
   LoginRoute: typeof LoginRoute
-  OnboardingRoute: typeof OnboardingRoute
   AdminLicensesRoute: typeof AdminLicensesRoute
   AdminUsersRoute: typeof AdminUsersRoute
   BillingCallbackRoute: typeof BillingCallbackRoute
@@ -413,22 +424,17 @@ export interface RootRouteChildren {
   Landing3Route: typeof Landing3Route
   Landing4Route: typeof Landing4Route
   Landing5Route: typeof Landing5Route
-  OauthCallbackRoute: typeof OauthCallbackRoute
+  OnboardingDirectRoute: typeof OnboardingDirectRoute
   PlaygroundEditorRoute: typeof PlaygroundEditorRoute
   BoardIndexRoute: typeof BoardIndexRoute
+  OnboardingIndexRoute: typeof OnboardingIndexRoute
   AdminInstitutionsIdRoute: typeof AdminInstitutionsIdRoute
+  OauthDoxmeetCallbackRoute: typeof OauthDoxmeetCallbackRoute
   AdminInstitutionsIndexRoute: typeof AdminInstitutionsIndexRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/onboarding': {
-      id: '/onboarding'
-      path: '/onboarding'
-      fullPath: '/onboarding'
-      preLoaderRoute: typeof OnboardingRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -471,6 +477,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/onboarding/': {
+      id: '/onboarding/'
+      path: '/onboarding'
+      fullPath: '/onboarding/'
+      preLoaderRoute: typeof OnboardingIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/board/': {
       id: '/board/'
       path: '/board'
@@ -485,11 +498,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PlaygroundEditorRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/oauth/callback': {
-      id: '/oauth/callback'
-      path: '/oauth/callback'
-      fullPath: '/oauth/callback'
-      preLoaderRoute: typeof OauthCallbackRouteImport
+    '/onboarding/direct': {
+      id: '/onboarding/direct'
+      path: '/onboarding/direct'
+      fullPath: '/onboarding/direct'
+      preLoaderRoute: typeof OnboardingDirectRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/landing/5': {
@@ -625,6 +638,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminInstitutionsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/oauth/doxmeet/callback': {
+      id: '/oauth/doxmeet/callback'
+      path: '/oauth/doxmeet/callback'
+      fullPath: '/oauth/doxmeet/callback'
+      preLoaderRoute: typeof OauthDoxmeetCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/institutions/$id': {
       id: '/admin/institutions/$id'
       path: '/admin/institutions/$id'
@@ -642,7 +662,6 @@ const rootRouteChildren: RootRouteChildren = {
   FindIdRoute: FindIdRoute,
   FindPasswordRoute: FindPasswordRoute,
   LoginRoute: LoginRoute,
-  OnboardingRoute: OnboardingRoute,
   AdminLicensesRoute: AdminLicensesRoute,
   AdminUsersRoute: AdminUsersRoute,
   BillingCallbackRoute: BillingCallbackRoute,
@@ -661,10 +680,12 @@ const rootRouteChildren: RootRouteChildren = {
   Landing3Route: Landing3Route,
   Landing4Route: Landing4Route,
   Landing5Route: Landing5Route,
-  OauthCallbackRoute: OauthCallbackRoute,
+  OnboardingDirectRoute: OnboardingDirectRoute,
   PlaygroundEditorRoute: PlaygroundEditorRoute,
   BoardIndexRoute: BoardIndexRoute,
+  OnboardingIndexRoute: OnboardingIndexRoute,
   AdminInstitutionsIdRoute: AdminInstitutionsIdRoute,
+  OauthDoxmeetCallbackRoute: OauthDoxmeetCallbackRoute,
   AdminInstitutionsIndexRoute: AdminInstitutionsIndexRoute,
 }
 export const routeTree = rootRouteImport

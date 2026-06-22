@@ -13,6 +13,7 @@ const schema = z.object({
 	// Doxmeet OAuth (로그인 시작용, 선택)
 	VITE_DOXMEET_AUTHORIZE_URL: z.string().optional(),
 	VITE_DOXMEET_CLIENT_ID: z.string().optional(),
+	VITE_DOXMEET_SCOPE: z.string().optional(),
 	VITE_OAUTH_REDIRECT_URI: z.string().optional(),
 	// 결제 위젯(Toss) — payment.toss_client_key가 응답으로 오므로 보통 불필요(선택 폴백)
 	VITE_TOSS_CLIENT_KEY: z.string().optional(),
