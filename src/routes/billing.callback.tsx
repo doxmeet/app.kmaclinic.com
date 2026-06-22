@@ -9,22 +9,19 @@ import {
 } from "#/components/common/section-card.tsx";
 import { AppShell } from "#/components/layout/app-shell.tsx";
 import { Button } from "#/components/ui/button.tsx";
-import {
-	createSubscription,
-	issueBilling,
-	publishHospital,
-} from "#/lib/api/billing.ts";
+import { createSubscription, issueBilling } from "#/lib/api/billing.ts";
 import { toastApiError } from "#/lib/api-error-message.ts";
 
 /**
- * 결제(Toss) 콜백 — 문서 §3.
+ * 결제(Toss) 콜백 — 문서 onboarding-frontend-guide §6.
  * Toss requestBillingAuth 성공 시 successUrl 로 리다이렉트되며 authKey/customerKey 가 쿼리로 전달된다.
- * 여기서 빌링키 발급 → 구독 생성 → 병원 게시(publish) 를 순차 호출한다.
+ * 여기서 빌링키 발급 → 구독 생성(첫 결제)까지 한다.
  *
- *   issueBilling({authKey, customerKey}) → createSubscription(hospital_no) → publishHospital(hospital_no)
+ *   issueBilling({authKey, customerKey}) → createSubscription(hospital_no)
  *
- * 단계별 실패는 toastApiError + 재시도(실패한 단계부터 다시 시작).
- * fail=1 이면 결제 실패 안내.
+ * 구독이 생성되면 병원은 ready_to_publish 상태가 되고, **게시(slug 설정 + publish)는 대시보드에서**
+ * 별도로 진행한다(자동 게시하지 않음). 완료 후 /onboarding 대시보드로 보낸다.
+ * 단계별 실패는 toastApiError + 재시도(실패한 단계부터 다시 시작). fail=1 이면 결제 실패 안내.
  */
 
 export const Route = createFileRoute("/billing/callback")({
@@ -42,16 +39,15 @@ export const Route = createFileRoute("/billing/callback")({
 	}),
 });
 
-type Step = "issue" | "subscription" | "publish" | "done";
+type Step = "issue" | "subscription" | "done";
 
 const STEP_LABELS: Record<Step, string> = {
 	issue: "카드(빌링키) 등록",
 	subscription: "구독 생성 및 첫 결제",
-	publish: "병원 홈페이지 공개",
 	done: "완료",
 };
 
-const STEP_ORDER: Step[] = ["issue", "subscription", "publish", "done"];
+const STEP_ORDER: Step[] = ["issue", "subscription", "done"];
 
 function BillingCallbackPage() {
 	const { authKey, customerKey, hospital_no, marketing_consent, fail } =
@@ -123,8 +119,7 @@ function BillingFlow({
 			await createSubscription(hospitalNo, {
 				marketing_consent: marketingConsent,
 			});
-			setStep("publish");
-			await publishHospital(hospitalNo);
+			// 구독 생성까지만. 게시(slug + publish)는 대시보드에서 별도로.
 			setStep("done");
 		},
 		onError: (err, from) => {
@@ -209,8 +204,7 @@ function BillingFlow({
 					</>
 				) : (
 					<p className="text-center text-sm text-muted-fg">
-						결제와 공개 처리를 진행하고 있어요. 창을 닫지 말고 잠시만 기다려
-						주세요.
+						결제를 처리하고 있어요. 창을 닫지 말고 잠시만 기다려 주세요.
 					</p>
 				)}
 			</SectionCard>
@@ -263,39 +257,28 @@ function BillingSuccess() {
 				<div className="flex flex-col gap-2">
 					<h1 className="text-2xl font-bold text-ink">결제가 완료됐어요!</h1>
 					<p className="text-[15px] leading-7 text-body-soft">
-						정기 결제 카드 등록과 구독이 완료되어
+						정기 결제 카드 등록과 구독이 완료됐습니다.
 						<br />
-						병원 홈페이지가 공개됐습니다.
+						이제 <span className="font-semibold text-ink">게시</span>하면 병원
+						홈페이지가 공개됩니다.
 					</p>
 				</div>
-				<InfoCallout tone="success" className="w-full text-left">
+				<InfoCallout tone="info" className="w-full text-left">
 					<p className="text-sm">
-						이제{" "}
-						<span className="font-semibold text-ink">내 병원 홈페이지</span>
-						에서 소개·진료안내·게시판·문의를 관리할 수 있어요. 공개된 주소는
-						병원 관리 화면에서 확인할 수 있습니다.
+						대시보드에서 이 병원의{" "}
+						<span className="font-semibold text-ink">게시하기</span> 버튼으로
+						공개 주소를 정하고 공개할 수 있어요.
 					</p>
 				</InfoCallout>
-				<div className="flex w-full flex-col gap-3 sm:flex-row">
-					<Button
-						nativeButton={false}
-						render={<Link to="/doctor/preview" />}
-						variant="brand"
-						size="xl"
-						className="w-full"
-					>
-						공개 프로필 예시 보기
-					</Button>
-					<Button
-						nativeButton={false}
-						render={<Link to="/" />}
-						variant="neutral-outline"
-						size="xl"
-						className="w-full"
-					>
-						홈으로
-					</Button>
-				</div>
+				<Button
+					nativeButton={false}
+					render={<Link to="/onboarding" />}
+					variant="brand"
+					size="cta"
+					className="w-full"
+				>
+					대시보드로 가서 게시하기
+				</Button>
 			</SectionCard>
 		</AppShell>
 	);

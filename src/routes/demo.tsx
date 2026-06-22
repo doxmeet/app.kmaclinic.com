@@ -5,9 +5,10 @@ import { SiteFooter } from "#/components/layout/site-footer.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 
 export const Route = createFileRoute("/demo")({
-	// 개발용 카탈로그 — 프로덕션 빌드에서는 접근 시 홈으로 리다이렉트(노출 차단).
+	// 개발용 카탈로그 — 운영(production) 빌드에서만 홈으로 리다이렉트(노출 차단).
+	// 로컬(dev 서버, mode=localhost)·dev 배포(app-dev, mode=dev)에서는 접근 허용.
 	beforeLoad: () => {
-		if (!import.meta.env.DEV) {
+		if (import.meta.env.MODE === "production") {
 			throw redirect({ to: "/" });
 		}
 	},

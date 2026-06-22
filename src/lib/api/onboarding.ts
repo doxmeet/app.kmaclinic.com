@@ -13,12 +13,13 @@ import { http, parse } from "#/lib/api";
 const numeric = z.coerce.number().optional();
 
 export const OnboardingConflictSchema = z.looseObject({
-	field: z.string(),
-	// ① 입력값 vs 분석값 불일치
+	// flag형 이상점(FlagConflict)은 field가 null일 수 있음 → nullable.
+	field: z.string().nullish(),
+	// ① 입력값 vs 분석값 불일치(GapConflict)
 	current: z.unknown().optional(),
 	from_file: z.unknown().optional(),
-	// ② 깊은 분석이 찾은 이상점
-	note: z.string().optional(),
+	// ② 깊은 분석이 찾은 이상점(FlagConflict): { field, note, question }
+	note: z.string().nullish(),
 	question: z.string().optional(),
 	// 이미 확인 질문을 한 항목인지
 	asked: z.boolean().optional(),
@@ -26,7 +27,9 @@ export const OnboardingConflictSchema = z.looseObject({
 
 export const OnboardingMessageSchema = z.looseObject({
 	role: z.enum(["assistant", "user"]).or(z.string()),
-	text: z.string().optional(),
+	// 파일만 보낸 턴이면 text가 null. 텍스트만이면 files가 null.
+	text: z.string().nullish(),
+	files: z.array(z.string()).nullish(),
 });
 
 export const PaymentIntentSchema = z.looseObject({
@@ -34,10 +37,11 @@ export const PaymentIntentSchema = z.looseObject({
 	hospital_no: numeric,
 	plan: z.string().optional(),
 	amount: numeric,
-	toss_client_key: z.string().optional(),
+	// 토스 클라이언트 키 미설정 시 null로 내려올 수 있음 → nullable.
+	toss_client_key: z.string().nullish(),
 	customer_key: z.string().optional(),
 	next: z.array(z.string()).optional(),
-	// pending_payment 분기에서만 내려옴(표시용)
+	// GET /hospital/:no/payment 응답(PaymentPayloadWithName)에만 병원명이 붙음(표시용).
 	hospital_name: z.string().nullish(),
 });
 export type PaymentIntent = z.infer<typeof PaymentIntentSchema>;
@@ -146,9 +150,11 @@ export async function resetSession(): Promise<void> {
  */
 export type DiscardPendingResult = {
 	ok: boolean;
-	discarded_hospital_no?: number | string | null;
+	discarded_hospital_nos?: Array<number | string>;
+	discarded_count?: number;
 };
 
+/** 걸려 있는 미결제 병원 **전체** + 진행중 초안 일괄 폐기(보조). 항목별은 deleteHospital. */
 export async function discardPending(): Promise<DiscardPendingResult> {
 	return http.post<DiscardPendingResult>("onboarding/discard-pending");
 }
@@ -177,4 +183,74 @@ export async function directOnboarding(
 		await http.post("onboarding/direct", input, { timeout: AI_TIMEOUT }),
 		CommitResultSchema,
 	);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// 대시보드(overview) — 문서 onboarding-frontend-guide §3
+//  진입 시 항상 먼저 호출. 진행중 draft(최대 1) + 생성된 병원 카드 목록.
+// ─────────────────────────────────────────────────────────────────────
+
+export const OverviewDraftSchema = z.looseObject({
+	kind: z.string().optional(),
+	status: z.string().optional(),
+	session_no: numeric,
+	name: z.string().nullish(),
+	is_clinic_owner: z.boolean().nullish(),
+	progress_percent: numeric,
+	next_question: z.string().nullish(),
+	created_at: z.string().nullish(),
+	updated_at: z.string().nullish(),
+});
+export type OverviewDraft = z.infer<typeof OverviewDraftSchema>;
+
+/** 병원 카드 상태: pending_payment → ready_to_publish → published. */
+export const OverviewHospitalSchema = z.looseObject({
+	kind: z.string().optional(),
+	status: z.string(),
+	hospital_no: numeric,
+	name: z.string().nullish(),
+	region: z.string().nullish(),
+	slug: z.string().nullish(),
+	is_published: z.boolean().nullish(),
+	subscription_status: z.string().nullish(),
+	current_period_end: z.string().nullish(),
+	created_at: z.string().nullish(),
+	updated_at: z.string().nullish(),
+	// pending_payment 카드에만 존재(결제 위젯 즉시 사용용).
+	payment: PaymentIntentSchema.nullish(),
+});
+export type OverviewHospital = z.infer<typeof OverviewHospitalSchema>;
+
+export const OverviewSchema = z.looseObject({
+	draft: OverviewDraftSchema.nullish(),
+	hospitals: z.array(OverviewHospitalSchema).nullish(),
+	can_start_new_draft: z.boolean().optional(),
+	counts: z
+		.looseObject({
+			draft: numeric,
+			pending_payment: numeric,
+			ready_to_publish: numeric,
+			published: numeric,
+		})
+		.optional(),
+});
+export type Overview = z.infer<typeof OverviewSchema>;
+
+export async function getOverview(): Promise<Overview> {
+	return parse(await http.get("onboarding/overview"), OverviewSchema);
+}
+
+/** 특정 병원의 결제 페이로드(새로고침/딥링크로 결제 화면 진입 시). */
+export async function getHospitalPayment(no: number): Promise<PaymentIntent> {
+	return parse(
+		await http.get(`onboarding/hospital/${no}/payment`),
+		PaymentIntentSchema,
+	);
+}
+
+/** 미결제(미게시 + 비활성 구독) 병원 1개 폐기(soft-delete). */
+export async function deleteHospital(
+	no: number,
+): Promise<{ ok: boolean; discarded_hospital_no?: number | string | null }> {
+	return http.del(`onboarding/hospital/${no}`);
 }

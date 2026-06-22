@@ -89,15 +89,18 @@ export async function bootstrapSession(): Promise<boolean> {
 
 export async function logout(): Promise<void> {
 	const refresh = getRefreshToken();
+	// 로컬 세션을 먼저 비워 UI가 서버 응답을 기다리지 않고 즉시 로그아웃되게 한다.
+	// (clearTokens는 첫 await 이전에 동기 실행되므로 호출부가 await하지 않아도 즉시 반영.)
+	clearTokens();
+	if (!refresh) return;
 	try {
-		if (refresh) {
-			await publicApi.post("auth/logout", {
-				headers: { Authorization: `Bearer ${refresh}` },
-			});
-		}
+		await publicApi.post("auth/logout", {
+			headers: { Authorization: `Bearer ${refresh}` },
+		});
 	} catch {
-		/* 무시 */
+		/* 서버 폐기 실패는 무시 — 로컬 세션은 이미 종료됨 */
 	} finally {
+		// 폐기 응답 헤더가 토큰을 재주입했을 수 있으니 한 번 더 정리.
 		clearTokens();
 	}
 }

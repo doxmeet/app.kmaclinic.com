@@ -46,10 +46,12 @@ export function useSession() {
 
 	const account = query.data ?? null;
 
-	// 로그아웃: 서버 refresh 토큰 폐기 + 토큰/계정 캐시 제거(UI 즉시 로그아웃 반영).
-	const logout = useCallback(async () => {
-		await logoutRequest();
+	// 로그아웃: 토큰/계정 캐시를 즉시 제거해 UI에 바로 반영하고,
+	// 서버 refresh 토큰 폐기는 백그라운드로 진행(응답을 기다리지 않음).
+	const logout = useCallback(() => {
+		const done = logoutRequest(); // 토큰 정리는 첫 await 이전에 동기 실행됨
 		queryClient.removeQueries({ queryKey: ["account", "me"] });
+		return done;
 	}, [queryClient]);
 
 	return {

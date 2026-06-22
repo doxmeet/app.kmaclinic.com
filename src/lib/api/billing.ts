@@ -74,7 +74,17 @@ export function listPayments(status?: string) {
 	return http.get<Payment[]>("payment", status ? { status } : undefined);
 }
 
-/** 병원 공개(활성 구독 필요 — 없으면 ERROR_402_HOSPITAL_SUBSCRIPTION_REQUIRED). */
+/** 공개 URL(slug) 설정 — publish 전에 필요(없으면 ERROR_400_SLUG_REQUIRED). */
+export function setHospitalSlug(hospitalNo: number, slug: string) {
+	return http.put<{ no?: number; slug?: string }>(
+		`hospital/${hospitalNo}/slug`,
+		{
+			slug,
+		},
+	);
+}
+
+/** 병원 공개(slug + 활성 구독 필요 — 없으면 ERROR_400_SLUG_REQUIRED/ERROR_402_*). */
 export function publishHospital(hospitalNo: number) {
 	return http.post(`hospital/${hospitalNo}/publish`);
 }

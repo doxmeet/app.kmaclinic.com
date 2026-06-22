@@ -23,8 +23,8 @@ function UserMenu({
 	const displayName = userName ?? user?.name ?? "내 계정";
 	const initial = displayName.slice(0, 1) || "내";
 
-	async function handleLogout() {
-		await logout();
+	function handleLogout() {
+		logout(); // 로컬 세션을 즉시 정리(서버 폐기는 백그라운드)
 		navigate({ to: "/" });
 	}
 
