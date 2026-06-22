@@ -344,13 +344,15 @@ function DirectOnboardingForm() {
 	// ── 진입 복원 (mount 1회) ────────────────────────────────────────
 	// biome-ignore lint/correctness/useExhaustiveDependencies: mount 1회만 실행(restoreStartedRef 가드). setter/prefill은 안정적이며 deps에 둘 필요 없음.
 	useEffect(() => {
+		// restoreStartedRef로 1회만 실행(StrictMode 이중 mount 가드).
+		// cancelled 플래그를 두지 않는다 — ref 가드가 중복 호출을 막으므로,
+		// cleanup이 결과를 막아 finally의 setRestoring(false)가 실행되지 않으면
+		// 스피너가 영원히 걸린다(무한 로딩). 언마운트 후 setState는 18에서 무해.
 		if (restoreStartedRef.current) return;
 		restoreStartedRef.current = true;
-		let cancelled = false;
 		(async () => {
 			try {
 				const view = await startSession();
-				if (cancelled) return;
 				// 결제만 남은 병원 → 폼 대신 결제 복귀 화면.
 				if (view.status === "pending_payment" && view.pending_payment) {
 					setPendingPayment(view.pending_payment);
@@ -366,12 +368,9 @@ function DirectOnboardingForm() {
 			} catch {
 				// 에러는 폼을 막지 않는다(조용히 무시 → 빈 폼).
 			} finally {
-				if (!cancelled) setRestoring(false);
+				setRestoring(false);
 			}
 		})();
-		return () => {
-			cancelled = true;
-		};
 	}, []);
 
 	// 저장된 draft → 각 useState setter로 프리필(없는 키는 그대로 비움).

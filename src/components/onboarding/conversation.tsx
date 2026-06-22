@@ -3,13 +3,13 @@ import { Link } from "@tanstack/react-router";
 import {
 	ArrowLeft,
 	CheckCircle2,
+	ExternalLink,
 	Loader2,
 	Paperclip,
 	SendHorizontal,
 } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
-import { InfoCallout } from "#/components/common/info-callout.tsx";
 import { SectionCard } from "#/components/common/section-card.tsx";
 import { FieldInput } from "#/components/form/field-input.tsx";
 import { CommitComplete } from "#/components/onboarding/commit-complete.tsx";
@@ -22,6 +22,7 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "#/components/ui/dialog.tsx";
+import { ScrollArea } from "#/components/ui/scroll-area.tsx";
 import { ApiError } from "#/lib/api";
 import {
 	type CommitResult,
@@ -32,6 +33,7 @@ import {
 } from "#/lib/api/onboarding.ts";
 import { toastApiError } from "#/lib/api-error-message.ts";
 import { uploadFileToStorage } from "#/lib/upload.ts";
+import { cn } from "#/lib/utils.ts";
 
 /**
  * 대화형 온보딩 화면 — 대시보드(`/onboarding`)에서 "대화형으로 만들기" 또는
@@ -46,7 +48,11 @@ import { uploadFileToStorage } from "#/lib/upload.ts";
  */
 
 /** history 항목 타입(view의 history는 looseObject라 좁혀 사용). */
-type ChatMessage = { role: string; text?: string };
+type ChatMessage = {
+	role: string;
+	text?: string | null;
+	files?: string[] | null;
+};
 
 /** conflicts 항목을 화면용으로 좁힌 타입(불일치 또는 이상점). */
 type Conflict = {
@@ -74,7 +80,10 @@ export function OnboardingConversation({
 	const [adminDialogOpen, setAdminDialogOpen] = useState(false);
 
 	const fileInputRef = useRef<HTMLInputElement>(null);
-	const scrollRef = useRef<HTMLDivElement>(null);
+	// 채팅 스크롤 컨테이너(ScrollArea의 Viewport) — 자동 하단 스크롤 제어용.
+	const viewportRef = useRef<HTMLDivElement>(null);
+	// 답변 입력창 — 응답 수신 후 자동 포커스용.
+	const inputRef = useRef<HTMLInputElement>(null);
 	const started = useRef(false);
 
 	// ── 진입 시 1회: 새 세션 시작(또는 진행중 draft 이어서) ──────────────
@@ -165,6 +174,19 @@ export function OnboardingConversation({
 			? conflictMutation.variables
 			: null;
 
+	// next_question을 채팅 흐름 안의 마지막 어시스턴트 말풍선으로 표시한다.
+	// (하단에 항상 고정되던 별도 안내 박스는 제거 — 같은 내용이 history에 있으면 중복 표시 방지)
+	let lastAssistantText = "";
+	for (let i = history.length - 1; i >= 0; i--) {
+		if (history[i].role === "assistant") {
+			lastAssistantText = history[i].text?.trim() ?? "";
+			break;
+		}
+	}
+	const questionText = nextQuestion?.trim() ?? "";
+	const questionBubble =
+		questionText && questionText !== lastAssistantText ? questionText : null;
+
 	// 메시지 전송("전송 중…" 표시)·수신(history 증가)·파일 분석 상태가 바뀌면
 	// 채팅 영역을 맨 아래로 스크롤. rAF로 DOM 반영 후 스크롤해 안정적으로 동작.
 	useEffect(() => {
@@ -173,13 +195,20 @@ export function OnboardingConversation({
 		void isSending;
 		void isUploading;
 		void isProcessing;
-		const el = scrollRef.current;
+		void nextQuestion;
+		const el = viewportRef.current;
 		if (!el) return;
 		const id = requestAnimationFrame(() => {
 			el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
 		});
 		return () => cancelAnimationFrame(id);
-	}, [historyLength, isSending, isUploading, isProcessing]);
+	}, [historyLength, isSending, isUploading, isProcessing, nextQuestion]);
+
+	// 응답이 도착해 history가 늘어나면 입력창으로 자동 포커스(연속 입력 편의).
+	useEffect(() => {
+		if (historyLength === 0) return;
+		inputRef.current?.focus();
+	}, [historyLength]);
 
 	// commit 완료 화면(무료 또는 결제 유도). 결제는 Toss → /billing/callback → 대시보드 복귀.
 	if (commitResult) {
@@ -298,50 +327,75 @@ export function OnboardingConversation({
 
 			{/* 채팅 영역 */}
 			<SectionCard className="flex flex-col gap-4 p-4 sm:p-5">
-				<div
-					ref={scrollRef}
-					className="flex max-h-[52vh] min-h-[280px] flex-col gap-3 overflow-y-auto pr-1"
+				<ScrollArea
+					viewportRef={viewportRef}
+					viewportClassName="flex max-h-[52vh] min-h-[280px] flex-col gap-3 pr-3"
 				>
-					{history.length === 0 ? (
+					{history.length === 0 &&
+					!questionBubble &&
+					!isProcessing &&
+					!isSending &&
+					!isUploading ? (
 						<p className="m-auto text-center text-sm text-muted-fg">
 							대화를 시작하면 여기에 표시됩니다.
 						</p>
 					) : (
-						keyHistory(history).map((m) => (
-							<ChatBubble key={m.key} role={m.role} text={m.text} />
-						))
+						<>
+							{keyHistory(history).map((m) => (
+								<ChatBubble
+									key={m.key}
+									from={m.role}
+									text={m.text}
+									files={m.files}
+								/>
+							))}
+
+							{/* 다음 질문(어시스턴트) — 같은 내용이 history에 없을 때만 흐름 안 말풍선으로 */}
+							{questionBubble ? (
+								<ChatBubble
+									from="assistant"
+									text={questionBubble}
+									interrupt={interrupt}
+								/>
+							) : null}
+
+							{/* 전송 중: 유저 텍스트를 낙관적으로(실제 말풍선과 동일 크기) */}
+							{isSending ? (
+								<div className="ml-auto flex max-w-[85%] items-end gap-2">
+									<div className="whitespace-pre-wrap wrap-break-word rounded-2xl rounded-br-sm bg-brand px-4 py-3 text-[15px] leading-relaxed text-brand-foreground opacity-70">
+										{pendingMessage?.trim() ? pendingMessage : "전송 중…"}
+									</div>
+									<Loader2 className="size-4 shrink-0 animate-spin text-muted-fg" />
+								</div>
+							) : null}
+
+							{/* 파일 전송 상황: 업로드/전송 중인 파일명을 낙관적으로 표시 */}
+							{isUploading && fileMutation.variables ? (
+								<div className="ml-auto flex max-w-[85%] items-end gap-2">
+									<div className="flex items-center gap-2 rounded-2xl rounded-br-sm bg-brand px-4 py-3 text-[15px] leading-relaxed text-brand-foreground opacity-70">
+										<Paperclip className="size-4 shrink-0" />
+										<span className="truncate">
+											{fileMutation.variables.name}
+										</span>
+										<span className="shrink-0 text-xs opacity-80">
+											업로드 중…
+										</span>
+									</div>
+									<Loader2 className="size-4 shrink-0 animate-spin text-muted-fg" />
+								</div>
+							) : null}
+
+							{/* 파일 분석 중: 백그라운드로 진행되며 막지 않는다. 다음 답변 턴에 반영됨. */}
+							{isProcessing ? (
+								<div className="mr-auto flex max-w-[90%] items-center gap-2 rounded-2xl rounded-bl-sm bg-app-bg px-4 py-2.5 text-xs text-body-soft">
+									<Loader2 className="size-3.5 shrink-0 animate-spin" />
+									올려주신 파일을 분석하고 있어요 ({processingFiles}개) · 계속
+									답변하셔도 됩니다
+								</div>
+							) : null}
+						</>
 					)}
-
-					{/* 파일 분석 중 스피너 */}
-					{isProcessing ? (
-						<div className="mr-auto flex max-w-[85%] items-center gap-2 rounded-2xl rounded-bl-sm bg-brand-50 px-4 py-3 text-sm text-brand">
-							<Loader2 className="size-4 animate-spin" />
-							파일 분석 중… ({processingFiles}개)
-						</div>
-					) : null}
-
-					{/* 전송 중: 유저가 보낸 메시지를 낙관적으로 표시(응답 도착 시 history 버블로 교체) */}
-					{isSending ? (
-						<div className="ml-auto flex max-w-[85%] items-end gap-2">
-							<p className="whitespace-pre-wrap break-words rounded-2xl rounded-br-sm bg-brand px-4 py-2.5 text-sm text-brand-foreground opacity-80">
-								{pendingMessage?.trim() ? pendingMessage : "전송 중…"}
-							</p>
-							<Loader2 className="size-4 shrink-0 animate-spin text-muted-fg" />
-						</div>
-					) : null}
-				</div>
-
-				{/* 다음 질문 강조 (interrupt면 분석이 찾은 확인 질문으로 강조) */}
-				{nextQuestion ? (
-					<InfoCallout tone={interrupt ? "warning" : "info"}>
-						{interrupt ? (
-							<p className="mb-1 text-xs font-bold text-amber-700">
-								확인이 필요해요
-							</p>
-						) : null}
-						<p className="text-[15px] font-medium text-ink">{nextQuestion}</p>
-					</InfoCallout>
-				) : null}
+				</ScrollArea>
 
 				{/* 충돌 비교 카드: 입력값 vs 분석값 불일치만 빠른 선택으로 노출.
 				    이상점(note/question)은 위 확인 질문(interrupt)으로 처리됨 */}
@@ -386,6 +440,7 @@ export function OnboardingConversation({
 						)}
 					</Button>
 					<FieldInput
+						ref={inputRef}
 						value={text}
 						onChange={(e) => setText(e.target.value)}
 						placeholder="답변을 입력하세요"
@@ -458,18 +513,63 @@ function BackToDashboardLink({ onClick }: { onClick: () => void }) {
 	);
 }
 
-function ChatBubble({ role, text }: { role: string; text?: string }) {
-	const isUser = role === "user";
-	if (!text) return null;
+function ChatBubble({
+	from,
+	text,
+	files,
+	interrupt,
+}: {
+	from: string;
+	text?: string | null;
+	files?: string[] | null;
+	interrupt?: boolean;
+}) {
+	const isUser = from === "user";
+	const hasFiles = Array.isArray(files) && files.length > 0;
+	if (!text && !hasFiles) return null;
+
+	const bubbleClass = isUser
+		? "ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-brand px-4 py-3 text-[15px] leading-relaxed text-brand-foreground"
+		: interrupt
+			? "mr-auto max-w-[85%] rounded-2xl rounded-bl-sm border border-amber-300 bg-amber-50 px-4 py-3 text-[15px] leading-relaxed text-ink"
+			: "mr-auto max-w-[85%] rounded-2xl rounded-bl-sm bg-app-bg px-4 py-3 text-[15px] leading-relaxed text-body";
+
 	return (
-		<div
-			className={
-				isUser
-					? "ml-auto max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-brand px-4 py-3 text-[15px] leading-relaxed text-brand-foreground"
-					: "mr-auto max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-bl-sm bg-app-bg px-4 py-3 text-[15px] leading-relaxed text-body"
-			}
-		>
-			{text}
+		<div className={bubbleClass}>
+			{interrupt ? (
+				<p className="mb-1 text-xs font-bold text-amber-700">확인이 필요해요</p>
+			) : null}
+			{text ? (
+				<p className="whitespace-pre-wrap wrap-break-word">{text}</p>
+			) : null}
+			{hasFiles ? (
+				<div
+					className={cn("flex flex-wrap gap-1.5", text ? "mt-2" : undefined)}
+				>
+					{files?.map((url) => {
+						const name = fileLabel(url);
+						return (
+							<a
+								key={url}
+								href={url}
+								target="_blank"
+								rel="noreferrer"
+								title={`${name} (새 탭에서 열기)`}
+								className={cn(
+									"inline-flex max-w-[220px] items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs transition-colors",
+									isUser
+										? "bg-white/15 text-brand-foreground hover:bg-white/25"
+										: "border border-line bg-surface text-body hover:bg-muted",
+								)}
+							>
+								<Paperclip className="size-3.5 shrink-0" />
+								<span className="truncate">{name}</span>
+								<ExternalLink className="size-3 shrink-0 opacity-70" />
+							</a>
+						);
+					})}
+				</div>
+			) : null}
 		</div>
 	);
 }
@@ -628,11 +728,28 @@ function keyHistory(
 ): Array<ChatMessage & { key: string }> {
 	const seen = new Map<string, number>();
 	return history.map((m) => {
-		const base = `${m.role}:${m.text ?? ""}`;
+		const filesKey = m.files?.length ? m.files.join(",") : "";
+		const base = `${m.role}:${m.text ?? ""}:${filesKey}`;
 		const n = seen.get(base) ?? 0;
 		seen.set(base, n + 1);
 		return { ...m, key: `${base}#${n}` };
 	});
+}
+
+/**
+ * 첨부 URL에서 표시용 파일명 추출.
+ * 쿼리 제거 → 디코드 → 스토리지 키 접두 해시("<hex>_원본이름.ext") 제거.
+ * (길이 제한은 CSS truncate로 처리하고 여기선 원본 이름을 그대로 돌려준다.)
+ */
+function fileLabel(url: string): string {
+	try {
+		const path = url.split("?")[0];
+		const seg = decodeURIComponent(path.substring(path.lastIndexOf("/") + 1));
+		const cleaned = seg.replace(/^[0-9a-fA-F]{8,}[_-]/, "");
+		return cleaned || "첨부파일";
+	} catch {
+		return "첨부파일";
+	}
 }
 
 function inferPurpose(file: File): "logo" | "photo" | undefined {
