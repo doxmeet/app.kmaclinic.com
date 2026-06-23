@@ -388,8 +388,9 @@ export function OnboardingConversation({
 		}
 	}
 
-	// "완료" 유도 여부: 질문 AI가 완료 안내로 전환했는지 휴리스틱 + 진행률.
-	const readyToCommit = isReadyToCommit(nextQuestion, progress);
+	// 완료 버튼 노출은 progress 100(ready)으로만 판단한다(문서 §6.2.2/§6.2.4/§7.4 —
+	// 완료 안내 문구는 상황별로 달라 문구 매칭 금지).
+	const readyToCommit = isReadyToCommit(progress);
 
 	return (
 		<div className="flex flex-col gap-5">
@@ -959,15 +960,11 @@ function clampPercent(value: number | undefined): number {
 	return Math.max(0, Math.min(100, Math.round(value)));
 }
 
-/** 다음 질문 문구가 완료 안내로 바뀌었거나 진행률이 충분하면 완료 버튼 노출. */
-function isReadyToCommit(
-	nextQuestion: string | null,
-	progress: number,
-): boolean {
-	if (nextQuestion) {
-		const q = nextQuestion.replace(/\s/g, "");
-		if (q.includes("완료")) return true;
-	}
+/**
+ * 완료(ready) 판정 — 진행률 100%일 때만 완료 버튼을 노출한다.
+ * 완료 안내 문구는 상황별로 달라(문서 §6.2.4) next_question 텍스트를 매칭하지 않는다.
+ */
+function isReadyToCommit(progress: number): boolean {
 	return progress >= 100;
 }
 

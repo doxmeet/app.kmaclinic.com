@@ -288,7 +288,8 @@ function DirectOnboardingForm() {
 			road_address: roadAddress.trim(),
 			main_phone: mainPhone.trim(),
 			customer_center_phone: customerCenterPhone.trim(),
-			theme_color: themeColor,
+			// 문서 §8.3: 병원 테마/템플릿은 `template_key` 컬럼으로 전달(direct는 컬럼 그대로 저장).
+			template_key: themeColor,
 			logo_url: logoUrl,
 		});
 		if (Object.keys(businessHours).length > 0)
@@ -393,8 +394,9 @@ function DirectOnboardingForm() {
 			setRoadAddress(asString(hospital.road_address));
 			setMainPhone(asString(hospital.main_phone));
 			setCustomerCenterPhone(asString(hospital.customer_center_phone));
-			if (asString(hospital.theme_color)) {
-				setThemeColor(asString(hospital.theme_color));
+			// 자동저장 draft도 template_key로 보관되므로 같은 키로 복원(문서 §8.3).
+			if (asString(hospital.template_key)) {
+				setThemeColor(asString(hospital.template_key));
 			}
 			setLogoUrl(asString(hospital.logo_url));
 			const businessHours = asObject(hospital.business_hours);
