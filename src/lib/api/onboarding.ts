@@ -55,6 +55,25 @@ export const SessionViewSchema = z.looseObject({
 	// status="pending_payment"일 때만: 결제만 남은 병원(commit의 payment와 동일 형태).
 	pending_payment: PaymentIntentSchema.nullish(),
 	next_question: z.string().nullish(),
+	// 입력 UI 메타(문서 §6.2.2). type="select"면 options를 클릭 버튼으로(클릭 시 value를 message text로 전송),
+	// "text"면 주관식. allow_text/skip/file로 직접입력·건너뛰기·파일 허용 여부. 구버전 호환 위해 next_question도 유지.
+	question: z
+		.looseObject({
+			text: z.string().nullish(),
+			type: z.string().nullish(),
+			options: z
+				.array(
+					z.looseObject({
+						label: z.string().nullish(),
+						value: z.string().nullish(),
+					}),
+				)
+				.nullish(),
+			allow_text: z.boolean().nullish(),
+			allow_skip: z.boolean().nullish(),
+			allow_file: z.boolean().nullish(),
+		})
+		.nullish(),
 	// true면 next_question이 백그라운드 분석의 이상점/충돌 확인 질문(가로채기). message 응답에서만 true.
 	interrupt: z.boolean().optional(),
 	// "대기" 구간(마지막 답변 추출 중/파일 분석 중 — 사용자가 답할 게 없음).

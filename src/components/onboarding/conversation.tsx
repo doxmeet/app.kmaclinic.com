@@ -202,6 +202,33 @@ export function OnboardingConversation({
 			? conflictMutation.variables
 			: null;
 
+	// 입력 UI 메타(문서 §6.2.2). question이 없으면(구버전 호환) 텍스트+파일 항상 허용.
+	const question = session?.question as
+		| {
+				type?: string | null;
+				options?: Array<{
+					label?: string | null;
+					value?: string | null;
+				}> | null;
+				allow_text?: boolean | null;
+				allow_skip?: boolean | null;
+				allow_file?: boolean | null;
+		  }
+		| null
+		| undefined;
+	const selectOptions =
+		question?.type === "select" && Array.isArray(question.options)
+			? question.options.filter((o) => (o?.value ?? "").trim().length > 0)
+			: [];
+	const isSelect = selectOptions.length > 0;
+	// 클릭 보기로 답할 수 있어도 직접 입력은 allow_text로만. type="text"면 당연히 허용. question 없으면 허용.
+	const allowText = question
+		? question.type === "text" || question.allow_text === true
+		: true;
+	// 파일 업로드는 백엔드가 요청한 질문(allow_file)에서만. question 없으면 항상 허용.
+	const allowFile = question ? question.allow_file === true : true;
+	const allowSkip = question?.allow_skip === true;
+
 	// next_question을 채팅 흐름 안의 마지막 어시스턴트 말풍선으로 표시한다.
 	// (하단에 항상 고정되던 별도 안내 박스는 제거 — 같은 내용이 history에 있으면 중복 표시 방지)
 	let lastAssistantText = "";
@@ -486,9 +513,9 @@ export function OnboardingConversation({
 					)}
 				</ScrollArea>
 
-				{/* 충돌 비교 카드: 입력값 vs 분석값 불일치만 빠른 선택으로 노출.
-				    이상점(note/question)은 위 확인 질문(interrupt)으로 처리됨 */}
-				{pickConflicts.length > 0 ? (
+				{/* 충돌 비교 카드: 입력값 vs 분석값 불일치 빠른 선택.
+				    단, 백엔드가 충돌을 select 질문(options)으로 내려주면 아래 보기 버튼이 처리하므로 중복 노출 방지. */}
+				{pickConflicts.length > 0 && !isSelect ? (
 					<div className="flex flex-col gap-3">
 						<p className="text-sm font-semibold text-ink">
 							입력하신 값과 분석 결과가 다릅니다. 사용할 값을 선택해 주세요.
@@ -504,49 +531,90 @@ export function OnboardingConversation({
 					</div>
 				) : null}
 
-				{/* 입력창 */}
-				<form onSubmit={handleSubmit} className="flex items-end gap-2">
-					<input
-						ref={fileInputRef}
-						type="file"
-						className="hidden"
-						onChange={handlePickFile}
-						accept="image/*,application/pdf,.doc,.docx,.hwp,.xlsx,.xls"
-					/>
-					<Button
+				{/* 보기(select) 옵션 버튼 — 클릭 시 value를 그대로 답변으로 전송(문서 §6.2.2) */}
+				{isSelect ? (
+					<div className="flex flex-wrap gap-2">
+						{selectOptions.map((o) => (
+							<Button
+								key={o.value ?? o.label}
+								type="button"
+								variant="brand-outline"
+								size="xl"
+								disabled={isSending}
+								onClick={() => {
+									const v = (o.value ?? "").trim();
+									if (v) textMutation.mutate(v);
+								}}
+							>
+								{o.label ?? o.value}
+							</Button>
+						))}
+					</div>
+				) : null}
+
+				{/* 입력창(직접입력/파일) — question.allow_* 에 따라 노출 */}
+				{allowText || allowFile ? (
+					<form onSubmit={handleSubmit} className="flex items-end gap-2">
+						<input
+							ref={fileInputRef}
+							type="file"
+							className="hidden"
+							onChange={handlePickFile}
+							accept="image/*,application/pdf,.doc,.docx,.hwp,.xlsx,.xls"
+						/>
+						{allowFile ? (
+							<Button
+								type="button"
+								variant="neutral-outline"
+								size="2xl"
+								className="shrink-0 px-0 w-14"
+								disabled={isUploading}
+								onClick={() => fileInputRef.current?.click()}
+								aria-label="파일 첨부"
+							>
+								{isUploading ? (
+									<Loader2 className="size-5 animate-spin" />
+								) : (
+									<Paperclip className="size-5" />
+								)}
+							</Button>
+						) : null}
+						{allowText ? (
+							<>
+								<FieldInput
+									ref={inputRef}
+									value={text}
+									onChange={(e) => setText(e.target.value)}
+									placeholder={isSelect ? "직접 입력하기" : "답변을 입력하세요"}
+									disabled={isSending}
+									autoFocus
+								/>
+								<Button
+									type="submit"
+									variant="brand"
+									size="2xl"
+									className="shrink-0 px-0 w-14"
+									disabled={!text.trim() || isSending}
+									aria-label="전송"
+								>
+									<SendHorizontal className="size-5" />
+								</Button>
+							</>
+						) : null}
+					</form>
+				) : null}
+
+				{/* 건너뛰기(allow_skip) — "건너뛰기"를 답변으로 전송 */}
+				{allowSkip ? (
+					<button
 						type="button"
-						variant="neutral-outline"
-						size="2xl"
-						className="shrink-0 px-0 w-14"
-						disabled={isUploading}
-						onClick={() => fileInputRef.current?.click()}
-						aria-label="파일 첨부"
-					>
-						{isUploading ? (
-							<Loader2 className="size-5 animate-spin" />
-						) : (
-							<Paperclip className="size-5" />
-						)}
-					</Button>
-					<FieldInput
-						ref={inputRef}
-						value={text}
-						onChange={(e) => setText(e.target.value)}
-						placeholder="답변을 입력하세요"
+						onClick={() => textMutation.mutate("건너뛰기")}
 						disabled={isSending}
-						autoFocus
-					/>
-					<Button
-						type="submit"
-						variant="brand"
-						size="2xl"
-						className="shrink-0 px-0 w-14"
-						disabled={!text.trim() || isSending}
-						aria-label="전송"
+						className="w-fit cursor-pointer text-sm font-medium text-muted-fg underline-offset-4 transition-colors hover:text-body hover:underline disabled:opacity-50"
 					>
-						<SendHorizontal className="size-5" />
-					</Button>
-				</form>
+						건너뛰기
+					</button>
+				) : null}
 
 				<p className="text-xs text-muted-fg">
 					이력서·면허증을 올리면 학력·경력·면허·논문이 자동으로 채워집니다.
