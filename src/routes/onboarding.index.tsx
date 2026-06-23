@@ -1,21 +1,25 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { ArrowLeft, Loader2 } from "lucide-react";
-import { useId, useState } from "react";
+import { useState } from "react";
 import { AuthGuard } from "#/components/auth/auth-guard.tsx";
 import { InfoCallout } from "#/components/common/info-callout.tsx";
 import {
 	SectionCard,
 	SectionTitle,
 } from "#/components/common/section-card.tsx";
-import { FieldInput } from "#/components/form/field-input.tsx";
 import { AppShell } from "#/components/layout/app-shell.tsx";
 import { CommitComplete } from "#/components/onboarding/commit-complete.tsx";
 import { OnboardingConversation } from "#/components/onboarding/conversation.tsx";
 import { OnboardingDashboard } from "#/components/onboarding/dashboard.tsx";
+import { isSlugValid, SlugField } from "#/components/onboarding/slug-field.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { ApiError } from "#/lib/api";
-import { publishHospital, setHospitalSlug } from "#/lib/api/billing.ts";
+import {
+	publishHospital,
+	setHospitalSlug,
+	setProfileSlug,
+} from "#/lib/api/billing.ts";
 import {
 	deleteHospital,
 	getOverview,
@@ -199,20 +203,28 @@ function PublishPanel({
 	hospital: OverviewHospital;
 	onPublished: () => void;
 }) {
-	const slugId = useId();
-	// 이미 slug가 있으면 prefill(입력만 두고 바로 게시도 가능).
-	const [slug, setSlug] = useState(hospital.slug?.trim() ?? "");
+	const { account, refetch } = useSession();
+	// profile.slug가 이미 있으면 setProfileSlug 호출 금지(immutable).
+	const profileSlug = account?.profile?.slug?.trim() || null;
+
+	// 병원 slug는 기존 hospital.slug prefill 유지.
+	const [hospitalSlug, setHospitalSlugValue] = useState(
+		hospital.slug?.trim() ?? "",
+	);
+	const [profileSlugInput, setProfileSlugInput] = useState("");
+	const [touched, setTouched] = useState(false);
 
 	const publishMutation = useMutation({
-		mutationFn: async (value: string) => {
-			const trimmed = value.trim();
+		mutationFn: async () => {
 			if (hospital.hospital_no == null) {
 				throw new Error("병원 정보를 찾을 수 없습니다.");
 			}
-			// slug가 비어 있지 않으면 먼저 설정(이미 동일하면 멱등). 그 뒤 publish.
-			if (trimmed) {
-				await setHospitalSlug(hospital.hospital_no, trimmed);
+			// profile slug 미설정 시에만 설정(이미 설정돼 있으면 건너뜀 → immutable 방지).
+			if (!profileSlug) {
+				await setProfileSlug(profileSlugInput.trim());
+				await refetch();
 			}
+			await setHospitalSlug(hospital.hospital_no, hospitalSlug.trim());
 			await publishHospital(hospital.hospital_no);
 		},
 		onSuccess: onPublished,
@@ -220,12 +232,17 @@ function PublishPanel({
 	});
 
 	const title = hospital.name?.trim() ? hospital.name : "병원";
-	const canSubmit = slug.trim().length > 0 && !publishMutation.isPending;
+
+	const hospitalValid = isSlugValid(hospitalSlug.trim());
+	const profileValid = profileSlug
+		? true
+		: isSlugValid(profileSlugInput.trim());
+	const canSubmit = hospitalValid && profileValid && !publishMutation.isPending;
 
 	function handleSubmit(e: React.FormEvent) {
 		e.preventDefault();
 		if (!canSubmit) return;
-		publishMutation.mutate(slug);
+		publishMutation.mutate();
 	}
 
 	return (
@@ -239,30 +256,54 @@ function PublishPanel({
 			</div>
 
 			<form onSubmit={handleSubmit} className="flex flex-col gap-4">
-				<div className="flex flex-col gap-2">
-					<label htmlFor={slugId} className="text-sm font-medium text-ink">
-						공개 주소
-					</label>
-					<FieldInput
-						id={slugId}
-						value={slug}
-						onChange={(e) => setSlug(e.target.value)}
-						placeholder="예: mychungdam"
-						autoComplete="off"
-						autoCapitalize="off"
-						spellCheck={false}
-						endAdornment={<span className="text-muted-fg">.kmaclinic.com</span>}
+				{profileSlug ? (
+					<InfoCallout tone="info">
+						<p className="text-sm">
+							내 프로필 주소:{" "}
+							<span className="font-semibold text-ink">
+								{`${profileSlug}.kmadoc.com`}
+							</span>{" "}
+							(설정됨)
+						</p>
+					</InfoCallout>
+				) : (
+					<SlugField
+						label="프로필 공개 주소"
+						domain=".kmadoc.com"
+						value={profileSlugInput}
+						onChange={(v) => {
+							setProfileSlugInput(v);
+							setTouched(true);
+						}}
+						placeholder="예: hong-gildong"
+						disabled={publishMutation.isPending}
+						invalid={
+							touched &&
+							profileSlugInput.trim().length > 0 &&
+							!isSlugValid(profileSlugInput.trim())
+						}
+						description="의사 프로필이 이 주소로 공개됩니다."
 					/>
-					<p className="text-xs text-body-soft">
-						입력한 주소로 공개됩니다 (예: 입력한 주소.kmaclinic.com). 영문
-						소문자·숫자로 정해 주세요.
-					</p>
-				</div>
+				)}
 
-				<InfoCallout tone="info">
+				<SlugField
+					label="병원 공개 주소"
+					domain=".kmaclinic.com"
+					value={hospitalSlug}
+					onChange={(v) => {
+						setHospitalSlugValue(v);
+						setTouched(true);
+					}}
+					placeholder="예: mychungdam"
+					disabled={publishMutation.isPending}
+					invalid={touched && hospitalSlug.trim().length > 0 && !hospitalValid}
+					description="병원 홈페이지가 이 주소로 공개됩니다."
+				/>
+
+				<InfoCallout tone="warning">
 					<p className="text-sm">
-						게시하려면 활성 구독(결제)이 필요합니다. 결제가 완료된 병원만 게시할
-						수 있어요.
+						공개 주소는 한 번 정하면 바꿀 수 없어요. 게시하려면 활성
+						구독(결제)이 필요합니다.
 					</p>
 				</InfoCallout>
 

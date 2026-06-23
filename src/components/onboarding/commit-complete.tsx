@@ -1,3 +1,4 @@
+import { useMutation } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Loader2, PartyPopper } from "lucide-react";
 import { useState } from "react";
@@ -7,9 +8,13 @@ import {
 	SectionCard,
 	SectionTitle,
 } from "#/components/common/section-card.tsx";
+import { isSlugValid, SlugField } from "#/components/onboarding/slug-field.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Checkbox } from "#/components/ui/checkbox.tsx";
+import { setProfileSlug } from "#/lib/api/billing.ts";
 import type { CommitResult } from "#/lib/api/onboarding.ts";
+import { toastApiError } from "#/lib/api-error-message.ts";
+import { useSession } from "#/lib/auth/use-session.ts";
 
 /**
  * 온보딩/직접입력 commit 결과 화면.
@@ -34,6 +39,98 @@ export function CommitComplete({
 		);
 	}
 
+	return <FreeProfileComplete commitSlug={slug} />;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// 무료 프로필 완료 — 공개 주소(slug) 설정(1회) 후 완료 축하
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * 무료 프로필(payment.required !== true) 완료 화면.
+ * - profile.slug 미설정: `____.kmadoc.com` 입력 폼 → setProfileSlug → refetch → 완료 화면.
+ * - profile.slug 설정됨: 바로 완료 화면(실제 `<slug>.kmadoc.com` 표기).
+ * publish 호출 없음(프로필 게시는 kmadoc 별도 도메인 담당).
+ */
+function FreeProfileComplete({ commitSlug }: { commitSlug: string | null }) {
+	const { account, refetch } = useSession();
+	const profileSlug = account?.profile?.slug?.trim() || null;
+	// commit 결과 slug를 보조로 사용(세션 갱신 전 표시용).
+	const settledSlug = profileSlug ?? commitSlug;
+
+	const [slug, setSlug] = useState("");
+	const [touched, setTouched] = useState(false);
+
+	const slugMutation = useMutation({
+		mutationFn: async (value: string) => {
+			await setProfileSlug(value.trim());
+		},
+		onSuccess: async () => {
+			await refetch();
+		},
+		onError: (err) => toastApiError(err),
+	});
+
+	// 아직 slug가 없으면 → 입력 폼.
+	if (!settledSlug) {
+		const trimmed = slug.trim();
+		const valid = isSlugValid(trimmed);
+		const canSubmit = valid && !slugMutation.isPending;
+
+		function handleSubmit(e: React.FormEvent) {
+			e.preventDefault();
+			if (!canSubmit) return;
+			slugMutation.mutate(slug);
+		}
+
+		return (
+			<SectionCard className="flex flex-col gap-6">
+				<div className="flex flex-col gap-2">
+					<SectionTitle>프로필 공개 주소 정하기</SectionTitle>
+					<p className="text-[15px] leading-7 text-body-soft">
+						의사 프로필이 무료로 만들어졌어요. 방문자에게 보일 공개 주소를 정해
+						주세요.
+					</p>
+				</div>
+
+				<form onSubmit={handleSubmit} className="flex flex-col gap-4">
+					<SlugField
+						label="공개 주소"
+						domain=".kmadoc.com"
+						value={slug}
+						onChange={(v) => {
+							setSlug(v);
+							setTouched(true);
+						}}
+						placeholder="예: hong-gildong"
+						disabled={slugMutation.isPending}
+						invalid={touched && trimmed.length > 0 && !valid}
+						description="입력한 주소로 프로필이 공개됩니다."
+					/>
+
+					<InfoCallout tone="warning">
+						<p className="text-sm">
+							공개 주소는 한 번 정하면 바꿀 수 없어요. 신중히 입력해 주세요.
+						</p>
+					</InfoCallout>
+
+					<Button
+						type="submit"
+						variant="brand"
+						size="cta"
+						className="w-full"
+						disabled={!canSubmit}
+					>
+						{slugMutation.isPending ? (
+							<Loader2 className="size-5 animate-spin" />
+						) : null}
+						이 주소로 설정하기
+					</Button>
+				</form>
+			</SectionCard>
+		);
+	}
+
 	return (
 		<SectionCard className="flex flex-col items-center gap-6 text-center">
 			<div className="flex size-16 items-center justify-center rounded-full bg-success-bg">
@@ -53,7 +150,7 @@ export function CommitComplete({
 				<p className="text-sm">
 					프로필 관리:{" "}
 					<span className="font-semibold text-ink">
-						{slug ? `${slug}.kmadoc.com` : "***.kmadoc.com"}
+						{`${settledSlug}.kmadoc.com`}
 					</span>
 				</p>
 			</InfoCallout>

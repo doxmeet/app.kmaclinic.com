@@ -10,18 +10,18 @@ import {
 import { AppShell } from "#/components/layout/app-shell.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { ApiError } from "#/lib/api";
-import { createSubscription } from "#/lib/api/billing.ts";
+import { createSubscription, issueBilling } from "#/lib/api/billing.ts";
 import { apiErrorMessage } from "#/lib/api-error-message.ts";
 import { useSession } from "#/lib/auth/use-session.ts";
 
 /**
- * 결제(Toss) 콜백 — 단일 호출 (2026-06 최종).
+ * 결제(Toss) 콜백 — 2단계 (문서 §9).
  * Toss requestBillingAuth 성공 시 successUrl 로 리다이렉트되며 authKey/customerKey 가 쿼리로 전달된다.
- * `POST /subscription { hospital_no, authKey, customerKey, marketing_consent }` **한 번**으로
- * 빌링키 발급 + 구독 + 첫 결제까지 끝낸다.
+ *   ① POST /billing/issue { authKey, customerKey }  (authKey→빌링키 발급·저장, authKey는 1회용)
+ *   ② POST /subscription { hospital_no, marketing_consent }  (저장된 빌링키로 즉시 1개월 청구)
  *
- * 재시도 규칙: 토스 authKey는 1회용 → 재시도 시 authKey 없이 `{ hospital_no }`만 보낸다
- * (빌링키는 이미 저장됨). 저장된 빌링키가 없거나 카드 거절이면 카드부터 다시 등록.
+ * 재시도 규칙: authKey는 1회용 → ①이 성공한 뒤(빌링키 저장됨) ②에서만 실패했다면 재시도는 ②만 다시 한다.
+ * ①(빌링키 발급)에서 실패(카드 거절 등)면 새 authKey가 필요하므로 카드부터 다시 등록.
  * 구독 성공 시 병원은 ready_to_publish → **게시(slug+publish)는 대시보드에서** 별도. fail=1 이면 실패 안내.
  */
 
@@ -112,6 +112,8 @@ function BillingFlow({
 	// useSession이 refresh 토큰으로 액세스 토큰을 재발급(bootstrap)하므로 그 준비가 끝난 뒤 호출한다.
 	const { isLoading: sessionLoading, isAuthenticated } = useSession();
 	const running = useRef(false);
+	// 빌링키 발급(①) 성공 여부. authKey는 1회용이라, ②에서만 실패한 재시도는 ①을 건너뛴다.
+	const issuedRef = useRef(false);
 	const [done, setDone] = useState(false);
 	const [needsLogin, setNeedsLogin] = useState(false);
 	const [error, setError] = useState<{
@@ -120,12 +122,17 @@ function BillingFlow({
 	} | null>(null);
 
 	const mutation = useMutation({
-		// useAuthKey=true: 최초(빌링키 발급+구독+첫 결제). false: 재시도(authKey는 1회용 → 저장된 빌링키 재사용).
-		mutationFn: (useAuthKey: boolean) =>
-			createSubscription(hospitalNo, {
-				...(useAuthKey ? { authKey, customerKey } : {}),
+		mutationFn: async () => {
+			// ① 빌링키 발급(아직 안 했을 때만 — authKey는 1회용).
+			if (!issuedRef.current) {
+				await issueBilling({ authKey, customerKey });
+				issuedRef.current = true;
+			}
+			// ② 저장된 빌링키로 구독 생성 + 즉시 첫 결제.
+			await createSubscription(hospitalNo, {
 				marketing_consent: marketingConsent,
-			}),
+			});
+		},
 		onSuccess: () => {
 			setError(null);
 			setDone(true);
@@ -153,7 +160,7 @@ function BillingFlow({
 			setNeedsLogin(true); // refresh 토큰까지 만료 → 재로그인 필요
 			return;
 		}
-		mutation.mutate(true);
+		mutation.mutate();
 	}, [sessionLoading, isAuthenticated]);
 
 	if (needsLogin) {
@@ -185,7 +192,7 @@ function BillingFlow({
 				code={error.code}
 				message={error.message}
 				pending={mutation.isPending}
-				onRetry={() => mutation.mutate(false)}
+				onRetry={() => mutation.mutate()}
 				onReRegister={() => navigate({ to: "/onboarding" })}
 			/>
 		);

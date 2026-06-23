@@ -30,7 +30,13 @@ const MESSAGES: Record<string, string> = {
 	ERROR_409_SUBSCRIPTION_NOT_CANCELABLE:
 		"이미 종료된 구독은 취소할 수 없습니다.",
 	ERROR_400_SLUG_REQUIRED: "먼저 공개 주소(URL)를 설정해 주세요.",
+	ERROR_400_SLUG_INVALID_FORMAT:
+		"공개 주소는 영문 소문자·숫자·하이픈(-) 3~30자로 정해 주세요.",
 	ERROR_409_SLUG_TAKEN: "이미 사용 중인 주소입니다. 다른 주소를 입력해 주세요.",
+	ERROR_409_SLUG_RESERVED:
+		"사용할 수 없는 주소예요. 다른 주소를 입력해 주세요.",
+	ERROR_409_SLUG_IMMUTABLE:
+		"공개 주소는 한 번 정하면 바꿀 수 없어요. 이미 설정되어 있습니다.",
 	// 운영자
 	ERROR_400_CANNOT_DEMOTE_SELF: "본인 권한은 강등할 수 없습니다.",
 	ERROR_404_LICENSE_NOT_FOUND_OR_NOT_PENDING: "대기 중인 면허 신청이 없습니다.",
