@@ -43,6 +43,14 @@ export const Route = createFileRoute("/billing/callback")({
 				? true
 				: undefined,
 		fail: search.fail === "1" || search.fail === 1 ? true : undefined,
+		// Toss는 카드 등록/결제 실패 시 failUrl 에 code/message 를 붙여 돌려보낸다.
+		// (예: ?fail=1&code=INVALID_CARD_NUMBER&message=신용카드가+아니거나…)
+		code:
+			typeof search.code === "string" && search.code ? search.code : undefined,
+		message:
+			typeof search.message === "string" && search.message
+				? search.message
+				: undefined,
 	}),
 });
 
@@ -53,13 +61,26 @@ const RE_REGISTER_CODES = new Set([
 ]);
 
 function BillingCallbackPage() {
-	const { authKey, customerKey, hospital_no, marketing_consent, fail } =
-		Route.useSearch();
+	const {
+		authKey,
+		customerKey,
+		hospital_no,
+		marketing_consent,
+		fail,
+		code,
+		message,
+	} = Route.useSearch();
 	const navigate = useNavigate();
 
-	// 결제 실패 콜백
-	if (fail) {
-		return <PaymentFailed onRetry={() => navigate({ to: "/onboarding" })} />;
+	// 결제 실패 콜백 — Toss가 failUrl 에 code/message 를 붙여 돌려보낸다.
+	if (fail || code || message) {
+		return (
+			<PaymentFailed
+				code={code ?? null}
+				message={message}
+				onRetry={() => navigate({ to: "/onboarding" })}
+			/>
+		);
 	}
 
 	// 필수 파라미터 누락
@@ -328,7 +349,15 @@ function BillingSuccess() {
 	);
 }
 
-function PaymentFailed({ onRetry }: { onRetry: () => void }) {
+function PaymentFailed({
+	code,
+	message,
+	onRetry,
+}: {
+	code?: string | null;
+	message?: string;
+	onRetry: () => void;
+}) {
 	return (
 		<div className="flex min-h-screen items-center justify-center bg-black/45 px-4 py-10">
 			<div className="flex w-full max-w-[400px] flex-col items-center gap-6 rounded-3xl bg-surface p-8 shadow-[0_25px_50px_0_rgba(0,0,0,0.25)]">
@@ -341,10 +370,20 @@ function PaymentFailed({ onRetry }: { onRetry: () => void }) {
 				<h1 className="text-2xl font-bold text-ink">결제 실패</h1>
 
 				<p className="text-center text-[17px] leading-7 text-body-soft">
-					카드 등록 또는 결제가 취소되었습니다.
-					<br />
-					카드 정보를 확인한 뒤 다시 시도해 주세요.
+					{message ? (
+						message
+					) : (
+						<>
+							카드 등록 또는 결제가 취소되었습니다.
+							<br />
+							카드 정보를 확인한 뒤 다시 시도해 주세요.
+						</>
+					)}
 				</p>
+
+				{code ? (
+					<p className="text-xs text-body-soft/70">오류 코드: {code}</p>
+				) : null}
 
 				<div className="flex w-full flex-col gap-3">
 					<Button

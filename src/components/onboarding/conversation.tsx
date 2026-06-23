@@ -532,8 +532,10 @@ export function OnboardingConversation({
 					</div>
 				) : null}
 
-				{/* 보기(select) 옵션 버튼 — 클릭 시 value를 그대로 답변으로 전송(문서 §6.2.2) */}
-				{isSelect ? (
+				{/* 보기(select) 옵션 + 건너뛰기 버튼 — 같은 줄에 묶어 입력창 위에 노출.
+				    select가 있으면 [보기…][건너뛰기], 없으면 건너뛰기만 단독으로.
+				    클릭 시 value(또는 "건너뛰기")를 그대로 답변으로 전송(문서 §6.2.2) */}
+				{isSelect || allowSkip ? (
 					<div className="flex flex-wrap gap-2">
 						{selectOptions.map((o) => (
 							<Button
@@ -550,6 +552,17 @@ export function OnboardingConversation({
 								{o.label ?? o.value}
 							</Button>
 						))}
+						{allowSkip ? (
+							<Button
+								type="button"
+								variant="brand-outline"
+								size="xl"
+								disabled={isSending}
+								onClick={() => textMutation.mutate("건너뛰기")}
+							>
+								건너뛰기
+							</Button>
+						) : null}
 					</div>
 				) : null}
 
@@ -603,18 +616,6 @@ export function OnboardingConversation({
 							</>
 						) : null}
 					</form>
-				) : null}
-
-				{/* 건너뛰기(allow_skip) — "건너뛰기"를 답변으로 전송 */}
-				{allowSkip ? (
-					<button
-						type="button"
-						onClick={() => textMutation.mutate("건너뛰기")}
-						disabled={isSending}
-						className="w-fit cursor-pointer text-sm font-medium text-muted-fg underline-offset-4 transition-colors hover:text-body hover:underline disabled:opacity-50"
-					>
-						건너뛰기
-					</button>
 				) : null}
 
 				<p className="text-xs text-muted-fg">
