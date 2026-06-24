@@ -230,6 +230,9 @@ export function OnboardingConversation({
 	// 파일 업로드는 백엔드가 요청한 질문(allow_file)에서만. question 없으면 항상 허용.
 	const allowFile = question ? question.allow_file === true : true;
 	const allowSkip = question?.allow_skip === true;
+	// 전송/업로드 중에는 건너뛰기를 숨긴다 — 이미 답한 것과 마찬가지라 중복.
+	// 성공하면 다음 질문으로 넘어가고, 실패하면 mutation이 idle로 돌아와 자동 복귀한다.
+	const showSkip = allowSkip && !isSending && !isUploading;
 
 	// next_question을 채팅 흐름 안의 마지막 어시스턴트 말풍선으로 표시한다.
 	// (하단에 항상 고정되던 별도 안내 박스는 제거 — 같은 내용이 history에 있으면 중복 표시 방지)
@@ -536,8 +539,9 @@ export function OnboardingConversation({
 
 				{/* 보기(select) 옵션 + 건너뛰기 버튼 — 같은 줄에 묶어 입력창 위에 노출.
 				    select가 있으면 [보기…][건너뛰기], 없으면 건너뛰기만 단독으로.
-				    클릭 시 value(또는 "건너뛰기")를 그대로 답변으로 전송(문서 §6.2.2) */}
-				{isSelect || allowSkip ? (
+				    클릭 시 value(또는 "건너뛰기")를 그대로 답변으로 전송(문서 §6.2.2)
+				    건너뛰기는 전송/업로드 중 숨김(showSkip) — skip만 있을 땐 줄 자체를 숨긴다. */}
+				{isSelect || showSkip ? (
 					<div className="flex flex-wrap justify-end gap-2">
 						{selectOptions.map((o) => (
 							<Button
@@ -554,12 +558,11 @@ export function OnboardingConversation({
 								{o.label ?? o.value}
 							</Button>
 						))}
-						{allowSkip ? (
+						{showSkip ? (
 							<Button
 								type="button"
 								variant="brand-outline"
 								size="xl"
-								disabled={isSending}
 								onClick={() => textMutation.mutate("건너뛰기")}
 							>
 								건너뛰기

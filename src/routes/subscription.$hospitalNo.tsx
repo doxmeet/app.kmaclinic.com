@@ -60,7 +60,7 @@ const SUB_STATUS: Record<
 > = {
 	active: { label: "이용 중", variant: "success" },
 	past_due: { label: "결제 연체", variant: "warning" },
-	canceled: { label: "해지됨", variant: "soft" },
+	canceled: { label: "해지됨", variant: "destructive" },
 	expired: { label: "만료됨", variant: "destructive" },
 };
 
