@@ -18,21 +18,22 @@ function OAuthCallbackPage() {
 	const { code, site, error } = Route.useSearch();
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
-	const [failed, setFailed] = useState(false);
-	const [reason, setReason] = useState<string | null>(null);
+	// 동기적으로 판정되는 실패(인가 오류 / 코드 없음)는 렌더 중 파생한다(state 미보관).
+	const staticFailureReason = error
+		? `인가 서버 오류: ${error}`
+		: !code
+			? "인증 코드(code)가 없습니다."
+			: null;
+	// 토큰 교환(비동기) 실패만 state로 보관한다.
+	const [exchangeError, setExchangeError] = useState<string | null>(null);
+	const reason = staticFailureReason ?? exchangeError;
 	const ran = useRef(false);
 
 	useEffect(() => {
 		if (ran.current) return;
+		// 동기 실패면 교환을 시도하지 않는다(화면은 파생 reason으로 처리).
+		if (staticFailureReason || !code) return;
 		ran.current = true;
-
-		if (error || !code) {
-			setReason(
-				error ? `인가 서버 오류: ${error}` : "인증 코드(code)가 없습니다.",
-			);
-			setFailed(true);
-			return;
-		}
 		exchangeOAuthCode(code, site ?? "doxmeet")
 			.then(async () => {
 				await queryClient.invalidateQueries({ queryKey: ["account", "me"] });
@@ -40,14 +41,13 @@ function OAuthCallbackPage() {
 			})
 			.catch((e) => {
 				toastApiError(e);
-				setReason(apiErrorMessage(e));
-				setFailed(true);
+				setExchangeError(apiErrorMessage(e));
 			});
-	}, [code, site, error, navigate, queryClient]);
+	}, [code, site, staticFailureReason, navigate, queryClient]);
 
 	return (
 		<div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-surface px-6 text-center">
-			{failed ? (
+			{reason ? (
 				<>
 					<p className="text-lg font-semibold text-ink">
 						로그인에 실패했습니다.

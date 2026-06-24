@@ -36,7 +36,7 @@ export function getAccessToken(): string | null {
 	return isBrowser ? authStore.state.accessToken : null;
 }
 
-export function setAccessToken(token: string | null): void {
+function setAccessToken(token: string | null): void {
 	authStore.setState((s) => ({ ...s, accessToken: token }));
 }
 
@@ -44,7 +44,7 @@ export function getRefreshToken(): string | null {
 	return isBrowser ? authStore.state.refreshToken : null;
 }
 
-export function setRefreshToken(token: string | null): void {
+function setRefreshToken(token: string | null): void {
 	if (isBrowser) {
 		try {
 			if (token) window.localStorage.setItem(REFRESH_KEY, token);
@@ -64,16 +64,7 @@ export function captureTokensFromHeaders(headers: Headers): void {
 	if (refresh) setRefreshToken(refresh);
 }
 
-export function setTokens(access: string | null, refresh: string | null): void {
-	setAccessToken(access);
-	setRefreshToken(refresh);
-}
-
 export function clearTokens(): void {
 	setAccessToken(null);
 	setRefreshToken(null);
-}
-
-export function isAuthenticated(): boolean {
-	return getAccessToken() !== null || getRefreshToken() !== null;
 }

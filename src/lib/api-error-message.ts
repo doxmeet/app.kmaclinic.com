@@ -29,6 +29,13 @@ const MESSAGES: Record<string, string> = {
 	ERROR_409_SUBSCRIPTION_ALREADY_ACTIVE: "이미 활성 구독이 있습니다.",
 	ERROR_409_SUBSCRIPTION_NOT_CANCELABLE:
 		"이미 종료된 구독은 취소할 수 없습니다.",
+	ERROR_404_SUBSCRIPTION_NOT_FOUND: "구독 정보를 찾을 수 없습니다.",
+	// 결제 주기 변경(월↔연)
+	ERROR_400_INVALID_BILLING_CYCLE: "지원하지 않는 결제 주기입니다.",
+	ERROR_409_SUBSCRIPTION_NOT_CHANGEABLE:
+		"이미 종료된 구독은 결제 주기를 변경할 수 없습니다.",
+	ERROR_409_SUBSCRIPTION_NOT_RENEWABLE:
+		"자동 갱신되지 않는 구독은 결제 주기를 변경할 수 없습니다.",
 	ERROR_400_SLUG_REQUIRED: "먼저 공개 주소(URL)를 설정해 주세요.",
 	ERROR_400_SLUG_INVALID_FORMAT:
 		"공개 주소는 영문 소문자·숫자·하이픈(-) 3~30자로 정해 주세요.",

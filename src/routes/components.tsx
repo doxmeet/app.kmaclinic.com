@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useReducer, useRef, useState } from "react";
 import { Calendar, type DateRange } from "#/components/common/calendar.tsx";
 import {
 	FileDropzone,
@@ -79,6 +79,49 @@ const INITIAL_FILES: UploadedFileItem[] = [
 	{ id: "f3", name: "학술_논문_사본.pdf", size: "9.4 MB" },
 ];
 
+const SINGLE_FILE: UploadedFileItem = {
+	id: "single",
+	name: "대표연구_증빙서류_고윤송.pdf",
+	size: "12.4 MB",
+	uploadedAt: "방금 전",
+};
+
+// ── 폼 입력 상태 (자동완성 + 선택 필드) ─────────────────────
+type FormState = {
+	school: string;
+	manualMode: boolean;
+	day: string;
+	dayError: string | undefined;
+};
+
+type FormAction =
+	| { type: "setSchool"; value: string }
+	| { type: "setManualMode"; value: boolean }
+	| { type: "setDay"; value: string }
+	| { type: "setDayError"; value: string | undefined };
+
+function formReducer(state: FormState, action: FormAction): FormState {
+	switch (action.type) {
+		case "setSchool":
+			return { ...state, school: action.value };
+		case "setManualMode":
+			return { ...state, manualMode: action.value };
+		case "setDay":
+			return { ...state, day: action.value };
+		case "setDayError":
+			return { ...state, dayError: action.value };
+		default:
+			return state;
+	}
+}
+
+const INITIAL_FORM_STATE: FormState = {
+	school: "서울",
+	manualMode: false,
+	day: "weekday",
+	dayError: undefined,
+};
+
 function Section({
 	title,
 	caption,
@@ -113,21 +156,13 @@ function ComponentsPage() {
 
 	// 2) 업로드
 	const [files, setFiles] = useState<UploadedFileItem[]>(INITIAL_FILES);
-	const single: UploadedFileItem = {
-		id: "single",
-		name: "대표연구_증빙서류_고윤송.pdf",
-		size: "12.4 MB",
-		uploadedAt: "방금 전",
-	};
 	const totalLabel = `총 ${files.length}개의 파일 (42.1 MB)`;
+	// 추가 파일 id 의 고유 접미사 카운터(핸들러 전용 — 렌더에 노출되지 않으므로 ref).
+	const fileSuffix = useRef(0);
 
-	// 3) 자동완성
-	const [school, setSchool] = useState("서울");
-	const [manualMode, setManualMode] = useState(false);
-
-	// 4) 선택 필드
-	const [day, setDay] = useState("weekday");
-	const [dayError, setDayError] = useState<string | undefined>(undefined);
+	// 3) 자동완성 + 4) 선택 필드 (폼 입력 상태)
+	const [form, dispatch] = useReducer(formReducer, INITIAL_FORM_STATE);
+	const { school, manualMode, day, dayError } = form;
 
 	return (
 		<div className="min-h-screen bg-app-bg">
@@ -205,7 +240,7 @@ function ComponentsPage() {
 									3. 단일 첨부 완료 (다운로드 / 삭제)
 								</span>
 								<UploadedFile
-									file={single}
+									file={SINGLE_FILE}
 									onDownload={() => {}}
 									onRemove={() => {}}
 								/>
@@ -226,7 +261,7 @@ function ComponentsPage() {
 										setFiles((prev) => [
 											...prev,
 											{
-												id: `f${prev.length + 1}-${Date.now()}`,
+												id: `f${prev.length + 1}-${fileSuffix.current++}`,
 												name: "추가서류_샘플.pdf",
 												size: "3.2 MB",
 											},
@@ -255,13 +290,18 @@ function ComponentsPage() {
 									</span>
 									<div className="flex h-14 items-center justify-between rounded-lg border border-line bg-surface px-4">
 										<input
+											aria-label="학교명 직접 입력"
 											value={school}
-											onChange={(e) => setSchool(e.target.value)}
+											onChange={(e) =>
+												dispatch({ type: "setSchool", value: e.target.value })
+											}
 											className="h-full flex-1 bg-transparent text-[17px] text-ink-soft outline-none"
 										/>
 										<button
 											type="button"
-											onClick={() => setManualMode(false)}
+											onClick={() =>
+												dispatch({ type: "setManualMode", value: false })
+											}
 											className="text-sm text-brand"
 										>
 											검색으로
@@ -279,9 +319,11 @@ function ComponentsPage() {
 									<Autocomplete
 										options={SCHOOL_OPTIONS}
 										value={school}
-										onChange={setSchool}
+										onChange={(value) => dispatch({ type: "setSchool", value })}
 										onSelect={() => {}}
-										onManualEntry={() => setManualMode(true)}
+										onManualEntry={() =>
+											dispatch({ type: "setManualMode", value: true })
+										}
 										placeholder="졸업한 의과대학 이름을 검색하세요"
 									/>
 									<p className="px-1 text-sm text-muted-fg">
@@ -305,8 +347,8 @@ function ComponentsPage() {
 									options={DAY_OPTIONS}
 									value={day}
 									onChange={(v) => {
-										setDay(v);
-										setDayError(undefined);
+										dispatch({ type: "setDay", value: v });
+										dispatch({ type: "setDayError", value: undefined });
 									}}
 									description="진료 시간을 적용할 요일 구분을 선택하세요."
 								/>
@@ -321,7 +363,9 @@ function ComponentsPage() {
 									required
 									options={DAY_OPTIONS}
 									value={undefined}
-									onChange={() => setDayError(undefined)}
+									onChange={() =>
+										dispatch({ type: "setDayError", value: undefined })
+									}
 									placeholder="선택해 주세요"
 									error={
 										dayError ?? "필수 항목입니다. 진료일 구분을 선택해 주세요."

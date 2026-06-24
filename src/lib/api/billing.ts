@@ -44,7 +44,7 @@ export type BillingCycle = "monthly" | "annual" | "one_time";
  *
  * 금액은 백엔드가 주기에 맞춰 청구하지만, 결제 화면 표시·요약에 쓰려고 동일 값을 둔다.
  */
-export const BILLING_CYCLES: ReadonlyArray<{
+const BILLING_CYCLES: ReadonlyArray<{
 	value: BillingCycle;
 	/** 선택지 라벨(예: "월간"). */
 	label: string;
@@ -103,6 +103,11 @@ export type Subscription = {
 	billing_key_no?: number;
 	plan?: string;
 	billing_cycle?: "monthly" | "annual" | "one_time" | string;
+	/**
+	 * 다음 갱신일부터 적용될 예약 주기(주기 변경 예약). `null`이면 예약 없음.
+	 * 즉시 적용이 아니라 next_billing_at 결제 성공 시 billing_cycle로 전환된다(changeBillingCycle).
+	 */
+	pending_cycle?: "monthly" | "annual" | "one_time" | null;
 	amount?: number;
 	status?: "active" | "past_due" | "canceled" | "expired" | string;
 	current_period_start?: string | null;
@@ -192,19 +197,6 @@ export function createSubscription(
 	);
 }
 
-/** 내 구독 목록(문서 §8.7). */
-export function listSubscriptions(
-	params: { status?: string; page?: number; limit?: number } = {},
-) {
-	const q = Object.fromEntries(
-		Object.entries(params).filter(([, v]) => v !== undefined && v !== ""),
-	);
-	return http.get<Paginated<Subscription>>(
-		"subscription",
-		Object.keys(q).length ? q : undefined,
-	);
-}
-
 /** 특정 병원의 구독 조회(문서 §8.7) — 최신 1건(없으면 null). */
 export function getHospitalSubscription(hospitalNo: number) {
 	return http.get<{ subscription: Subscription | null }>(
@@ -220,6 +212,38 @@ export function cancelSubscription(no: number, reason?: string) {
 	return http.post<{ subscription: Subscription }>(
 		`subscription/${no}/cancel`,
 		reason ? { reason } : undefined,
+	);
+}
+
+/**
+ * 결제 주기 변경 **예약**(PATCH /subscription/:no/cycle).
+ * - 즉시 결제·차액 정산 없음. `pending_cycle`에 예약되고 **다음 갱신일(next_billing_at)** 결제 시 적용된다.
+ * - 현재 `billing_cycle`과 **같은 값**을 보내면 예약이 취소된다(`pending_cycle=null`).
+ * - `one_time`/`canceled`/`expired`/갱신 없는 구독은 409(NOT_CHANGEABLE/NOT_RENEWABLE).
+ *
+ * 응답의 `billing_cycle`/`amount`는 아직 현재 값이고, 변경은 `pending_cycle`로만 내려온다.
+ */
+export function changeBillingCycle(
+	no: number,
+	billing_cycle: Exclude<BillingCycle, "one_time">,
+) {
+	return http.patch<{ subscription: Subscription }>(
+		`subscription/${no}/cycle`,
+		{ billing_cycle },
+	);
+}
+
+/**
+ * 주기 변경(월↔연)을 시도할 수 있는 구독인지(문서 §4 canChangeCycle).
+ * active/past_due + one_time 아님 + 갱신 예정(next_billing_at) 있어야 가능. 그 외엔 409로 막힘.
+ */
+export function canChangeCycle(
+	s: Pick<Subscription, "status" | "billing_cycle" | "next_billing_at">,
+): boolean {
+	return (
+		(s.status === "active" || s.status === "past_due") &&
+		s.billing_cycle !== "one_time" &&
+		s.next_billing_at != null
 	);
 }
 
@@ -265,9 +289,4 @@ export function setHospitalSlug(hospitalNo: number, slug: string) {
 /** 병원 공개(slug + 활성 구독 필요 — 없으면 ERROR_400_SLUG_REQUIRED/ERROR_402_*). */
 export function publishHospital(hospitalNo: number) {
 	return http.post(`hospital/${hospitalNo}/publish`);
-}
-
-/** 병원 비공개 전환(문서 §8.10, 보조). */
-export function unpublishHospital(hospitalNo: number) {
-	return http.post(`hospital/${hospitalNo}/unpublish`);
 }

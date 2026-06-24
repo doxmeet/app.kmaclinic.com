@@ -105,8 +105,9 @@ function BoardDetailPage() {
 					<div className="flex flex-col gap-10 px-6 py-8 sm:px-10 sm:py-10">
 						<div
 							className="flex flex-col gap-2 text-[17px] leading-[1.8] text-body [&_p]:m-0"
+							// POST.bodyHtml은 모듈 상수(하드코딩 데모)로 사용자 입력이 아니다 — 오탐 억제.
 							// biome-ignore lint/security/noDangerouslySetInnerHtml: 더미 본문 HTML(백엔드 없음)
-							dangerouslySetInnerHTML={{ __html: POST.bodyHtml }}
+							dangerouslySetInnerHTML={{ __html: POST.bodyHtml }} // react-doctor-disable-line dangerous-html-sink
 						/>
 
 						{/* 첨부 이미지 */}
@@ -181,7 +182,7 @@ function BoardDetailPage() {
 						<div className="flex items-center gap-3">
 							<Button
 								className="h-14 rounded-2xl bg-ink px-10 text-[17px] font-medium text-surface hover:bg-ink/90"
-								render={<button type="button" />}
+								render={<button type="button" aria-label="목록으로" />}
 							>
 								<List className="size-4" />
 								목록으로

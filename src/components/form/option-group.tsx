@@ -1,4 +1,4 @@
-import { createContext, useContext, useId } from "react";
+import { createContext, use, useId, useMemo } from "react";
 import { cn } from "#/lib/utils.ts";
 
 /**
@@ -27,10 +27,12 @@ function OptionGroup({
 	name?: string;
 }) {
 	const generatedName = useId();
+	const contextValue = useMemo(
+		() => ({ name: name ?? generatedName, value, onValueChange }),
+		[name, generatedName, value, onValueChange],
+	);
 	return (
-		<OptionGroupContext.Provider
-			value={{ name: name ?? generatedName, value, onValueChange }}
-		>
+		<OptionGroupContext.Provider value={contextValue}>
 			<div
 				data-slot="option-group"
 				role="radiogroup"
@@ -55,7 +57,7 @@ function OptionButton({
 	/** 남은 공간을 균등 분할 (flex-1) */
 	fluid?: boolean;
 }) {
-	const ctx = useContext(OptionGroupContext);
+	const ctx = use(OptionGroupContext);
 	const selected = ctx?.value === value;
 	return (
 		// biome-ignore lint/a11y/useSemanticElements: 분절형(segmented) 선택 컨트롤 — 버튼 + radio role 패턴 (shadcn/radix ToggleGroup 동일)

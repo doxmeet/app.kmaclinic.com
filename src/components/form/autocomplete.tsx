@@ -1,6 +1,18 @@
 import { ChevronRight, PencilLine, Search, X } from "lucide-react";
-import { useId, useMemo, useRef, useState } from "react";
+import {
+	useEffect,
+	useId,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
+import { createPortal } from "react-dom";
 import { cn } from "#/lib/utils.ts";
+
+// SSR에서 useLayoutEffect 경고를 피한다 (TanStack Start는 서버 렌더).
+const useIsoLayoutEffect =
+	typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
 /**
  * Autocomplete — 입력 + 필터되는 드롭다운 결과 (자동완성 검색).
@@ -56,6 +68,14 @@ function Autocomplete({
 	const [active, setActive] = useState(0);
 	const listId = useId();
 	const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	// 드롭다운을 body로 포털해 카드의 overflow-hidden에 잘리지 않게 한다.
+	// 입력 박스(anchor) 위치를 기준으로 fixed 좌표를 계산한다.
+	const anchorRef = useRef<HTMLDivElement>(null);
+	const [panelPos, setPanelPos] = useState<{
+		left: number;
+		top: number;
+		width: number;
+	} | null>(null);
 
 	const filtered = useMemo(() => {
 		const q = value.trim().toLowerCase();
@@ -68,6 +88,27 @@ function Autocomplete({
 	}, [options, value]);
 
 	const showPanel = open && (filtered.length > 0 || !!onManualEntry);
+
+	// 패널이 열려 있는 동안 anchor 위치를 추적 (스크롤/리사이즈 반영).
+	useIsoLayoutEffect(() => {
+		if (!showPanel) {
+			setPanelPos(null);
+			return;
+		}
+		const update = () => {
+			const el = anchorRef.current;
+			if (!el) return;
+			const r = el.getBoundingClientRect();
+			setPanelPos({ left: r.left, top: r.bottom + 8, width: r.width });
+		};
+		update();
+		window.addEventListener("scroll", update, true);
+		window.addEventListener("resize", update);
+		return () => {
+			window.removeEventListener("scroll", update, true);
+			window.removeEventListener("resize", update);
+		};
+	}, [showPanel]);
 
 	function commit(opt: AutocompleteOption) {
 		onChange(opt.label);
@@ -99,6 +140,7 @@ function Autocomplete({
 	return (
 		<div className={cn("relative w-full", className)}>
 			<div
+				ref={anchorRef}
 				className={cn(
 					"flex h-14 items-center gap-2 rounded-lg border-2 bg-surface px-4 transition-colors",
 					ariaInvalid
@@ -110,7 +152,11 @@ function Autocomplete({
 			>
 				<input
 					type="text"
+					// ARIA 1.2 콤보박스 패턴: input에는 role="combobox"가 필요하다
+					// (네이티브 input의 암시 role은 textbox이므로 중복이 아님). 오탐 억제.
+					// react-doctor-disable-next-line no-redundant-roles
 					role="combobox"
+					aria-label="검색어 입력"
 					aria-expanded={showPanel}
 					aria-controls={listId}
 					aria-autocomplete="list"
@@ -147,78 +193,93 @@ function Autocomplete({
 				<Search className="size-4 shrink-0 text-brand" aria-hidden />
 			</div>
 
-			{showPanel ? (
-				<div
-					id={listId}
-					role="listbox"
-					onMouseDown={() => {
-						if (blurTimer.current) clearTimeout(blurTimer.current);
-					}}
-					className="absolute top-[calc(100%+8px)] left-0 z-30 flex max-h-[440px] w-full flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-[0_2px_8px_rgba(0,0,0,0.07),0_8px_32px_rgba(42,100,246,0.1)]"
-				>
-					{/* 결과 헤더 */}
-					<div className="flex items-center gap-2 border-b border-line-soft px-4 py-2.5 text-base">
-						<Search className="size-3 text-muted-fg" aria-hidden />
-						<span className="text-muted-fg">'{value}' 검색 결과</span>
-						<span className="text-brand">{filtered.length}건</span>
-					</div>
-
-					<div className="flex-1 overflow-y-auto">
-						{filtered.map((opt, i) => {
-							const isActive = i === active;
-							return (
-								<button
-									key={opt.value}
-									type="button"
-									role="option"
-									aria-selected={isActive}
-									onMouseEnter={() => setActive(i)}
-									onClick={() => commit(opt)}
-									className={cn(
-										"flex w-full flex-col items-start gap-0.5 border-t border-line-soft px-4 py-4 text-left transition-colors first:border-t-0",
-										isActive ? "bg-brand-50" : "hover:bg-app-bg",
-									)}
-								>
-									<span className="text-[18px] text-ink-soft">
-										{highlight(opt.label, value)}
-									</span>
-									{opt.description ? (
-										<span className="text-base text-muted-fg">
-											{opt.description}
-										</span>
-									) : null}
-								</button>
-							);
-						})}
-					</div>
-
-					{/* 직접 입력 행 */}
-					{onManualEntry ? (
-						<button
-							type="button"
-							onClick={() => {
-								onManualEntry();
-								setOpen(false);
+			{showPanel && panelPos && typeof document !== "undefined"
+				? createPortal(
+						<div
+							id={listId}
+							// ARIA 콤보박스 팝업은 헤더·설명·직접입력 행 등 리치 마크업을 담아야 해
+							// <datalist>(option 전용)로 대체할 수 없다. role="listbox"가 올바른 패턴 — 오탐 억제.
+							// react-doctor-disable-next-line prefer-tag-over-role
+							role="listbox"
+							tabIndex={-1}
+							aria-label="검색 결과"
+							style={{
+								left: panelPos.left,
+								top: panelPos.top,
+								width: panelPos.width,
 							}}
-							className="flex items-center justify-between gap-3 border-t border-line bg-app-bg px-4 py-4 text-left transition-colors hover:bg-line-soft"
+							onMouseDown={() => {
+								if (blurTimer.current) clearTimeout(blurTimer.current);
+							}}
+							className="fixed z-50 flex max-h-[440px] flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-[0_2px_8px_rgba(0,0,0,0.07),0_8px_32px_rgba(42,100,246,0.1)]"
 						>
-							<span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-body">
-								<PencilLine className="size-3.5" />
-							</span>
-							<span className="flex flex-1 flex-col gap-0.5">
-								<span className="text-[17px] text-body">
-									리스트에 없는 경우:{" "}
-									<span className="text-brand underline">'직접 입력' 하기</span>
-								</span>
-								<span className="text-sm text-muted-fg">
-									'해외 대학교'등 검색 결과에 없으면 직접 입력해 주세요
-								</span>
-							</span>
-							<ChevronRight className="size-4 shrink-0 text-muted-fg" />
-						</button>
-					) : null}
-				</div>
-			) : null}
+							{/* 결과 헤더 */}
+							<div className="flex items-center gap-2 border-b border-line-soft px-4 py-2.5 text-base">
+								<Search className="size-3 text-muted-fg" aria-hidden />
+								<span className="text-muted-fg">'{value}' 검색 결과</span>
+								<span className="text-brand">{filtered.length}건</span>
+							</div>
+
+							<div className="flex-1 overflow-y-auto">
+								{filtered.map((opt, i) => {
+									const isActive = i === active;
+									return (
+										<button
+											key={opt.value}
+											type="button"
+											role="option"
+											aria-selected={isActive}
+											onMouseEnter={() => setActive(i)}
+											onClick={() => commit(opt)}
+											className={cn(
+												"flex w-full flex-col items-start gap-0.5 border-t border-line-soft px-4 py-4 text-left transition-colors first:border-t-0",
+												isActive ? "bg-brand-50" : "hover:bg-app-bg",
+											)}
+										>
+											<span className="text-[18px] text-ink-soft">
+												{highlight(opt.label, value)}
+											</span>
+											{opt.description ? (
+												<span className="text-base text-muted-fg">
+													{opt.description}
+												</span>
+											) : null}
+										</button>
+									);
+								})}
+							</div>
+
+							{/* 직접 입력 행 */}
+							{onManualEntry ? (
+								<button
+									type="button"
+									onClick={() => {
+										onManualEntry();
+										setOpen(false);
+									}}
+									className="flex items-center justify-between gap-3 border-t border-line bg-app-bg px-4 py-4 text-left transition-colors hover:bg-line-soft"
+								>
+									<span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-body">
+										<PencilLine className="size-3.5" />
+									</span>
+									<span className="flex flex-1 flex-col gap-0.5">
+										<span className="text-[17px] text-body">
+											리스트에 없는 경우:{" "}
+											<span className="text-brand underline">
+												'직접 입력' 하기
+											</span>
+										</span>
+										<span className="text-sm text-muted-fg">
+											'해외 대학교'등 검색 결과에 없으면 직접 입력해 주세요
+										</span>
+									</span>
+									<ChevronRight className="size-4 shrink-0 text-muted-fg" />
+								</button>
+							) : null}
+						</div>,
+						document.body,
+					)
+				: null}
 		</div>
 	);
 }

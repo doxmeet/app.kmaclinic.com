@@ -1,4 +1,4 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
 	ArrowLeft,
@@ -8,7 +8,7 @@ import {
 	Paperclip,
 	SendHorizontal,
 } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useReducer, useRef, useState } from "react";
 import { toast } from "sonner";
 import { SectionCard } from "#/components/common/section-card.tsx";
 import { FieldInput } from "#/components/form/field-input.tsx";
@@ -75,20 +75,80 @@ const LOGIN_ID_RE = /^[a-z0-9]{4,20}$/;
 const HOLDING_POLL_MS = 2000;
 const HOLDING_POLL_MAX_MS = 60000;
 
+/** 온보딩 개요 쿼리 키 — 메시지/파일/충돌/commit이 바꾸는 상태(대시보드와 동일). */
+const OVERVIEW_KEY = ["onboarding", "overview"] as const;
+
+/** 세션 진행 상태 묶음(단일 진실원 + 시작/완료/대기·다이얼로그 흐름). */
+type ConvState = {
+	/** 진행중 세션 뷰(폴링/메시지 응답으로 갱신). null=아직 시작 전. */
+	session: SessionView | null;
+	/** 세션 시작 실패. */
+	startError: unknown;
+	/** commit 결과(있으면 완료 화면). */
+	commitResult: CommitResult | null;
+	/** 관리자 계정 다이얼로그 열림 여부. */
+	adminDialogOpen: boolean;
+	/** 대기 폴링이 안전장치(최대 시간)에 걸려 멈췄는지 — 멈추면 수동 새로고침 버튼 노출. */
+	pollExpired: boolean;
+};
+
+type ConvAction =
+	/** 새 세션 뷰 반영 + 폴링 안전장치 플래그 리셋(새 대기 구간을 위해). */
+	| { type: "applySession"; view: SessionView }
+	/** 폴링이 받은 뷰만 반영(플래그는 유지). */
+	| { type: "setSession"; view: SessionView }
+	| { type: "setStartError"; error: unknown }
+	| { type: "setCommitResult"; result: CommitResult }
+	| { type: "setAdminDialogOpen"; open: boolean }
+	| { type: "setPollExpired"; value: boolean }
+	/** commit 성공: 결과 저장 + 다이얼로그 닫기. */
+	| { type: "commitSucceeded"; result: CommitResult };
+
+function convReducer(state: ConvState, action: ConvAction): ConvState {
+	switch (action.type) {
+		case "applySession":
+			return { ...state, session: action.view, pollExpired: false };
+		case "setSession":
+			return { ...state, session: action.view };
+		case "setStartError":
+			return { ...state, startError: action.error };
+		case "setCommitResult":
+			return { ...state, commitResult: action.result };
+		case "setAdminDialogOpen":
+			return { ...state, adminDialogOpen: action.open };
+		case "setPollExpired":
+			return { ...state, pollExpired: action.value };
+		case "commitSucceeded":
+			return {
+				...state,
+				commitResult: action.result,
+				adminDialogOpen: false,
+			};
+		default:
+			return state;
+	}
+}
+
+const initialConvState: ConvState = {
+	session: null,
+	startError: null,
+	commitResult: null,
+	adminDialogOpen: false,
+	pollExpired: false,
+};
+
 export function OnboardingConversation({
 	onBackToDashboard,
 }: {
 	/** 상단 "← 대시보드" — 클릭 시 대시보드 모드 복귀 + overview refetch. */
 	onBackToDashboard: () => void;
 }) {
-	// 첫 진입 시 세션 시작. 이후 폴링/메시지 응답으로 갱신되는 단일 진실원.
-	const [session, setSession] = useState<SessionView | null>(null);
-	const [startError, setStartError] = useState<unknown>(null);
+	const queryClient = useQueryClient();
+	// 세션 진행 상태 묶음(시작/세션뷰/완료/다이얼로그/폴링). 단일 진실원.
+	const [state, dispatch] = useReducer(convReducer, initialConvState);
+	const { session, startError, commitResult, adminDialogOpen, pollExpired } =
+		state;
 	const [text, setText] = useState("");
-	const [commitResult, setCommitResult] = useState<CommitResult | null>(null);
-	const [adminDialogOpen, setAdminDialogOpen] = useState(false);
-	// 대기 폴링이 안전장치(최대 시간)에 걸려 멈췄는지 — 멈추면 수동 새로고침 버튼 노출.
-	const [pollExpired, setPollExpired] = useState(false);
 
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	// 채팅 스크롤 컨테이너(ScrollArea의 Viewport) — 자동 하단 스크롤 제어용.
@@ -103,8 +163,8 @@ export function OnboardingConversation({
 		if (started.current) return;
 		started.current = true;
 		startSession()
-			.then(setSession)
-			.catch((err) => setStartError(err));
+			.then((view) => dispatch({ type: "setSession", view }))
+			.catch((err) => dispatch({ type: "setStartError", error: err }));
 	}, []);
 
 	// 백그라운드 분석 진행 수(표시등 전용). waiting과 별개 — 폴링 트리거 아님(문서 2026-06 §1).
@@ -116,8 +176,7 @@ export function OnboardingConversation({
 
 	// 새 메시지/응답을 받으면 폴링 안전장치 플래그를 리셋(새 대기 구간을 위해).
 	function applySession(view: SessionView) {
-		setSession(view);
-		setPollExpired(false);
+		dispatch({ type: "applySession", view });
 	}
 
 	// ── 텍스트 전송 ─────────────────────────────────────────────────
@@ -126,6 +185,7 @@ export function OnboardingConversation({
 		onSuccess: (view) => {
 			applySession(view);
 			setText("");
+			queryClient.invalidateQueries({ queryKey: OVERVIEW_KEY });
 		},
 		onError: (err) => toastApiError(err),
 	});
@@ -144,7 +204,10 @@ export function OnboardingConversation({
 				purpose ? { file_urls: [url], purpose } : { file_urls: [url] },
 			);
 		},
-		onSuccess: (view) => applySession(view),
+		onSuccess: (view) => {
+			applySession(view);
+			queryClient.invalidateQueries({ queryKey: OVERVIEW_KEY });
+		},
 		onError: (err) =>
 			err instanceof ApiError
 				? toastApiError(err)
@@ -154,7 +217,10 @@ export function OnboardingConversation({
 	// ── 충돌 해소: 선택한 값을 다시 텍스트로 전송 ───────────────────
 	const conflictMutation = useMutation({
 		mutationFn: (value: string) => sendMessage({ text: value }),
-		onSuccess: (view) => applySession(view),
+		onSuccess: (view) => {
+			applySession(view);
+			queryClient.invalidateQueries({ queryKey: OVERVIEW_KEY });
+		},
 		onError: (err) => toastApiError(err),
 	});
 
@@ -164,8 +230,8 @@ export function OnboardingConversation({
 		mutationFn: (args?: { login_id?: string; password?: string }) =>
 			commitSession(args),
 		onSuccess: (result) => {
-			setCommitResult(result);
-			setAdminDialogOpen(false);
+			dispatch({ type: "commitSucceeded", result });
+			queryClient.invalidateQueries({ queryKey: OVERVIEW_KEY });
 		},
 		onError: (err) => toastApiError(err),
 	});
@@ -205,48 +271,267 @@ export function OnboardingConversation({
 			: null;
 
 	// 입력 UI 메타(문서 §6.2.2). question이 없으면(구버전 호환) 텍스트+파일 항상 허용.
-	const question = session?.question as
-		| {
-				type?: string | null;
-				options?: Array<{
-					label?: string | null;
-					value?: string | null;
-				}> | null;
-				allow_text?: boolean | null;
-				allow_skip?: boolean | null;
-				allow_file?: boolean | null;
-		  }
-		| null
-		| undefined;
-	const selectOptions =
-		question?.type === "select" && Array.isArray(question.options)
-			? question.options.filter((o) => (o?.value ?? "").trim().length > 0)
-			: [];
-	const isSelect = selectOptions.length > 0;
-	// 클릭 보기로 답할 수 있어도 직접 입력은 allow_text로만. type="text"면 당연히 허용. question 없으면 허용.
-	const allowText = question
-		? question.type === "text" || question.allow_text === true
-		: true;
-	// 파일 업로드는 백엔드가 요청한 질문(allow_file)에서만. question 없으면 항상 허용.
-	const allowFile = question ? question.allow_file === true : true;
-	const allowSkip = question?.allow_skip === true;
+	const { selectOptions, isSelect, allowText, allowFile, allowSkip } =
+		deriveQuestionMeta(session?.question);
 	// 전송/업로드 중에는 건너뛰기를 숨긴다 — 이미 답한 것과 마찬가지라 중복.
 	// 성공하면 다음 질문으로 넘어가고, 실패하면 mutation이 idle로 돌아와 자동 복귀한다.
 	const showSkip = allowSkip && !isSending && !isUploading;
 
 	// next_question을 채팅 흐름 안의 마지막 어시스턴트 말풍선으로 표시한다.
 	// (하단에 항상 고정되던 별도 안내 박스는 제거 — 같은 내용이 history에 있으면 중복 표시 방지)
-	let lastAssistantText = "";
-	for (let i = history.length - 1; i >= 0; i--) {
-		if (history[i].role === "assistant") {
-			lastAssistantText = history[i].text?.trim() ?? "";
-			break;
+	const questionBubble = deriveQuestionBubble(history, nextQuestion);
+
+	// 자동 하단 스크롤 · 입력창 포커스 · 대기 구간 폴링(문서 2026-06 §1).
+	useConversationEffects({
+		viewportRef,
+		inputRef,
+		dispatch,
+		historyLength,
+		isSending,
+		isUploading,
+		isAnalyzing,
+		waiting,
+		pollExpired,
+		nextQuestion,
+	});
+
+	// commit 완료 화면(무료 또는 결제 유도). 결제는 toss → /billing/callback → 대시보드 복귀.
+	if (commitResult) {
+		return (
+			<CommitCompleteView
+				result={commitResult}
+				onBackToDashboard={onBackToDashboard}
+			/>
+		);
+	}
+
+	// 세션 시작 실패
+	if (startError) {
+		return (
+			<StartErrorState
+				error={startError}
+				onBack={onBackToDashboard}
+				onRetry={() => {
+					dispatch({ type: "setStartError", error: null });
+					started.current = false;
+					startSession()
+						.then((view) => dispatch({ type: "setSession", view }))
+						.catch((err) => dispatch({ type: "setStartError", error: err }));
+				}}
+			/>
+		);
+	}
+
+	// 세션 로딩 중
+	if (!session) {
+		return <LoadingState onBack={onBackToDashboard} />;
+	}
+
+	function handleSubmit(e: React.FormEvent) {
+		e.preventDefault();
+		const value = text.trim();
+		if (!value || isSending) return;
+		textMutation.mutate(value);
+	}
+
+	function handlePickFile(e: React.ChangeEvent<HTMLInputElement>) {
+		const file = e.target.files?.[0];
+		e.target.value = ""; // 같은 파일 재선택 허용
+		if (file) fileMutation.mutate(file);
+	}
+
+	function handleCommit() {
+		// 병원 소유면 관리자 계정(아이디+비번) 모달, 프로필만이면 본문 없이 바로 commit
+		if (isClinicOwner) {
+			dispatch({ type: "setAdminDialogOpen", open: true });
+		} else {
+			commitMutation.mutate(undefined);
 		}
 	}
-	const questionText = nextQuestion?.trim() ?? "";
-	const questionBubble =
-		questionText && questionText !== lastAssistantText ? questionText : null;
 
+	// 대기 폴링이 안전장치(최대 시간)에 걸려 멈춘 뒤 수동 새로고침. 여전히 waiting이면 폴링 재개.
+	async function handleManualRefresh() {
+		dispatch({ type: "setPollExpired", value: false });
+		try {
+			dispatch({ type: "setSession", view: await getSession() });
+		} catch (err) {
+			toastApiError(err);
+		}
+	}
+
+	// 완료 버튼 노출은 progress 100(ready)으로만 판단한다(문서 §6.2.2/§6.2.4/§7.4 —
+	// 완료 안내 문구는 상황별로 달라 문구 매칭 금지).
+	const readyToCommit = isReadyToCommit(progress);
+
+	return (
+		<div className="flex flex-col gap-5">
+			<BackToDashboardLink onClick={onBackToDashboard} />
+
+			<ProgressHeader
+				progress={progress}
+				showOwnerBadge={session.is_clinic_owner != null}
+				isClinicOwner={isClinicOwner}
+			/>
+
+			{/* 채팅 영역 */}
+			<SectionCard className="flex flex-col gap-4 p-4 sm:p-5">
+				<ChatScroll
+					viewportRef={viewportRef}
+					history={history}
+					questionBubble={questionBubble}
+					interrupt={interrupt}
+					isSending={isSending}
+					isUploading={isUploading}
+					isAnalyzing={isAnalyzing}
+					waiting={waiting}
+					pollExpired={pollExpired}
+					pendingMessage={pendingMessage}
+					processingFile={processingFile}
+					uploadingFileName={fileMutation.variables?.name}
+					onManualRefresh={handleManualRefresh}
+				/>
+
+				<Composer
+					inputRef={inputRef}
+					fileInputRef={fileInputRef}
+					pickConflicts={pickConflicts}
+					isSelect={isSelect}
+					selectOptions={selectOptions}
+					showSkip={showSkip}
+					allowText={allowText}
+					allowFile={allowFile}
+					text={text}
+					pending={{
+						sending: isSending,
+						uploading: isUploading,
+						conflict: conflictMutation.isPending,
+					}}
+					onTextChange={setText}
+					onSubmit={handleSubmit}
+					onPickFile={handlePickFile}
+					onOpenFilePicker={() => fileInputRef.current?.click()}
+					onSendOption={(value) => textMutation.mutate(value)}
+					onPickConflict={(value) => conflictMutation.mutate(value)}
+				/>
+			</SectionCard>
+
+			<CommitSection
+				readyToCommit={readyToCommit}
+				isClinicOwner={isClinicOwner}
+				isCommitting={isCommitting}
+				processingFile={processingFile}
+				adminDialogOpen={adminDialogOpen}
+				draftLoginId={draftLoginId}
+				onCommit={handleCommit}
+				onAdminDialogChange={(open) =>
+					dispatch({ type: "setAdminDialogOpen", open })
+				}
+				onAdminSubmit={(login_id, password) =>
+					commitMutation.mutate({ login_id, password })
+				}
+			/>
+		</div>
+	);
+}
+
+/**
+ * 완료(commit) 영역: 진행률 100%일 때 강조되는 완료 버튼 + 병원 관리자 계정 설정 다이얼로그.
+ * 관리자 계정(아이디·비밀번호)은 commit 단계에서만 받는다(문서 2026-06 §2).
+ */
+function CommitSection({
+	readyToCommit,
+	isClinicOwner,
+	isCommitting,
+	processingFile,
+	adminDialogOpen,
+	draftLoginId,
+	onCommit,
+	onAdminDialogChange,
+	onAdminSubmit,
+}: {
+	readyToCommit: boolean;
+	isClinicOwner: boolean;
+	isCommitting: boolean;
+	processingFile: number;
+	adminDialogOpen: boolean;
+	draftLoginId: string;
+	onCommit: () => void;
+	onAdminDialogChange: (open: boolean) => void;
+	onAdminSubmit: (loginId: string, password: string) => void;
+}) {
+	return (
+		<>
+			{/* 완료 버튼(준비됐을 때만 강조 노출) */}
+			{readyToCommit ? (
+				<CommitButton
+					isClinicOwner={isClinicOwner}
+					disabled={isCommitting || processingFile > 0}
+					isCommitting={isCommitting}
+					onClick={onCommit}
+				/>
+			) : null}
+
+			{/* 병원 관리자 아이디/비밀번호 설정(commit 단계에서만 받음) */}
+			<AdminCredentialsDialog
+				open={adminDialogOpen}
+				onOpenChange={onAdminDialogChange}
+				pending={isCommitting}
+				defaultLoginId={draftLoginId}
+				onSubmit={onAdminSubmit}
+			/>
+		</>
+	);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// 하위 컴포넌트
+// ─────────────────────────────────────────────────────────────────────
+
+/** commit 완료 화면(무료 또는 결제 유도). 결제는 toss → /billing/callback → 대시보드 복귀. */
+function CommitCompleteView({
+	result,
+	onBackToDashboard,
+}: {
+	result: CommitResult;
+	onBackToDashboard: () => void;
+}) {
+	return (
+		<div className="flex flex-col gap-4">
+			<BackToDashboardLink onClick={onBackToDashboard} />
+			<CommitComplete result={result} onComplete={onBackToDashboard} />
+		</div>
+	);
+}
+
+/**
+ * 대화 화면의 부수효과 묶음:
+ *  - 메시지 전송/수신·파일 분석·대기 상태가 바뀌면 채팅 영역을 맨 아래로 스크롤(rAF).
+ *  - history가 늘어나면 입력창으로 자동 포커스(연속 입력 편의).
+ *  - waiting 동안만 GET /session 을 ~2s 간격 폴링(최대 시간 초과 시 pollExpired로 멈춤).
+ */
+function useConversationEffects({
+	viewportRef,
+	inputRef,
+	dispatch,
+	historyLength,
+	isSending,
+	isUploading,
+	isAnalyzing,
+	waiting,
+	pollExpired,
+	nextQuestion,
+}: {
+	viewportRef: React.RefObject<HTMLDivElement | null>;
+	inputRef: React.RefObject<HTMLInputElement | null>;
+	dispatch: React.Dispatch<ConvAction>;
+	historyLength: number;
+	isSending: boolean;
+	isUploading: boolean;
+	isAnalyzing: boolean;
+	waiting: boolean;
+	pollExpired: boolean;
+	nextQuestion: string | null;
+}) {
 	// 메시지 전송("전송 중…" 표시)·수신(history 증가)·파일 분석 상태가 바뀌면
 	// 채팅 영역을 맨 아래로 스크롤. rAF로 DOM 반영 후 스크롤해 안정적으로 동작.
 	useEffect(() => {
@@ -270,13 +555,14 @@ export function OnboardingConversation({
 		isAnalyzing,
 		waiting,
 		nextQuestion,
+		viewportRef,
 	]);
 
 	// 응답이 도착해 history가 늘어나면 입력창으로 자동 포커스(연속 입력 편의).
 	useEffect(() => {
 		if (historyLength === 0) return;
 		inputRef.current?.focus();
-	}, [historyLength]);
+	}, [historyLength, inputRef]);
 
 	// ── 대기 구간 폴링 (문서 2026-06 §1) ────────────────────────────
 	// waiting=true 동안만 GET /session 을 ~2s 간격으로 조회해 화면을 자동 갱신한다.
@@ -288,12 +574,12 @@ export function OnboardingConversation({
 		let cancelled = false;
 		const timer = setInterval(async () => {
 			if (Date.now() - startedAt > HOLDING_POLL_MAX_MS) {
-				setPollExpired(true); // deps 변경 → cleanup이 타이머 정리
+				dispatch({ type: "setPollExpired", value: true }); // deps 변경 → cleanup이 타이머 정리
 				return;
 			}
 			try {
 				const view = await getSession();
-				if (!cancelled) setSession(view);
+				if (!cancelled) dispatch({ type: "setSession", view });
 			} catch {
 				// 일시 오류는 무시하고 다음 주기에 재시도.
 			}
@@ -302,370 +588,8 @@ export function OnboardingConversation({
 			cancelled = true;
 			clearInterval(timer);
 		};
-	}, [waiting, pollExpired]);
-
-	// commit 완료 화면(무료 또는 결제 유도). 결제는 toss → /billing/callback → 대시보드 복귀.
-	if (commitResult) {
-		return (
-			<div className="flex flex-col gap-4">
-				<BackToDashboardLink onClick={onBackToDashboard} />
-				<CommitComplete result={commitResult} onComplete={onBackToDashboard} />
-			</div>
-		);
-	}
-
-	// 세션 시작 실패
-	if (startError) {
-		return (
-			<div className="flex flex-col gap-4">
-				<BackToDashboardLink onClick={onBackToDashboard} />
-				<SectionCard className="flex flex-col items-center gap-5 text-center">
-					<p className="text-lg font-semibold text-ink">
-						대화형 작성을 시작하지 못했습니다.
-					</p>
-					<p className="text-sm text-body">
-						{startError instanceof ApiError
-							? startError.message
-							: "네트워크 상태를 확인한 뒤 다시 시도해 주세요."}
-					</p>
-					<Button
-						variant="brand"
-						size="2xl"
-						onClick={() => {
-							setStartError(null);
-							started.current = false;
-							startSession()
-								.then(setSession)
-								.catch((err) => setStartError(err));
-						}}
-					>
-						다시 시도
-					</Button>
-				</SectionCard>
-			</div>
-		);
-	}
-
-	// 세션 로딩 중
-	if (!session) {
-		return (
-			<div className="flex flex-col gap-4">
-				<BackToDashboardLink onClick={onBackToDashboard} />
-				<div className="flex flex-col items-center gap-4 py-24 text-center">
-					<Loader2 className="size-7 animate-spin text-brand" />
-					<p className="text-base text-body">
-						대화형 작성을 준비하고 있어요…
-					</p>
-				</div>
-			</div>
-		);
-	}
-
-	function handleSubmit(e: React.FormEvent) {
-		e.preventDefault();
-		const value = text.trim();
-		if (!value || isSending) return;
-		textMutation.mutate(value);
-	}
-
-	function handlePickFile(e: React.ChangeEvent<HTMLInputElement>) {
-		const file = e.target.files?.[0];
-		e.target.value = ""; // 같은 파일 재선택 허용
-		if (file) fileMutation.mutate(file);
-	}
-
-	function handleCommit() {
-		// 병원 소유면 관리자 계정(아이디+비번) 모달, 프로필만이면 본문 없이 바로 commit
-		if (isClinicOwner) {
-			setAdminDialogOpen(true);
-		} else {
-			commitMutation.mutate(undefined);
-		}
-	}
-
-	// 대기 폴링이 안전장치(최대 시간)에 걸려 멈춘 뒤 수동 새로고침. 여전히 waiting이면 폴링 재개.
-	async function handleManualRefresh() {
-		setPollExpired(false);
-		try {
-			setSession(await getSession());
-		} catch (err) {
-			toastApiError(err);
-		}
-	}
-
-	// 완료 버튼 노출은 progress 100(ready)으로만 판단한다(문서 §6.2.2/§6.2.4/§7.4 —
-	// 완료 안내 문구는 상황별로 달라 문구 매칭 금지).
-	const readyToCommit = isReadyToCommit(progress);
-
-	return (
-		<div className="flex flex-col gap-5">
-			<BackToDashboardLink onClick={onBackToDashboard} />
-
-			{/* 진행바 */}
-			<div className="flex flex-col gap-2">
-				<div className="flex items-center justify-between text-sm">
-					<span className="font-semibold text-ink">대화로 작성하기</span>
-					<div className="flex items-center gap-3">
-						<span className="text-body-soft">{progress}% 완료</span>
-						<Link
-							to="/onboarding/direct"
-							className="text-xs font-medium text-brand transition-colors hover:underline"
-						>
-							한 번에 입력하기
-						</Link>
-					</div>
-				</div>
-				<div className="h-2 w-full overflow-hidden rounded-full bg-line-soft">
-					<div
-						className="h-full rounded-full bg-brand transition-all duration-500"
-						style={{ width: `${progress}%` }}
-					/>
-				</div>
-				{session.is_clinic_owner != null ? (
-					<div>
-						<Badge variant="soft">
-							{isClinicOwner ? "병원 홈페이지까지" : "프로필만"}
-						</Badge>
-					</div>
-				) : null}
-			</div>
-
-			{/* 채팅 영역 */}
-			<SectionCard className="flex flex-col gap-4 p-4 sm:p-5">
-				<ScrollArea
-					viewportRef={viewportRef}
-					viewportClassName="flex max-h-[52vh] min-h-[280px] flex-col gap-3 pr-3"
-				>
-					{history.length === 0 &&
-					!questionBubble &&
-					!isAnalyzing &&
-					!waiting &&
-					!isSending &&
-					!isUploading ? (
-						<p className="m-auto text-center text-sm text-muted-fg">
-							대화를 시작하면 여기에 표시됩니다.
-						</p>
-					) : (
-						<>
-							{keyHistory(history).map((m) => (
-								<ChatBubble
-									key={m.key}
-									from={m.role}
-									text={m.text}
-									files={m.files}
-								/>
-							))}
-
-							{/* 다음 질문(어시스턴트) — 같은 내용이 history에 없을 때만 흐름 안 말풍선으로 */}
-							{questionBubble ? (
-								<ChatBubble
-									from="assistant"
-									text={questionBubble}
-									interrupt={interrupt}
-								/>
-							) : null}
-
-							{/* 전송 중: 유저 텍스트를 낙관적으로(실제 말풍선과 동일 크기) */}
-							{isSending ? (
-								<div className="ml-auto flex max-w-[85%] items-end gap-2">
-									<div className="whitespace-pre-wrap wrap-break-word rounded-2xl rounded-br-sm bg-brand px-4 py-3 text-[15px] leading-relaxed text-brand-foreground opacity-70">
-										{pendingMessage?.trim() ? pendingMessage : "전송 중…"}
-									</div>
-									<Loader2 className="size-4 shrink-0 animate-spin text-muted-fg" />
-								</div>
-							) : null}
-
-							{/* 파일 전송 상황: 업로드/전송 중인 파일명을 낙관적으로 표시 */}
-							{isUploading && fileMutation.variables ? (
-								<div className="ml-auto flex max-w-[85%] items-end gap-2">
-									<div className="flex items-center gap-2 rounded-2xl rounded-br-sm bg-brand px-4 py-3 text-[15px] leading-relaxed text-brand-foreground opacity-70">
-										<Paperclip className="size-4 shrink-0" />
-										<span className="truncate">
-											{fileMutation.variables.name}
-										</span>
-										<span className="shrink-0 text-xs opacity-80">
-											업로드 중…
-										</span>
-									</div>
-									<Loader2 className="size-4 shrink-0 animate-spin text-muted-fg" />
-								</div>
-							) : null}
-
-							{/* 분석/대기 표시등: 막지 않음. waiting이면 폴링이 자동으로 다음 단계로 넘긴다(§1). */}
-							{isAnalyzing || waiting ? (
-								<div className="mr-auto flex max-w-[90%] items-center gap-2 rounded-2xl rounded-bl-sm bg-app-bg px-4 py-2.5 text-xs text-body-soft">
-									<Loader2 className="size-3.5 shrink-0 animate-spin" />
-									{processingFile > 0
-										? `올려주신 파일을 분석하고 있어요 (${processingFile}개)`
-										: "입력하신 내용을 정리하고 있어요"}
-									{waiting
-										? " · 잠시만 기다려 주세요"
-										: " · 계속 답변하셔도 됩니다"}
-								</div>
-							) : null}
-
-							{/* 대기 폴링이 안전장치(최대 시간)에 걸려 멈춘 경우: 수동 새로고침 */}
-							{pollExpired ? (
-								<button
-									type="button"
-									onClick={handleManualRefresh}
-									className="mr-auto inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-2 text-xs font-medium text-body transition-colors hover:bg-muted"
-								>
-									<Loader2 className="size-3.5 shrink-0" />
-									아직 처리 중이에요. 새로고침해서 확인하기
-								</button>
-							) : null}
-						</>
-					)}
-				</ScrollArea>
-
-				{/* 충돌 비교 카드: 입력값 vs 분석값 불일치 빠른 선택.
-				    단, 백엔드가 충돌을 select 질문(options)으로 내려주면 아래 보기 버튼이 처리하므로 중복 노출 방지. */}
-				{pickConflicts.length > 0 && !isSelect ? (
-					<div className="flex flex-col gap-3">
-						<p className="text-sm font-semibold text-ink">
-							입력하신 값과 분석 결과가 다릅니다. 사용할 값을 선택해 주세요.
-						</p>
-						{pickConflicts.map((c) => (
-							<ConflictCard
-								key={c.field}
-								conflict={c}
-								disabled={conflictMutation.isPending}
-								onPick={(value) => conflictMutation.mutate(value)}
-							/>
-						))}
-					</div>
-				) : null}
-
-				{/* 보기(select) 옵션 + 건너뛰기 버튼 — 같은 줄에 묶어 입력창 위에 노출.
-				    select가 있으면 [보기…][건너뛰기], 없으면 건너뛰기만 단독으로.
-				    클릭 시 value(또는 "건너뛰기")를 그대로 답변으로 전송(문서 §6.2.2)
-				    건너뛰기는 전송/업로드 중 숨김(showSkip) — skip만 있을 땐 줄 자체를 숨긴다. */}
-				{isSelect || showSkip ? (
-					<div className="flex flex-wrap justify-end gap-2">
-						{selectOptions.map((o) => (
-							<Button
-								key={o.value ?? o.label}
-								type="button"
-								variant="brand-outline"
-								size="xl"
-								disabled={isSending}
-								onClick={() => {
-									const v = (o.value ?? "").trim();
-									if (v) textMutation.mutate(v);
-								}}
-							>
-								{o.label ?? o.value}
-							</Button>
-						))}
-						{showSkip ? (
-							<Button
-								type="button"
-								variant="brand-outline"
-								size="xl"
-								onClick={() => textMutation.mutate("건너뛰기")}
-							>
-								건너뛰기
-							</Button>
-						) : null}
-					</div>
-				) : null}
-
-				{/* 입력창(직접입력/파일) — question.allow_* 에 따라 노출 */}
-				{allowText || allowFile ? (
-					<form onSubmit={handleSubmit} className="flex items-end gap-2">
-						<input
-							ref={fileInputRef}
-							type="file"
-							className="hidden"
-							onChange={handlePickFile}
-							accept="image/*,application/pdf,.doc,.docx,.hwp,.xlsx,.xls"
-						/>
-						{allowFile ? (
-							<Button
-								type="button"
-								variant="neutral-outline"
-								size="2xl"
-								className="shrink-0 px-0 w-14"
-								disabled={isUploading}
-								onClick={() => fileInputRef.current?.click()}
-								aria-label="파일 첨부"
-							>
-								{isUploading ? (
-									<Loader2 className="size-5 animate-spin" />
-								) : (
-									<Paperclip className="size-5" />
-								)}
-							</Button>
-						) : null}
-						{allowText ? (
-							<>
-								<FieldInput
-									ref={inputRef}
-									value={text}
-									onChange={(e) => setText(e.target.value)}
-									placeholder={isSelect ? "직접 입력하기" : "답변을 입력하세요"}
-									disabled={isSending}
-									autoFocus
-								/>
-								<Button
-									type="submit"
-									variant="brand"
-									size="2xl"
-									className="shrink-0 px-0 w-14"
-									disabled={!text.trim() || isSending}
-									aria-label="전송"
-								>
-									<SendHorizontal className="size-5" />
-								</Button>
-							</>
-						) : null}
-					</form>
-				) : null}
-
-				<p className="text-xs text-muted-fg">
-					이력서·면허증을 올리면 학력·경력·면허·논문이 자동으로 채워집니다.
-					로고/사진은 그대로 저장됩니다.
-				</p>
-			</SectionCard>
-
-			{/* 완료 버튼(준비됐을 때만 강조 노출) */}
-			{readyToCommit ? (
-				<Button
-					variant="brand"
-					size="cta"
-					className="w-full"
-					disabled={isCommitting || processingFile > 0}
-					onClick={handleCommit}
-				>
-					{isCommitting ? (
-						<Loader2 className="size-5 animate-spin" />
-					) : (
-						<CheckCircle2 className="size-5" />
-					)}
-					{isClinicOwner
-						? "관리자 계정 설정 후 완료하기"
-						: "프로필 생성 완료하기"}
-				</Button>
-			) : null}
-
-			{/* 병원 관리자 아이디/비밀번호 설정(commit 단계에서만 받음) */}
-			<AdminCredentialsDialog
-				open={adminDialogOpen}
-				onOpenChange={setAdminDialogOpen}
-				pending={isCommitting}
-				defaultLoginId={draftLoginId}
-				onSubmit={(login_id, password) =>
-					commitMutation.mutate({ login_id, password })
-				}
-			/>
-		</div>
-	);
+	}, [waiting, pollExpired, dispatch]);
 }
-
-// ─────────────────────────────────────────────────────────────────────
-// 하위 컴포넌트
-// ─────────────────────────────────────────────────────────────────────
 
 function BackToDashboardLink({ onClick }: { onClick: () => void }) {
 	return (
@@ -677,6 +601,390 @@ function BackToDashboardLink({ onClick }: { onClick: () => void }) {
 			<ArrowLeft className="size-4" />
 			대시보드
 		</button>
+	);
+}
+
+/** 세션 시작 실패 화면(재시도 버튼 포함). */
+function StartErrorState({
+	error,
+	onBack,
+	onRetry,
+}: {
+	error: unknown;
+	onBack: () => void;
+	onRetry: () => void;
+}) {
+	return (
+		<div className="flex flex-col gap-4">
+			<BackToDashboardLink onClick={onBack} />
+			<SectionCard className="flex flex-col items-center gap-5 text-center">
+				<p className="text-lg font-semibold text-ink">
+					대화형 작성을 시작하지 못했습니다.
+				</p>
+				<p className="text-sm text-body">
+					{error instanceof ApiError
+						? error.message
+						: "네트워크 상태를 확인한 뒤 다시 시도해 주세요."}
+				</p>
+				<Button variant="brand" size="2xl" onClick={onRetry}>
+					다시 시도
+				</Button>
+			</SectionCard>
+		</div>
+	);
+}
+
+/** 세션 로딩 중 화면. */
+function LoadingState({ onBack }: { onBack: () => void }) {
+	return (
+		<div className="flex flex-col gap-4">
+			<BackToDashboardLink onClick={onBack} />
+			<div className="flex flex-col items-center gap-4 py-24 text-center">
+				<Loader2 className="size-7 animate-spin text-brand" />
+				<p className="text-base text-body">대화형 작성을 준비하고 있어요…</p>
+			</div>
+		</div>
+	);
+}
+
+/** 진행바 + "한 번에 입력하기" 링크 + 소유 유형 배지. */
+function ProgressHeader({
+	progress,
+	showOwnerBadge,
+	isClinicOwner,
+}: {
+	progress: number;
+	showOwnerBadge: boolean;
+	isClinicOwner: boolean;
+}) {
+	return (
+		<div className="flex flex-col gap-2">
+			<div className="flex items-center justify-between text-sm">
+				<span className="font-semibold text-ink">대화로 작성하기</span>
+				<div className="flex items-center gap-3">
+					<span className="text-body-soft">{progress}% 완료</span>
+					<Link
+						to="/onboarding/direct"
+						className="text-xs font-medium text-brand transition-colors hover:underline"
+					>
+						한 번에 입력하기
+					</Link>
+				</div>
+			</div>
+			<div className="h-2 w-full overflow-hidden rounded-full bg-line-soft">
+				<div
+					className="h-full rounded-full bg-brand transition-all duration-500"
+					style={{ width: `${progress}%` }}
+				/>
+			</div>
+			{showOwnerBadge ? (
+				<div>
+					<Badge variant="soft">
+						{isClinicOwner ? "병원 홈페이지까지" : "프로필만"}
+					</Badge>
+				</div>
+			) : null}
+		</div>
+	);
+}
+
+/** 완료(commit) 버튼 — 진행률 100%일 때만 노출. */
+function CommitButton({
+	isClinicOwner,
+	disabled,
+	isCommitting,
+	onClick,
+}: {
+	isClinicOwner: boolean;
+	disabled: boolean;
+	isCommitting: boolean;
+	onClick: () => void;
+}) {
+	return (
+		<Button
+			variant="brand"
+			size="cta"
+			className="w-full"
+			disabled={disabled}
+			onClick={onClick}
+		>
+			{isCommitting ? (
+				<Loader2 className="size-5 animate-spin" />
+			) : (
+				<CheckCircle2 className="size-5" />
+			)}
+			{isClinicOwner ? "관리자 계정 설정 후 완료하기" : "프로필 생성 완료하기"}
+		</Button>
+	);
+}
+
+/** 채팅 흐름(말풍선 + 낙관적 전송/업로드/분석·대기 표시등 + 폴링 만료 새로고침). */
+function ChatScroll({
+	viewportRef,
+	history,
+	questionBubble,
+	interrupt,
+	isSending,
+	isUploading,
+	isAnalyzing,
+	waiting,
+	pollExpired,
+	pendingMessage,
+	processingFile,
+	uploadingFileName,
+	onManualRefresh,
+}: {
+	viewportRef: React.RefObject<HTMLDivElement | null>;
+	history: ChatMessage[];
+	questionBubble: string | null;
+	interrupt: boolean;
+	isSending: boolean;
+	isUploading: boolean;
+	isAnalyzing: boolean;
+	waiting: boolean;
+	pollExpired: boolean;
+	pendingMessage: string | null;
+	processingFile: number;
+	uploadingFileName?: string;
+	onManualRefresh: () => void;
+}) {
+	const isEmpty =
+		history.length === 0 &&
+		!questionBubble &&
+		!isAnalyzing &&
+		!waiting &&
+		!isSending &&
+		!isUploading;
+	return (
+		<ScrollArea
+			viewportRef={viewportRef}
+			viewportClassName="flex max-h-[52vh] min-h-[280px] flex-col gap-3 pr-3"
+		>
+			{isEmpty ? (
+				<p className="m-auto text-center text-sm text-muted-fg">
+					대화를 시작하면 여기에 표시됩니다.
+				</p>
+			) : (
+				<>
+					{keyHistory(history).map((m) => (
+						<ChatBubble
+							key={m.key}
+							from={m.role}
+							text={m.text}
+							files={m.files}
+						/>
+					))}
+
+					{/* 다음 질문(어시스턴트) — 같은 내용이 history에 없을 때만 흐름 안 말풍선으로 */}
+					{questionBubble ? (
+						<ChatBubble
+							from="assistant"
+							text={questionBubble}
+							interrupt={interrupt}
+						/>
+					) : null}
+
+					{/* 전송 중: 유저 텍스트를 낙관적으로(실제 말풍선과 동일 크기) */}
+					{isSending ? (
+						<div className="ml-auto flex max-w-[85%] items-end gap-2">
+							<div className="whitespace-pre-wrap wrap-break-word rounded-2xl rounded-br-sm bg-brand px-4 py-3 text-[15px] leading-relaxed text-brand-foreground opacity-70">
+								{pendingMessage?.trim() ? pendingMessage : "전송 중…"}
+							</div>
+							<Loader2 className="size-4 shrink-0 animate-spin text-muted-fg" />
+						</div>
+					) : null}
+
+					{/* 파일 전송 상황: 업로드/전송 중인 파일명을 낙관적으로 표시 */}
+					{isUploading && uploadingFileName ? (
+						<div className="ml-auto flex max-w-[85%] items-end gap-2">
+							<div className="flex items-center gap-2 rounded-2xl rounded-br-sm bg-brand px-4 py-3 text-[15px] leading-relaxed text-brand-foreground opacity-70">
+								<Paperclip className="size-4 shrink-0" />
+								<span className="truncate">{uploadingFileName}</span>
+								<span className="shrink-0 text-xs opacity-80">업로드 중…</span>
+							</div>
+							<Loader2 className="size-4 shrink-0 animate-spin text-muted-fg" />
+						</div>
+					) : null}
+
+					{/* 분석/대기 표시등: 막지 않음. waiting이면 폴링이 자동으로 다음 단계로 넘긴다(§1). */}
+					{isAnalyzing || waiting ? (
+						<div className="mr-auto flex max-w-[90%] items-center gap-2 rounded-2xl rounded-bl-sm bg-app-bg px-4 py-2.5 text-xs text-body-soft">
+							<Loader2 className="size-3.5 shrink-0 animate-spin" />
+							{processingFile > 0
+								? `올려주신 파일을 분석하고 있어요 (${processingFile}개)`
+								: "입력하신 내용을 정리하고 있어요"}
+							{waiting
+								? " · 잠시만 기다려 주세요"
+								: " · 계속 답변하셔도 됩니다"}
+						</div>
+					) : null}
+
+					{/* 대기 폴링이 안전장치(최대 시간)에 걸려 멈춘 경우: 수동 새로고침 */}
+					{pollExpired ? (
+						<button
+							type="button"
+							onClick={onManualRefresh}
+							className="mr-auto inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-2 text-xs font-medium text-body transition-colors hover:bg-muted"
+						>
+							<Loader2 className="size-3.5 shrink-0" />
+							아직 처리 중이에요. 새로고침해서 확인하기
+						</button>
+					) : null}
+				</>
+			)}
+		</ScrollArea>
+	);
+}
+
+/** 충돌 비교 카드 + 보기(select)/건너뛰기 + 직접입력/파일 입력창 + 안내문. */
+function Composer({
+	inputRef,
+	fileInputRef,
+	pickConflicts,
+	isSelect,
+	selectOptions,
+	showSkip,
+	allowText,
+	allowFile,
+	text,
+	pending,
+	onTextChange,
+	onSubmit,
+	onPickFile,
+	onOpenFilePicker,
+	onSendOption,
+	onPickConflict,
+}: {
+	inputRef: React.RefObject<HTMLInputElement | null>;
+	fileInputRef: React.RefObject<HTMLInputElement | null>;
+	pickConflicts: Conflict[];
+	isSelect: boolean;
+	selectOptions: Array<{ label?: string | null; value?: string | null }>;
+	showSkip: boolean;
+	allowText: boolean;
+	allowFile: boolean;
+	text: string;
+	/** 진행 중 상태 묶음 — 전송/업로드/충돌해소 mutation의 pending 플래그. */
+	pending: { sending: boolean; uploading: boolean; conflict: boolean };
+	onTextChange: (value: string) => void;
+	onSubmit: (e: React.FormEvent) => void;
+	onPickFile: (e: React.ChangeEvent<HTMLInputElement>) => void;
+	onOpenFilePicker: () => void;
+	onSendOption: (value: string) => void;
+	onPickConflict: (value: string) => void;
+}) {
+	return (
+		<>
+			{/* 충돌 비교 카드: 입력값 vs 분석값 불일치 빠른 선택.
+			    단, 백엔드가 충돌을 select 질문(options)으로 내려주면 아래 보기 버튼이 처리하므로 중복 노출 방지. */}
+			{pickConflicts.length > 0 && !isSelect ? (
+				<div className="flex flex-col gap-3">
+					<p className="text-sm font-semibold text-ink">
+						입력하신 값과 분석 결과가 다릅니다. 사용할 값을 선택해 주세요.
+					</p>
+					{pickConflicts.map((c) => (
+						<ConflictCard
+							key={c.field}
+							conflict={c}
+							disabled={pending.conflict}
+							onPick={onPickConflict}
+						/>
+					))}
+				</div>
+			) : null}
+
+			{/* 보기(select) 옵션 + 건너뛰기 버튼 — 같은 줄에 묶어 입력창 위에 노출.
+			    select가 있으면 [보기…][건너뛰기], 없으면 건너뛰기만 단독으로.
+			    클릭 시 value(또는 "건너뛰기")를 그대로 답변으로 전송(문서 §6.2.2)
+			    건너뛰기는 전송/업로드 중 숨김(showSkip) — skip만 있을 땐 줄 자체를 숨긴다. */}
+			{isSelect || showSkip ? (
+				<div className="flex flex-wrap justify-end gap-2">
+					{selectOptions.map((o) => (
+						<Button
+							key={o.value ?? o.label}
+							type="button"
+							variant="brand-outline"
+							size="xl"
+							disabled={pending.sending}
+							onClick={() => {
+								const v = (o.value ?? "").trim();
+								if (v) onSendOption(v);
+							}}
+						>
+							{o.label ?? o.value}
+						</Button>
+					))}
+					{showSkip ? (
+						<Button
+							type="button"
+							variant="brand-outline"
+							size="xl"
+							onClick={() => onSendOption("건너뛰기")}
+						>
+							건너뛰기
+						</Button>
+					) : null}
+				</div>
+			) : null}
+
+			{/* 입력창(직접입력/파일) — question.allow_* 에 따라 노출 */}
+			{allowText || allowFile ? (
+				<form onSubmit={onSubmit} className="flex items-end gap-2">
+					<input
+						ref={fileInputRef}
+						type="file"
+						className="hidden"
+						onChange={onPickFile}
+						accept="image/*,application/pdf,.doc,.docx,.hwp,.xlsx,.xls"
+						aria-label="파일 선택"
+					/>
+					{allowFile ? (
+						<Button
+							type="button"
+							variant="neutral-outline"
+							size="2xl"
+							className="shrink-0 px-0 w-14"
+							disabled={pending.uploading}
+							onClick={onOpenFilePicker}
+							aria-label="파일 첨부"
+						>
+							{pending.uploading ? (
+								<Loader2 className="size-5 animate-spin" />
+							) : (
+								<Paperclip className="size-5" />
+							)}
+						</Button>
+					) : null}
+					{allowText ? (
+						<>
+							<FieldInput
+								ref={inputRef}
+								value={text}
+								onChange={(e) => onTextChange(e.target.value)}
+								placeholder={isSelect ? "직접 입력하기" : "답변을 입력하세요"}
+								disabled={pending.sending}
+								autoFocus
+							/>
+							<Button
+								type="submit"
+								variant="brand"
+								size="2xl"
+								className="shrink-0 px-0 w-14"
+								disabled={!text.trim() || pending.sending}
+								aria-label="전송"
+							>
+								<SendHorizontal className="size-5" />
+							</Button>
+						</>
+					) : null}
+				</form>
+			) : null}
+
+			<p className="text-xs text-muted-fg">
+				이력서·면허증을 올리면 학력·경력·면허·논문이 자동으로 채워집니다.
+				로고/사진은 그대로 저장됩니다.
+			</p>
+		</>
 	);
 }
 
@@ -796,17 +1104,17 @@ function AdminCredentialsDialog({
 	defaultLoginId?: string;
 	onSubmit: (loginId: string, password: string) => void;
 }) {
-	const [loginId, setLoginId] = useState(defaultLoginId ?? "");
+	// 사용자가 직접 입력했는지 여부 — 입력 전엔 draft(defaultLoginId)로 prefill.
+	const [typedLoginId, setTypedLoginId] = useState<string | null>(null);
 	const [password, setPassword] = useState("");
 	const [confirm, setConfirm] = useState("");
 	const loginIdId = useId();
 	const pwId = useId();
 	const confirmId = useId();
 
-	// 다이얼로그가 열릴 때 draft 아이디로 prefill(사용자가 이미 입력했다면 유지).
-	useEffect(() => {
-		if (open && defaultLoginId) setLoginId((v) => v || defaultLoginId);
-	}, [open, defaultLoginId]);
+	// 다이얼로그 draft 아이디 prefill을 effect 없이 렌더 중 계산:
+	// 사용자가 한 번이라도 입력하면 그 값을, 아니면 draft를 사용(편집은 그대로 유지).
+	const loginId = typedLoginId ?? defaultLoginId ?? "";
 
 	const loginIdValid = LOGIN_ID_RE.test(loginId);
 	const loginIdInvalid = loginId.length > 0 && !loginIdValid;
@@ -842,7 +1150,7 @@ function AdminCredentialsDialog({
 							<FieldInput
 								id={loginIdId}
 								value={loginId}
-								onChange={(e) => setLoginId(e.target.value)}
+								onChange={(e) => setTypedLoginId(e.target.value)}
 								placeholder="아이디"
 								autoComplete="username"
 								autoCapitalize="off"
@@ -928,6 +1236,65 @@ function AdminCredentialsDialog({
 // ─────────────────────────────────────────────────────────────────────
 // 헬퍼
 // ─────────────────────────────────────────────────────────────────────
+
+/** view.question(looseObject)을 입력 UI 메타로 좁힌 타입. */
+type QuestionMeta = {
+	type?: string | null;
+	options?: Array<{ label?: string | null; value?: string | null }> | null;
+	allow_text?: boolean | null;
+	allow_skip?: boolean | null;
+	allow_file?: boolean | null;
+};
+
+/**
+ * 입력 UI 메타 계산(문서 §6.2.2). question이 없으면(구버전 호환) 텍스트+파일 항상 허용.
+ * - 보기(select)는 value가 비지 않은 옵션만.
+ * - 직접 입력은 type="text" 또는 allow_text일 때만(보기로도 답할 수 있어도 별개).
+ * - 파일 업로드는 백엔드가 요청한 질문(allow_file)에서만.
+ */
+function deriveQuestionMeta(raw: unknown): {
+	selectOptions: Array<{ label?: string | null; value?: string | null }>;
+	isSelect: boolean;
+	allowText: boolean;
+	allowFile: boolean;
+	allowSkip: boolean;
+} {
+	const question = raw as QuestionMeta | null | undefined;
+	const selectOptions =
+		question?.type === "select" && Array.isArray(question.options)
+			? question.options.filter((o) => (o?.value ?? "").trim().length > 0)
+			: [];
+	return {
+		selectOptions,
+		isSelect: selectOptions.length > 0,
+		allowText: question
+			? question.type === "text" || question.allow_text === true
+			: true,
+		allowFile: question ? question.allow_file === true : true,
+		allowSkip: question?.allow_skip === true,
+	};
+}
+
+/**
+ * next_question을 채팅 흐름 안의 마지막 어시스턴트 말풍선으로 표시할지 계산.
+ * 같은 내용이 이미 history 마지막 어시스턴트 메시지에 있으면 중복이라 표시하지 않는다.
+ */
+function deriveQuestionBubble(
+	history: ChatMessage[],
+	nextQuestion: string | null,
+): string | null {
+	let lastAssistantText = "";
+	for (let i = history.length - 1; i >= 0; i--) {
+		if (history[i].role === "assistant") {
+			lastAssistantText = history[i].text?.trim() ?? "";
+			break;
+		}
+	}
+	const questionText = nextQuestion?.trim() ?? "";
+	return questionText && questionText !== lastAssistantText
+		? questionText
+		: null;
+}
 
 /**
  * 채팅 history에 안정적인 key 부여.

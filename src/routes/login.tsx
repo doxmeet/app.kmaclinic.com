@@ -13,6 +13,14 @@ import { useSession } from "#/lib/auth/use-session.ts";
 
 export const Route = createFileRoute("/login")({ component: LoginPage });
 
+function handleLogin() {
+	if (!startDoxmeetLogin()) {
+		toast.info(
+			"Doxmeet OAuth 설정(authorize URL·client_id)이 아직 없습니다. 환경변수 설정 후 이용 가능합니다.",
+		);
+	}
+}
+
 function LoginPage() {
 	const navigate = useNavigate();
 	const { isAuthenticated } = useSession();
@@ -22,14 +30,6 @@ function LoginPage() {
 	useEffect(() => {
 		if (isAuthenticated) navigate({ to: "/onboarding" });
 	}, [isAuthenticated, navigate]);
-
-	function handleLogin() {
-		if (!startDoxmeetLogin()) {
-			toast.info(
-				"Doxmeet OAuth 설정(authorize URL·client_id)이 아직 없습니다. 환경변수 설정 후 이용 가능합니다.",
-			);
-		}
-	}
 
 	return (
 		<AuthShell title="로그인" eyebrow="K CLINIC">

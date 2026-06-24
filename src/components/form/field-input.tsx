@@ -60,4 +60,4 @@ function FieldTextarea({
 	);
 }
 
-export { FieldInput, FieldTextarea, fieldControlBase };
+export { FieldInput, FieldTextarea };

@@ -1,18 +1,19 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { CheckCircle2, CreditCard, Loader2, PartyPopper } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { CycleSelect } from "#/components/billing/cycle-select.tsx";
 import { InfoCallout } from "#/components/common/info-callout.tsx";
 import {
 	SectionCard,
 	SectionTitle,
 } from "#/components/common/section-card.tsx";
-import { isSlugValid, SlugField } from "#/components/onboarding/slug-field.tsx";
+import { isSlugValid } from "#/components/onboarding/slug.ts";
+import { SlugField } from "#/components/onboarding/slug-field.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { ApiError } from "#/lib/api";
 import {
-	amountForCycle,
 	type BillingCycle,
 	type BillingKey,
 	createSubscription,
@@ -23,7 +24,6 @@ import type { CommitResult } from "#/lib/api/onboarding.ts";
 import { toastApiError } from "#/lib/api-error-message.ts";
 import { useSession } from "#/lib/auth/use-session.ts";
 import { startCardBillingAuth } from "#/lib/toss.ts";
-import { cn } from "#/lib/utils.ts";
 
 /**
  * 온보딩/직접입력 commit 결과 화면.
@@ -65,6 +65,7 @@ export function CommitComplete({
  * publish 호출 없음(프로필 게시는 kmadoc 별도 도메인 담당).
  */
 function FreeProfileComplete({ commitSlug }: { commitSlug: string | null }) {
+	const queryClient = useQueryClient();
 	const { account, refetch } = useSession();
 	const profileSlug = account?.profile?.slug?.trim() || null;
 	// commit 결과 slug를 보조로 사용(세션 갱신 전 표시용).
@@ -79,6 +80,7 @@ function FreeProfileComplete({ commitSlug }: { commitSlug: string | null }) {
 		},
 		onSuccess: async () => {
 			await refetch();
+			queryClient.invalidateQueries({ queryKey: ["account", "me"] });
 		},
 		onError: (err) => toastApiError(err),
 	});
@@ -194,48 +196,6 @@ function FreeProfileComplete({ commitSlug }: { commitSlug: string | null }) {
 // 결제(toss) 단계 — commit 후 병원이면 카드(빌링키) 등록으로 유도
 // ─────────────────────────────────────────────────────────────────────
 
-/**
- * 결제 주기 선택 카드(Figma 1:11958). 연간을 맨 위·기본값으로 노출한다.
- * 금액은 amountForCycle(billing.ts) 단일 출처에서 가져오고, 여기서는 표기 텍스트만 정의한다.
- */
-const CYCLE_CARDS: ReadonlyArray<{
-	value: BillingCycle;
-	title: string;
-	/** 가격 줄 접두사("연 "/"월 "). 단건은 없음. */
-	pricePrefix: string;
-	/** 우측 회색 보조 라벨(월간/단건). */
-	note?: string;
-	/** 강조 배지(연간). */
-	badge?: string;
-	/** 카드 하단 설명 한 줄(연간). */
-	blurb?: string;
-}> = [
-	{
-		value: "annual",
-		title: "정기 결제 (연간 구독)",
-		pricePrefix: "연 ",
-		badge: "2개월 무료 혜택",
-		blurb: "연 1회 정기적으로 자동 결제되는 알뜰형 플랜입니다.",
-	},
-	{
-		value: "monthly",
-		title: "정기 결제 (월간 구독)",
-		pricePrefix: "월 ",
-		note: "매월 자동 결제",
-	},
-	{
-		value: "one_time",
-		title: "1개월 이용권 결제",
-		pricePrefix: "",
-		note: "1회 결제",
-	},
-];
-
-/** 카드 가격 표기(예: "연 100,000원 (부가세 포함)"). 금액은 amountForCycle 단일 출처. */
-function cyclePriceText(card: (typeof CYCLE_CARDS)[number]): string {
-	return `${card.pricePrefix}${amountForCycle(card.value).toLocaleString("ko-KR")}원 (부가세 포함)`;
-}
-
 function PaymentStep({
 	payment,
 	slug,
@@ -245,6 +205,7 @@ function PaymentStep({
 	slug: string | null;
 	onComplete?: () => void;
 }) {
+	const queryClient = useQueryClient();
 	const [loading, setLoading] = useState(false);
 	// 연간을 기본 선택값으로(Figma 1:11958).
 	const [cycle, setCycle] = useState<BillingCycle>("annual");
@@ -258,18 +219,19 @@ function PaymentStep({
 	const hospitalNo = payment.hospital_no;
 
 	// 결제화면 진입 시 먼저 저장된 카드(active 빌링키)를 확인한다(가이드: GET /billing).
-	const billingQuery = useQuery({
+	const {
+		data: billingData,
+		isSuccess: billingIsSuccess,
+		isPending: billingIsPending,
+	} = useQuery({
 		queryKey: ["billing", "list"],
 		queryFn: () => listBilling(),
 	});
 	const savedCard: BillingKey | null =
-		billingQuery.data?.items?.find((b) => b.status === "active") ?? null;
+		billingData?.items?.find((b) => b.status === "active") ?? null;
 	// 저장된 카드가 있고 사용자가 "다른 카드로 변경"을 누르지 않았다면 toss 없이 바로 결제.
 	const showSavedCard =
-		billingQuery.isSuccess &&
-		savedCard != null &&
-		!useNewCard &&
-		hospitalNo != null;
+		billingIsSuccess && savedCard != null && !useNewCard && hospitalNo != null;
 
 	// 저장된 빌링키로 즉시 청구 — authKey 없이 POST /subscription(가이드 2-A, 권장 경로).
 	const chargeMutation = useMutation({
@@ -277,7 +239,11 @@ function PaymentStep({
 			createSubscription(hospitalNo as number, {
 				billing_cycle: cycle,
 			}),
-		onSuccess: () => setDone(true),
+		onSuccess: () => {
+			setDone(true);
+			queryClient.invalidateQueries({ queryKey: ["billing", "list"] });
+			queryClient.invalidateQueries({ queryKey: ["account", "me"] });
+		},
 		onError: (err) => {
 			const code = err instanceof ApiError ? err.errorCode : null;
 			// 이미 활성 구독이면 결제는 끝난 상태 → 성공으로 간주(게시 단계로).
@@ -340,68 +306,7 @@ function PaymentStep({
 			</div>
 
 			{/* 결제 주기 선택 — Figma 1:11958. 백엔드 billing_cycle(monthly/annual/one_time). */}
-			<div className="flex flex-col gap-4">
-				{CYCLE_CARDS.map((card) => {
-					const selected = cycle === card.value;
-					return (
-						<button
-							key={card.value}
-							type="button"
-							onClick={() => setCycle(card.value)}
-							aria-pressed={selected}
-							className={cn(
-								"flex w-full items-start gap-4 rounded-xl p-6 text-left transition-colors",
-								selected
-									? "border-2 border-brand bg-surface"
-									: card.value === "one_time"
-										? "border border-line-soft bg-app-bg hover:border-brand/40"
-										: "border border-line-soft bg-surface hover:border-brand/40",
-							)}
-						>
-							{/* 라디오 */}
-							<span
-								className={cn(
-									"mt-1 flex size-6 shrink-0 items-center justify-center rounded-full border-2",
-									selected ? "border-brand" : "border-line-soft",
-								)}
-							>
-								{selected ? (
-									<span className="size-3 rounded-full bg-brand" />
-								) : null}
-							</span>
-
-							{/* 내용 */}
-							<span className="flex min-w-0 flex-1 flex-col gap-0.5">
-								<span className="flex items-center justify-between gap-3">
-									<span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-										<span className="text-[17px] font-medium text-ink">
-											{card.title}
-										</span>
-										{card.badge ? (
-											<span className="shrink-0 rounded bg-brand px-2 py-0.5 text-xs font-bold text-white">
-												{card.badge}
-											</span>
-										) : null}
-									</span>
-									{card.note ? (
-										<span className="shrink-0 text-base text-muted-fg">
-											{card.note}
-										</span>
-									) : null}
-								</span>
-								<span className="text-[17px] font-semibold text-ink">
-									{cyclePriceText(card)}
-								</span>
-								{card.blurb ? (
-									<span className="pt-1 text-base text-body-soft">
-										{card.blurb}
-									</span>
-								) : null}
-							</span>
-						</button>
-					);
-				})}
-			</div>
+			<CycleSelect value={cycle} onChange={(c) => setCycle(c)} />
 
 			{/* 저장된 카드 — 카드 재입력 없이 바로 결제(가이드 2-A). 글씨/여백을 결제 주기 카드와 맞춤. */}
 			{showSavedCard && savedCard ? (
@@ -409,23 +314,23 @@ function PaymentStep({
 					<div className="flex min-w-0 items-center gap-3">
 						<CreditCard className="size-6 shrink-0 text-brand" />
 						<div className="flex min-w-0 flex-col gap-0.5">
-							<span className="truncate text-[17px] font-semibold text-ink">
+							<span className="truncate text-[16px] font-semibold text-ink sm:text-[17px]">
 								{cardLabel(savedCard)}
 							</span>
-							<span className="text-base text-body-soft">저장된 결제 카드</span>
+							<span className="text-sm text-body-soft">저장된 결제 카드</span>
 						</div>
 					</div>
 					<button
 						type="button"
 						onClick={() => setUseNewCard(true)}
-						className="shrink-0 text-base font-medium text-brand underline-offset-4 transition-colors hover:underline"
+						className="shrink-0 text-sm font-medium text-brand underline-offset-4 transition-colors hover:underline"
 					>
 						다른 카드로 변경
 					</button>
 				</div>
 			) : null}
 
-			{billingQuery.isPending ? (
+			{billingIsPending ? (
 				<div className="flex items-center justify-center py-3">
 					<Loader2 className="size-5 animate-spin text-brand" />
 				</div>

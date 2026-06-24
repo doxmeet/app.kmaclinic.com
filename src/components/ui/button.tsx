@@ -34,7 +34,8 @@ const buttonVariants = cva(
 				lg: "h-9 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
 				// 디자인 폼 사이즈: 44 / 56 / 64px
 				xl: "h-11 gap-2 rounded-lg px-5 text-[15px] [&_svg:not([class*='size-'])]:size-4.5",
-				"2xl": "h-14 gap-2 rounded-lg px-6 text-[17px] [&_svg:not([class*='size-'])]:size-5",
+				"2xl":
+					"h-14 gap-2 rounded-lg px-6 text-[17px] [&_svg:not([class*='size-'])]:size-5",
 				cta: "h-16 gap-2 rounded-lg px-6 text-[19px] font-bold [&_svg:not([class*='size-'])]:size-5",
 				icon: "size-8",
 				"icon-xs":
@@ -66,4 +67,4 @@ function Button({
 	);
 }
 
-export { Button, buttonVariants };
+export { Button };

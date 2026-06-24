@@ -28,7 +28,7 @@ declare global {
 const TOSS_SDK_URL = "https://js.tosspayments.com/v2/standard";
 
 /** Toss SDK 동적 로드(CDN script). 새 의존성 추가 없이 window.TossPayments 사용. */
-export function loadTossSdk(): Promise<TossPaymentsFactory> {
+function loadTossSdk(): Promise<TossPaymentsFactory> {
 	return new Promise((resolve, reject) => {
 		if (window.TossPayments) {
 			resolve(window.TossPayments);

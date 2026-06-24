@@ -70,6 +70,14 @@ const AGREEMENTS: Agreement[] = [
 	},
 ];
 
+// 액션바 가운데 안내 문구는 정적이라 모듈 스코프로 끌어올려 매 렌더 재생성을 막는다.
+const ACTION_BAR_CENTER = (
+	<span>
+		다른 의사들은 평균 <span className="font-bold text-brand">40개</span> 항목을
+		작성했습니다
+	</span>
+);
+
 function HospitalConfirmPage() {
 	return (
 		<AppShell
@@ -84,13 +92,7 @@ function HospitalConfirmPage() {
 							미리보기
 						</Button>
 					}
-					center={
-						<span>
-							다른 의사들은 평균{" "}
-							<span className="font-bold text-brand">40개</span> 항목을
-							작성했습니다
-						</span>
-					}
+					center={ACTION_BAR_CENTER}
 					right={
 						<Button
 							variant="brand"

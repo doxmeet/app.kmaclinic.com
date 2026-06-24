@@ -12,7 +12,7 @@ import { http, parse } from "#/lib/api";
  */
 const numeric = z.coerce.number().optional();
 
-export const OnboardingConflictSchema = z.looseObject({
+const OnboardingConflictSchema = z.looseObject({
 	// flag형 이상점(FlagConflict)은 field가 null일 수 있음 → nullable.
 	field: z.string().nullish(),
 	// ① 입력값 vs 분석값 불일치(GapConflict)
@@ -25,14 +25,14 @@ export const OnboardingConflictSchema = z.looseObject({
 	asked: z.boolean().optional(),
 });
 
-export const OnboardingMessageSchema = z.looseObject({
+const OnboardingMessageSchema = z.looseObject({
 	role: z.enum(["assistant", "user"]).or(z.string()),
 	// 파일만 보낸 턴이면 text가 null. 텍스트만이면 files가 null.
 	text: z.string().nullish(),
 	files: z.array(z.string()).nullish(),
 });
 
-export const PaymentIntentSchema = z.looseObject({
+const PaymentIntentSchema = z.looseObject({
 	required: z.boolean(),
 	hospital_no: numeric,
 	plan: z.string().optional(),
@@ -46,7 +46,7 @@ export const PaymentIntentSchema = z.looseObject({
 });
 export type PaymentIntent = z.infer<typeof PaymentIntentSchema>;
 
-export const SessionViewSchema = z.looseObject({
+const SessionViewSchema = z.looseObject({
 	session_no: numeric,
 	// 진입 분기(문서 §2): "in_progress" | "pending_payment" 등
 	status: z.string().optional(),
@@ -101,9 +101,8 @@ export const ReviewSchema = z.looseObject({
 	no: numeric,
 	status: z.string().nullish(),
 });
-export type Review = z.infer<typeof ReviewSchema>;
 
-export const CommitResultSchema = z.looseObject({
+const CommitResultSchema = z.looseObject({
 	profile: z.looseObject({}).nullish(),
 	hospital: z.looseObject({}).nullish(),
 	seeded: z.record(z.string(), z.number()).optional(),
@@ -188,22 +187,6 @@ export async function resetSession(): Promise<void> {
 }
 
 /**
- * 결제만 남은(미게시·미결제) 병원을 폐기하고 처음부터 다시 시작 — 문서 onboarding-discard-pending.
- * reset과 달리 이미 만들어진(commit된) 미결제 병원/구독/세션까지 정리(soft-delete). 멱등.
- * ⚠ 이미 공개됐거나 활성/연체 구독이 있는 병원은 건드리지 않음.
- */
-export type DiscardPendingResult = {
-	ok: boolean;
-	discarded_hospital_nos?: Array<number | string>;
-	discarded_count?: number;
-};
-
-/** 걸려 있는 미결제 병원 **전체** + 진행중 초안 일괄 폐기(보조). 항목별은 deleteHospital. */
-export async function discardPending(): Promise<DiscardPendingResult> {
-	return http.post<DiscardPendingResult>("onboarding/discard-pending");
-}
-
-/**
  * 일괄(직접) 입력 one-shot — 문서 §8.3.
  * 대화형 루프 대신 전체 정보를 한 요청으로 보내 즉시 프로필(+병원)을 생성한다.
  * 응답은 commit과 동일(`{ profile, hospital, seeded, payment }`). 파일/AI 추출은 거치지 않음.
@@ -234,7 +217,7 @@ export async function directOnboarding(
 //  진입 시 항상 먼저 호출. 진행중 draft(최대 1) + 생성된 병원 카드 목록.
 // ─────────────────────────────────────────────────────────────────────
 
-export const OverviewDraftSchema = z.looseObject({
+const OverviewDraftSchema = z.looseObject({
 	kind: z.string().optional(),
 	status: z.string().optional(),
 	session_no: numeric,
@@ -248,7 +231,7 @@ export const OverviewDraftSchema = z.looseObject({
 export type OverviewDraft = z.infer<typeof OverviewDraftSchema>;
 
 /** 병원 카드 상태: pending_payment → ready_to_publish → published. */
-export const OverviewHospitalSchema = z.looseObject({
+const OverviewHospitalSchema = z.looseObject({
 	kind: z.string().optional(),
 	status: z.string(),
 	hospital_no: numeric,
@@ -266,7 +249,7 @@ export const OverviewHospitalSchema = z.looseObject({
 export type OverviewHospital = z.infer<typeof OverviewHospitalSchema>;
 
 /** 의사 프로필 카드(문서 overview.profile) — 상태: editing → published. */
-export const OverviewProfileSchema = z.looseObject({
+const OverviewProfileSchema = z.looseObject({
 	kind: z.string().optional(),
 	// 게시 가능 여부 판단은 completion_percent가 아니라 이 status로 한다.
 	status: z.string().optional(),
@@ -280,7 +263,7 @@ export const OverviewProfileSchema = z.looseObject({
 });
 export type OverviewProfile = z.infer<typeof OverviewProfileSchema>;
 
-export const OverviewSchema = z.looseObject({
+const OverviewSchema = z.looseObject({
 	draft: OverviewDraftSchema.nullish(),
 	profile: OverviewProfileSchema.nullish(),
 	hospitals: z.array(OverviewHospitalSchema).nullish(),
@@ -300,39 +283,9 @@ export async function getOverview(): Promise<Overview> {
 	return parse(await http.get("onboarding/overview"), OverviewSchema);
 }
 
-/** 특정 병원의 결제 페이로드(새로고침/딥링크로 결제 화면 진입 시). */
-export async function getHospitalPayment(no: number): Promise<PaymentIntent> {
-	return parse(
-		await http.get(`onboarding/hospital/${no}/payment`),
-		PaymentIntentSchema,
-	);
-}
-
 /** 미결제(미게시 + 비활성 구독) 병원 1개 폐기(soft-delete). */
 export async function deleteHospital(
 	no: number,
 ): Promise<{ ok: boolean; discarded_hospital_no?: number | string | null }> {
 	return http.del(`onboarding/hospital/${no}`);
-}
-
-// ─────────────────────────────────────────────────────────────────────
-// 데이터 검수(review) 조회 — 문서 §8.3.
-//  commit/direct 응답의 `review.no` 로 진행 상태를 폴링할 수 있다(필수 아님 — 표시용).
-// ─────────────────────────────────────────────────────────────────────
-
-const ReviewEnvelopeSchema = z.looseObject({ review: ReviewSchema.nullish() });
-
-/** 내 가장 최근 데이터 검수 작업(상태/플래그). 없으면 null. */
-export async function getReview(): Promise<Review | null> {
-	const env = parse(await http.get("onboarding/review"), ReviewEnvelopeSchema);
-	return env.review ?? null;
-}
-
-/** 특정 검수 작업 조회(commit/direct 응답의 review.no 로 폴링). 없으면 null. */
-export async function getReviewByNo(no: number): Promise<Review | null> {
-	const env = parse(
-		await http.get(`onboarding/review/${no}`),
-		ReviewEnvelopeSchema,
-	);
-	return env.review ?? null;
 }

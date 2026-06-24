@@ -13,18 +13,18 @@
 export const SITE_URL = "https://app.kmaclinic.com";
 
 /** 사이트 제목(브랜드명). */
-export const SITE_NAME = "K CLINIC";
+const SITE_NAME = "K CLINIC";
 
 /** 기본 메타 설명. 검색 결과/소셜 미리보기에 노출된다. */
-export const DEFAULT_DESCRIPTION =
+const DEFAULT_DESCRIPTION =
 	"의료진을 위한 프로필·병원 홈페이지 자동 생성 서비스. AI와 대화하듯 답하면 의사 공개 프로필과 병원 홈페이지가 자동으로 완성됩니다. 면허 인증부터 안전한 정기결제, 즉시 공개까지 한 흐름으로.";
 
 /** 기본 키워드. */
-export const DEFAULT_KEYWORDS =
+const DEFAULT_KEYWORDS =
 	"K CLINIC, 케이클리닉, 의사 프로필, 병원 홈페이지, 의료진, 병의원, 의사 소개, 병원 제작, 진료과, 의사 면허 인증, 닥스밋, doxmeet";
 
 /** 기본 OG 이미지(절대 URL). */
-export const OG_IMAGE = `${SITE_URL}/og-image.png`;
+const OG_IMAGE = `${SITE_URL}/og-image.png`;
 
 type SeoArgs = {
 	/** 페이지 제목. 미지정 시 사이트명(K CLINIC)을 사용한다. */

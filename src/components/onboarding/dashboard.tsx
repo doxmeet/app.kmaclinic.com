@@ -1,4 +1,4 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
 	ArrowRight,
@@ -12,9 +12,10 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { InfoRows } from "#/components/common/data-list.tsx";
+import { CardShell } from "#/components/common/card-shell.tsx";
 import { InfoCallout } from "#/components/common/info-callout.tsx";
-import { CardShell, SectionCard } from "#/components/common/section-card.tsx";
+import { InfoRows } from "#/components/common/info-rows.tsx";
+import { SectionCard } from "#/components/common/section-card.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { publishProfile } from "#/lib/api/billing.ts";
@@ -55,6 +56,7 @@ export function OnboardingDashboard({
 	onRefetch: () => void;
 }) {
 	const navigate = useNavigate();
+	const queryClient = useQueryClient();
 	const [menuOpen, setMenuOpen] = useState(false);
 
 	const draft = overview.draft ?? null;
@@ -68,7 +70,10 @@ export function OnboardingDashboard({
 	// ── draft 폐기(reset) ──────────────────────────────────────────
 	const resetMutation = useMutation({
 		mutationFn: resetSession,
-		onSuccess: () => onRefetch(),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["onboarding", "overview"] });
+			onRefetch();
+		},
 		onError: (err) => toastApiError(err),
 	});
 
@@ -329,6 +334,7 @@ function ProfileCard({
 	profile: OverviewProfile;
 	onRefetch: () => void;
 }) {
+	const queryClient = useQueryClient();
 	const published =
 		profile.status === "published" || profile.is_published === true;
 	const slug = profile.slug?.trim() || null;
@@ -339,6 +345,7 @@ function ProfileCard({
 	const publishMutation = useMutation({
 		mutationFn: publishProfile,
 		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["onboarding", "overview"] });
 			toast.success("프로필을 공개했어요.");
 			onRefetch();
 		},
@@ -381,7 +388,12 @@ function ProfileCard({
 									nativeButton={false}
 									render={
 										// biome-ignore lint/a11y/useAnchorContent: Button이 자식으로 콘텐츠를 주입한다.
-										<a href={kmadocUrl} target="_blank" rel="noreferrer" />
+										<a
+											href={kmadocUrl}
+											target="_blank"
+											rel="noreferrer"
+											aria-label="공개 페이지 보기"
+										/>
 									}
 									variant="brand-outline"
 									size="xl"
@@ -436,12 +448,16 @@ function HospitalCard({
 	onPublish: (hospital: OverviewHospital) => void;
 	onRefetch: () => void;
 }) {
+	const queryClient = useQueryClient();
 	const status = hospital.status;
 	const title = hospital.name?.trim() ? hospital.name : "이름 미정 병원";
 
 	const deleteMutation = useMutation({
 		mutationFn: (no: number) => deleteHospital(no),
-		onSuccess: () => onRefetch(),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["onboarding", "overview"] });
+			onRefetch();
+		},
 		onError: (err) => toastApiError(err),
 	});
 
@@ -573,6 +589,7 @@ function HospitalCard({
 												href={`https://${hospital.slug}.kmaclinic.com`}
 												target="_blank"
 												rel="noreferrer"
+												aria-label="공개 페이지 보기"
 											/>
 										}
 										variant="brand-outline"
@@ -666,13 +683,15 @@ function subscriptionStatusLabel(status: string): string {
 	return map[status] ?? status;
 }
 
+const dateFormatter = new Intl.DateTimeFormat("ko-KR", {
+	year: "numeric",
+	month: "long",
+	day: "numeric",
+});
+
 function formatDate(value: string | null | undefined): string | null {
 	if (!value) return null;
 	const date = new Date(value);
 	if (Number.isNaN(date.getTime())) return null;
-	return new Intl.DateTimeFormat("ko-KR", {
-		year: "numeric",
-		month: "long",
-		day: "numeric",
-	}).format(date);
+	return dateFormatter.format(date);
 }

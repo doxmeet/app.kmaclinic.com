@@ -102,6 +102,7 @@ function FileDropzone({
 					ref={inputRef}
 					type="file"
 					multiple
+					aria-label="파일 업로드"
 					className="hidden"
 					onChange={(e) => onSelect?.(e.target.files)}
 				/>

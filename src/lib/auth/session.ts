@@ -1,10 +1,6 @@
 import { z } from "zod";
 import { http, parse, publicApi, publicHttp } from "#/lib/api";
-import {
-	clearTokens,
-	getRefreshToken,
-	setAccessToken,
-} from "#/lib/auth/token-store.ts";
+import { clearTokens, getRefreshToken } from "#/lib/auth/token-store.ts";
 import { env } from "#/lib/env.ts";
 
 /**
@@ -25,7 +21,7 @@ const numericId = z.coerce.number();
 const numericIdOpt = z.coerce.number().optional();
 const numericIdNullish = z.coerce.number().nullish();
 
-export const AccountUserSchema = z.looseObject({
+const AccountUserSchema = z.looseObject({
 	no: numericId,
 	id: z.string().optional(),
 	name: z.string().nullish(),
@@ -37,7 +33,7 @@ export const AccountUserSchema = z.looseObject({
 });
 export type AccountUser = z.infer<typeof AccountUserSchema>;
 
-export const AccountProfileSchema = z.looseObject({
+const AccountProfileSchema = z.looseObject({
 	no: numericIdOpt,
 	slug: z.string().nullish(),
 	is_published: z.boolean().optional(),
@@ -45,7 +41,7 @@ export const AccountProfileSchema = z.looseObject({
 });
 export type AccountProfile = z.infer<typeof AccountProfileSchema> | null;
 
-export const AccountHospitalSchema = z.looseObject({
+const AccountHospitalSchema = z.looseObject({
 	no: numericId,
 	slug: z.string().nullish(),
 	name: z.string().optional(),
@@ -57,7 +53,7 @@ export const AccountHospitalSchema = z.looseObject({
 });
 export type AccountHospital = z.infer<typeof AccountHospitalSchema>;
 
-export const AccountMeSchema = z.looseObject({
+const AccountMeSchema = z.looseObject({
 	user: AccountUserSchema,
 	profile: AccountProfileSchema.nullish(),
 	hospitals: z.array(AccountHospitalSchema).nullish().default([]),
@@ -75,13 +71,6 @@ export async function exchangeOAuthCode(
 /** 내 계정 + 프로필 요약 + 소유 병원/구독 상태. ID는 경계에서 숫자로 정규화. */
 export async function fetchAccount(): Promise<AccountMe> {
 	return parse(await http.get("account/me"), AccountMeSchema);
-}
-
-/** 전화번호 수정 → { user: { no, phone } }. */
-export async function updatePhone(
-	phone: string,
-): Promise<{ user: Partial<AccountUser> }> {
-	return http.patch<{ user: Partial<AccountUser> }>("account/me", { phone });
 }
 
 /** 새로고침 후 부트스트랩: refresh 토큰이 있으면 access를 갱신. */
@@ -115,12 +104,6 @@ export async function logout(): Promise<void> {
 		// 폐기 응답 헤더가 토큰을 재주입했을 수 있으니 한 번 더 정리.
 		clearTokens();
 	}
-}
-
-/** 로컬에서 토큰만 정리(데모/디버그용). */
-export function clearLocalSession(): void {
-	clearTokens();
-	setAccessToken(null);
 }
 
 /**

@@ -77,8 +77,10 @@ import {
 import {
 	useCallback,
 	useEffect,
+	useEffectEvent,
 	useId,
 	useMemo,
+	useReducer,
 	useRef,
 	useState,
 } from "react";
@@ -259,6 +261,8 @@ function applyVerticalAlignToTargets(
 	verticalAlign: string | null,
 ): boolean {
 	let didUpdate = false;
+	// 노드 탐색 루프마다 types.includes(...) 로 선형 검색하지 않도록 Set 으로 1회 변환.
+	const typeSet = new Set(types);
 	const setAttr = (pos: number, node: PmNode) => {
 		const current = (node.attrs.verticalAlign ?? null) as string | null;
 		if (current === verticalAlign) return;
@@ -271,7 +275,7 @@ function applyVerticalAlignToTargets(
 	// (a) 선택 범위 내 매칭 노드 — 드래그 / CellSelection / 이미지 NodeSelection
 	state.selection.ranges.forEach((range) => {
 		state.doc.nodesBetween(range.$from.pos, range.$to.pos, (node, pos) => {
-			if (types.includes(node.type.name)) setAttr(pos, node);
+			if (typeSet.has(node.type.name)) setAttr(pos, node);
 		});
 	});
 	if (didUpdate) return didUpdate;
@@ -283,7 +287,7 @@ function applyVerticalAlignToTargets(
 	if (parent.isBlock) {
 		const parentStart = $from.start();
 		parent.forEach((child, offset) => {
-			if (types.includes(child.type.name)) {
+			if (typeSet.has(child.type.name)) {
 				setAttr(parentStart + offset, child);
 			}
 		});
@@ -293,7 +297,7 @@ function applyVerticalAlignToTargets(
 	// (c) 커서의 조상 체인에서 가장 가까운 매칭 노드 — 표 셀 등
 	for (let depth = $from.depth; depth > 0; depth--) {
 		const node = $from.node(depth);
-		if (types.includes(node.type.name)) {
+		if (typeSet.has(node.type.name)) {
 			setAttr($from.before(depth), node);
 			break;
 		}
@@ -515,6 +519,20 @@ interface ImageUploadScope {
 	scopeKey: string;
 }
 
+interface ImageEditDialogState {
+	pos: number;
+	width: string;
+	height: string;
+	unit: "px" | "%";
+	lockAspect: boolean;
+	aspectRatio: number | null;
+	// 단위 전환 시 복원할 각 단위별 기본값
+	pxWidth: string;
+	pxHeight: string;
+	pctWidth: string;
+	pctHeight: string;
+}
+
 interface TiptapEditorProps {
 	value: string;
 	setValue: (value: string) => void;
@@ -593,6 +611,66 @@ const TEXT_COLORS = [
 	"#ff00ff",
 ];
 
+// ─── Draft state (reducer) ──────────────────────────────────────────
+// draft / dismissed 는 effectiveDraftKey 에 묶여 함께 변하므로 하나의 reducer 로
+// 묶어 단일 dispatch 로 갱신한다. key 가 바뀌면 render 단계에서 reset 을 dispatch 해
+// effect 안에서 prop 변화에 맞춰 state 를 조정하던 패턴을 제거한다.
+interface DraftState {
+	key: string | null;
+	record: TiptapDraftRecord | null;
+	dismissed: boolean;
+}
+
+type DraftAction =
+	| { type: "resetForKey"; key: string | null }
+	| { type: "setRecord"; record: TiptapDraftRecord | null }
+	| { type: "dismiss" }
+	| { type: "discard" };
+
+function draftReducer(state: DraftState, action: DraftAction): DraftState {
+	switch (action.type) {
+		case "resetForKey":
+			return { key: action.key, record: null, dismissed: false };
+		case "setRecord":
+			return { ...state, record: action.record };
+		case "dismiss":
+			return { ...state, dismissed: true };
+		case "discard":
+			return { ...state, record: null, dismissed: true };
+		default:
+			return state;
+	}
+}
+
+// ─── Source view state (reducer) ────────────────────────────────────
+// showSource(boolean) 와 sourceHtml(string) 는 "HTML 소스 편집 모드" 라는 하나의
+// 개념을 표현하므로 reducer 로 묶는다.
+interface SourceViewState {
+	open: boolean;
+	html: string;
+}
+
+type SourceViewAction =
+	| { type: "open"; html: string }
+	| { type: "setHtml"; html: string }
+	| { type: "close" };
+
+function sourceViewReducer(
+	state: SourceViewState,
+	action: SourceViewAction,
+): SourceViewState {
+	switch (action.type) {
+		case "open":
+			return { open: true, html: action.html };
+		case "setHtml":
+			return { ...state, html: action.html };
+		case "close":
+			return { ...state, open: false };
+		default:
+			return state;
+	}
+}
+
 // ─── Toolbar Components ─────────────────────────────────────────────
 
 function ToolbarButton({
@@ -645,16 +723,20 @@ function DropdownWrapper({
 }) {
 	const ref = useRef<HTMLDivElement>(null);
 
+	// onOpenChange 는 handler 안에서만 쓰이므로 reactive 의존성이 아니다.
+	// useEffectEvent 로 감싸 open 변화에만 재구독하도록 한다.
+	const onOutsideClick = useEffectEvent((e: MouseEvent) => {
+		if (ref.current && !ref.current.contains(e.target as Node)) {
+			onOpenChange(false);
+		}
+	});
+
 	useEffect(() => {
 		if (!open) return;
-		const handler = (e: MouseEvent) => {
-			if (ref.current && !ref.current.contains(e.target as Node)) {
-				onOpenChange(false);
-			}
-		};
+		const handler = (e: MouseEvent) => onOutsideClick(e);
 		document.addEventListener("mousedown", handler);
 		return () => document.removeEventListener("mousedown", handler);
-	}, [open, onOpenChange]);
+	}, [open]);
 
 	return (
 		<div ref={ref} className="relative">
@@ -800,6 +882,7 @@ function ColorPickerDropdown({
 						className="size-5 rounded border border-border"
 						style={{ backgroundColor: color }}
 						title={color}
+						aria-label={isColor ? `글자 색 ${color}` : `형광펜 색 ${color}`}
 					/>
 				))}
 			</div>
@@ -1155,239 +1238,359 @@ function EditorToolbar({
 	);
 }
 
-// ─── Main Component ─────────────────────────────────────────────────
-
-export default function TiptapEditor({
-	value,
-	setValue,
-	height = 480,
-	placeholder: placeholderText = "",
-	setEditor: setEditorProp,
-	readonly = false,
-	disabled = false,
-	toolbar = true,
-	className,
-	editorClassName,
-	imageUploadScope,
-	draftKey,
-	draftDisabled = false,
-}: TiptapEditorProps) {
-	const { post } = useRequest({ suppressErrorToast: true });
-	const fileInputRef = useRef<HTMLInputElement>(null);
-	const editorRootRef = useRef<HTMLDivElement>(null);
-	const editorSurfaceRef = useRef<HTMLDivElement>(null);
-	const uploadSessionIdRef = useRef<string | null>(null);
-	const lastScopeRef = useRef<string | null>(null);
-	const isEditorFocusedRef = useRef(false);
-	const lastEmittedValueRef = useRef(value);
-	const pendingExternalValueRef = useRef<string | null>(null);
-	const pendingIdleRef = useRef<number | null>(null);
-	const setValueRef = useRef(setValue);
-	setValueRef.current = setValue;
-	const editorInstanceRef = useRef<Editor | null>(null);
-	const uploadAndInsertImagesRef = useRef<
-		(ed: Editor, files: File[]) => Promise<void>
-	>(async () => {});
-	const replaceBase64ImagesRef = useRef<(ed: Editor) => Promise<void>>(
-		async () => {},
-	);
-	const handleWordPasteRef = useRef<
-		(ed: Editor, html: string, items: DataTransferItemList | null) => void
-	>(() => {});
-
+// 이미지 px/% 크기 조절 다이얼로그 (private). 상태(state)는 부모가 소유하고,
+// 다이얼로그 전용 로직(치수 입력·적용)만 이 컴포넌트 안에 둔다.
+function ImageEditDialog({
+	editor,
+	state,
+	setState,
+}: {
+	editor: Editor;
+	state: ImageEditDialogState | null;
+	setState: React.Dispatch<React.SetStateAction<ImageEditDialogState | null>>;
+}) {
 	const widthInputId = useId();
 	const heightInputId = useId();
 	const lockAspectId = useId();
 
-	const [isMobileViewport, setIsMobileViewport] = useState(() => {
-		if (typeof window === "undefined") return false;
-		if (typeof window.matchMedia !== "function") return false;
-		return window.matchMedia(EDITOR_MOBILE_MEDIA_QUERY).matches;
-	});
-
-	useEffect(() => {
-		if (typeof window === "undefined") return;
-		if (typeof window.matchMedia !== "function") return;
-		const mql = window.matchMedia(EDITOR_MOBILE_MEDIA_QUERY);
-		const handler = (event: MediaQueryListEvent) => {
-			setIsMobileViewport(event.matches);
-		};
-		mql.addEventListener("change", handler);
-		return () => mql.removeEventListener("change", handler);
-	}, []);
-
-	const initialEditorHeight = useMemo(
-		() =>
-			isMobileViewport ? EDITOR_HEIGHT_MOBILE : loadStoredEditorHeight(height),
-		[height, isMobileViewport],
-	);
-
-	const [showSource, setShowSource] = useState(false);
-	const [sourceHtml, setSourceHtml] = useState("");
-	const [imageToolbar, setImageToolbar] = useState<{
-		top: number;
-		left: number;
-		pos: number;
-	} | null>(null);
-	const [editDialog, setEditDialog] = useState<{
-		pos: number;
-		width: string;
-		height: string;
-		unit: "px" | "%";
-		lockAspect: boolean;
-		aspectRatio: number | null;
-		// 단위 전환 시 복원할 각 단위별 기본값
-		pxWidth: string;
-		pxHeight: string;
-		pctWidth: string;
-		pctHeight: string;
-	} | null>(null);
-
-	// ── Draft autosave ───────────────────────────────────────────
-	const effectiveDraftKey = useMemo(() => {
-		if (draftDisabled || readonly || disabled) return null;
-		if (draftKey !== undefined) return draftKey || null;
-		return getCurrentDraftKey();
-	}, [draftKey, draftDisabled, readonly, disabled]);
-	const effectiveDraftKeyRef = useRef<string | null>(effectiveDraftKey);
-	effectiveDraftKeyRef.current = effectiveDraftKey;
-	const draftSaveTimerRef = useRef<number | null>(null);
-	const draftSavePendingHtmlRef = useRef<string | null>(null);
-	const [draft, setDraft] = useState<TiptapDraftRecord | null>(null);
-	const [draftBannerDismissed, setDraftBannerDismissed] = useState(false);
-
-	// ── Value management ─────────────────────────────────────────
-
-	const emitValueToParent = useCallback((nextValue: string) => {
-		lastEmittedValueRef.current = nextValue;
-		setValueRef.current(nextValue);
-	}, []);
-
-	const scheduleValueUpdate = useCallback(
-		(nextValue: string, useIdle: boolean) => {
-			if (pendingIdleRef.current !== null) {
-				cancelIdleCallback(pendingIdleRef.current);
-				pendingIdleRef.current = null;
-			}
-			if (!useIdle) {
-				emitValueToParent(nextValue);
-				return;
-			}
-			if (typeof requestIdleCallback === "function") {
-				pendingIdleRef.current = requestIdleCallback(
-					() => {
-						pendingIdleRef.current = null;
-						emitValueToParent(nextValue);
-					},
-					{ timeout: 1500 },
-				);
-			} else {
-				pendingIdleRef.current = window.setTimeout(() => {
-					pendingIdleRef.current = null;
-					emitValueToParent(nextValue);
-				}, 0) as unknown as number;
-			}
-		},
-		[emitValueToParent],
-	);
-
-	useEffect(() => {
-		return () => {
-			if (pendingIdleRef.current !== null) {
-				if (typeof cancelIdleCallback === "function") {
-					cancelIdleCallback(pendingIdleRef.current);
-				} else {
-					clearTimeout(pendingIdleRef.current);
+	const handleDialogDimChange = useCallback(
+		(field: "width" | "height", value: string) => {
+			setState((s) => {
+				if (!s) return s;
+				const next = { ...s, [field]: value };
+				if (s.lockAspect && value) {
+					const n = Number(value);
+					if (Number.isFinite(n) && n > 0) {
+						if (s.unit === "px" && s.aspectRatio) {
+							if (field === "width") {
+								next.height = String(Math.round(n / s.aspectRatio));
+							} else {
+								next.width = String(Math.round(n * s.aspectRatio));
+							}
+						} else if (s.unit === "%") {
+							// % 모드에서는 동일한 값으로 맞춤
+							if (field === "width") {
+								next.height = value;
+							} else {
+								next.width = value;
+							}
+						}
+					}
 				}
-			}
-		};
-	}, []);
+				// 현재 단위의 캐시에도 써넣어서 단위 전환 후 다시 돌아올 때 유지되도록 한다.
+				if (s.unit === "px") {
+					next.pxWidth = next.width;
+					next.pxHeight = next.height;
+				} else {
+					next.pctWidth = next.width;
+					next.pctHeight = next.height;
+				}
+				return next;
+			});
+		},
+		[setState],
+	);
 
-	const scheduleDraftSave = useCallback((html: string) => {
-		const key = effectiveDraftKeyRef.current;
-		if (!key) return;
-		if (isEmptyTiptapContent(html)) return;
-		draftSavePendingHtmlRef.current = html;
-		if (draftSaveTimerRef.current !== null) {
-			window.clearTimeout(draftSaveTimerRef.current);
-		}
-		draftSaveTimerRef.current = window.setTimeout(() => {
-			draftSaveTimerRef.current = null;
-			const pending = draftSavePendingHtmlRef.current;
-			draftSavePendingHtmlRef.current = null;
-			if (pending === null) return;
-			void saveTiptapDraft(key, pending);
-		}, 1000);
-	}, []);
-
-	useEffect(() => {
-		return () => {
-			if (draftSaveTimerRef.current !== null) {
-				window.clearTimeout(draftSaveTimerRef.current);
-				draftSaveTimerRef.current = null;
-			}
-			const key = effectiveDraftKeyRef.current;
-			const pending = draftSavePendingHtmlRef.current;
-			draftSavePendingHtmlRef.current = null;
-			if (key && pending !== null && !isEmptyTiptapContent(pending)) {
-				void saveTiptapDraft(key, pending);
-			}
-		};
-	}, []);
-
-	useEffect(() => {
-		if (!effectiveDraftKey) {
-			setDraft(null);
-			setDraftBannerDismissed(false);
-			return;
-		}
-		let cancelled = false;
-		setDraftBannerDismissed(false);
-		void loadTiptapDraft(effectiveDraftKey).then((rec) => {
-			if (!cancelled) setDraft(rec);
-		});
-		if (typeof requestIdleCallback === "function") {
-			requestIdleCallback(
-				() => {
-					void sweepExpiredTiptapDrafts();
-				},
-				{ timeout: 2000 },
-			);
+	const applyImageSize = useCallback(() => {
+		if (!state) return;
+		const { pos, width, height, unit } = state;
+		const w = width.trim();
+		const h = height.trim();
+		const attrs: Record<string, unknown> = {};
+		if (unit === "px") {
+			const wNum = w ? Number(w) : null;
+			const hNum = h ? Number(h) : null;
+			attrs.width =
+				wNum != null && Number.isFinite(wNum) && wNum > 0 ? wNum : null;
+			attrs.height =
+				hNum != null && Number.isFinite(hNum) && hNum > 0 ? hNum : null;
+			attrs.sizeStyle = null;
 		} else {
-			setTimeout(() => {
-				void sweepExpiredTiptapDrafts();
-			}, 0);
+			const hasWidth = w && Number.isFinite(Number(w)) && Number(w) > 0;
+			const hasHeight = h && Number.isFinite(Number(h)) && Number(h) > 0;
+			const parts: string[] = [];
+			if (hasWidth) parts.push(`width: ${w}%`);
+			if (hasHeight) parts.push(`height: ${h}%`);
+			// 가로만 입력한 경우 세로는 비율 유지를 위해 auto로 명시
+			if (hasWidth && !hasHeight) parts.push("height: auto");
+			attrs.width = null;
+			attrs.height = null;
+			attrs.sizeStyle = parts.length > 0 ? parts.join("; ") : null;
 		}
-		return () => {
-			cancelled = true;
-		};
-	}, [effectiveDraftKey]);
+		editor
+			.chain()
+			.focus()
+			.setNodeSelection(pos)
+			.updateAttributes("image", attrs)
+			.run();
+		setState(null);
+	}, [editor, state, setState]);
 
-	const handleRestoreDraft = useCallback(() => {
-		const ed = editorInstanceRef.current;
-		if (!ed || !draft) return;
-		ed.commands.setContent(draft.content, { emitUpdate: false });
-		lastEmittedValueRef.current = draft.content;
-		pendingExternalValueRef.current = null;
-		setValueRef.current(draft.content);
-		setDraftBannerDismissed(true);
-	}, [draft]);
+	return (
+		<Dialog
+			open={state !== null}
+			onOpenChange={(o) => {
+				if (!o) setState(null);
+			}}
+		>
+			<DialogContent className="sm:max-w-sm">
+				<DialogHeader>
+					<DialogTitle>이미지 크기 조절</DialogTitle>
+				</DialogHeader>
+				{state && (
+					<DialogBody>
+						<div className="flex gap-2">
+							<Button
+								type="button"
+								size="sm"
+								variant={state.unit === "px" ? "default" : "outline"}
+								onClick={() =>
+									setState((s) => {
+										if (!s || s.unit === "px") return s;
+										return {
+											...s,
+											unit: "px",
+											width: s.pxWidth,
+											height: s.pxHeight,
+										};
+									})
+								}
+							>
+								px
+							</Button>
+							<Button
+								type="button"
+								size="sm"
+								variant={state.unit === "%" ? "default" : "outline"}
+								onClick={() =>
+									setState((s) => {
+										if (!s || s.unit === "%") return s;
+										return {
+											...s,
+											unit: "%",
+											width: s.pctWidth,
+											height: s.pctHeight,
+										};
+									})
+								}
+							>
+								%
+							</Button>
+						</div>
+						<div className="grid grid-cols-2 gap-3">
+							<div className="flex flex-col gap-1.5">
+								<Label htmlFor={widthInputId}>가로</Label>
+								<div className="flex items-center gap-1">
+									<Input
+										id={widthInputId}
+										type="number"
+										min={1}
+										value={state.width}
+										onChange={(e) =>
+											handleDialogDimChange("width", e.target.value)
+										}
+									/>
+									<span className="text-muted-foreground text-sm">
+										{state.unit}
+									</span>
+								</div>
+							</div>
+							<div className="flex flex-col gap-1.5">
+								<Label htmlFor={heightInputId}>세로</Label>
+								<div className="flex items-center gap-1">
+									<Input
+										id={heightInputId}
+										type="number"
+										min={1}
+										value={state.height}
+										onChange={(e) =>
+											handleDialogDimChange("height", e.target.value)
+										}
+									/>
+									<span className="text-muted-foreground text-sm">
+										{state.unit}
+									</span>
+								</div>
+							</div>
+						</div>
+						<div className="flex items-center gap-2">
+							<Checkbox
+								id={lockAspectId}
+								checked={state.lockAspect}
+								disabled={!state.aspectRatio}
+								onCheckedChange={(v) =>
+									setState((s) => (s ? { ...s, lockAspect: v === true } : s))
+								}
+							/>
+							<Label htmlFor={lockAspectId} className="text-sm font-normal">
+								비율 유지
+								{!state.aspectRatio && (
+									<span className="text-muted-foreground ml-1 text-xs">
+										(원본 크기를 읽을 수 없음)
+									</span>
+								)}
+							</Label>
+						</div>
+						{state.unit === "%" && (
+							<p className="text-muted-foreground text-xs">
+								가로·세로 중 한쪽만 입력하면 나머지는 자동(auto)으로 처리됩니다.
+							</p>
+						)}
+					</DialogBody>
+				)}
+				<DialogFooter>
+					<Button
+						type="button"
+						variant="outline"
+						size="xl"
+						onClick={() => setState(null)}
+					>
+						취소
+					</Button>
+					<Button type="button" size="xl" onClick={applyImageSize}>
+						적용
+					</Button>
+				</DialogFooter>
+			</DialogContent>
+		</Dialog>
+	);
+}
 
-	const handleDiscardDraft = useCallback(() => {
-		const key = effectiveDraftKeyRef.current;
-		setDraftBannerDismissed(true);
-		setDraft(null);
-		if (key) void clearTiptapDraft(key);
-	}, []);
+// 임시저장(draft) 복원/삭제 배너 (private).
+function DraftBanner({
+	draft,
+	onRestore,
+	onDiscard,
+}: {
+	draft: TiptapDraftRecord;
+	onRestore: () => void;
+	onDiscard: () => void;
+}) {
+	return (
+		<div className="flex flex-wrap bg-primary/5 items-center justify-between gap-2 border-b px-3 py-2">
+			<span className="text-sm">
+				{formatDraftRelativeTime(draft.updatedAt)} 임시저장된 내용이 있습니다.
+			</span>
+			<div className="flex gap-1">
+				<Button type="button" size="sm" variant="default" onClick={onRestore}>
+					복원
+				</Button>
+				<Button
+					type="button"
+					size="sm"
+					variant="destructive"
+					onClick={onDiscard}
+				>
+					삭제
+				</Button>
+			</div>
+		</div>
+	);
+}
 
-	const showDraftBanner =
-		!!draft &&
-		!draftBannerDismissed &&
-		!readonly &&
-		!disabled &&
-		draft.content !== value;
+// 에디터 본문 표면 + 이미지 플로팅 툴바 (private). 빈 영역 클릭 시 내부
+// contenteditable 로 포커스를 위임하고, 이미지 파일 드롭을 처리한다.
+function EditorSurface({
+	editor,
+	height,
+	surfaceRef,
+	imageToolbar,
+	onDropImages,
+	onEditImage,
+	onDeleteImage,
+}: {
+	editor: Editor;
+	height: number;
+	surfaceRef: React.RefObject<HTMLDivElement | null>;
+	imageToolbar: { top: number; left: number; pos: number } | null;
+	onDropImages: (files: File[]) => void;
+	onEditImage: () => void;
+	onDeleteImage: () => void;
+}) {
+	return (
+		// 이 div 는 에디터 "표면"으로, 빈 영역 클릭 시 내부 contenteditable
+		// (EditorContent) 로 포커스를 위임한다. 키보드 사용자는 Tab 으로
+		// contenteditable 에 직접 진입/타이핑하므로 별도 키 핸들러가 불필요하며,
+		// 이 래퍼에 role="button"/tabIndex 를 부여하면 에디터를 버튼으로 잘못
+		// 알리고 중복 탭스톱을 만들어 오히려 a11y 가 나빠진다 → 의도된 패턴.
+		// react-doctor-disable-next-line click-events-have-key-events
+		// react-doctor-disable-next-line no-static-element-interactions
+		<div
+			ref={surfaceRef}
+			className="tiptap-content relative overflow-auto resize-y cursor-text"
+			style={{ height, minHeight: EDITOR_HEIGHT_MIN }}
+			onClick={(e) => {
+				if (!editor.isEditable) return;
+				const target = e.target as HTMLElement | null;
+				if (!target) return;
+				if (target.closest(".ProseMirror")) return;
+				editor.commands.focus("end");
+			}}
+			onDragOver={(e) => {
+				if (!editor.isEditable) return;
+				if (!e.dataTransfer.types.includes("Files")) return;
+				e.preventDefault();
+			}}
+			onDrop={(e) => {
+				if (!editor.isEditable) return;
+				const files = e.dataTransfer.files;
+				if (!files || files.length === 0) return;
+				const imageFiles = Array.from(files).filter((f) =>
+					f.type.startsWith("image/"),
+				);
+				if (imageFiles.length === 0) return;
+				e.preventDefault();
+				onDropImages(imageFiles);
+			}}
+		>
+			<EditorContent editor={editor} />
+			{imageToolbar && (
+				<div
+					className="pointer-events-auto absolute z-20 flex -translate-x-1/2 gap-0.5 rounded-md border bg-popover p-1 shadow-md"
+					style={{
+						top: Math.max(imageToolbar.top, 4),
+						left: imageToolbar.left,
+					}}
+				>
+					<button
+						type="button"
+						onMouseDown={(e) => e.preventDefault()}
+						onClick={onEditImage}
+						title="이미지 편집"
+						className="inline-flex size-7 items-center justify-center rounded-sm text-sm transition-colors hover:bg-muted"
+					>
+						<Pencil className="size-4" />
+					</button>
+					<button
+						type="button"
+						onMouseDown={(e) => e.preventDefault()}
+						onClick={onDeleteImage}
+						title="이미지 삭제"
+						className="inline-flex size-7 items-center justify-center rounded-sm text-sm text-destructive transition-colors hover:bg-muted"
+					>
+						<Trash2 className="size-4" />
+					</button>
+				</div>
+			)}
+		</div>
+	);
+}
 
-	// ── Image upload ─────────────────────────────────────────────
+// 이미지 업로드/붙여넣기 파이프라인 (private hook). 업로드 세션 캐싱과
+// 드롭/붙여넣기(Word file:/// · base64) 처리를 캡슐화한다.
+function useImageUpload({
+	post,
+	imageUploadScope,
+	emitValueToParent,
+	fileInputRef,
+}: {
+	post: ReturnType<typeof useRequest>["post"];
+	imageUploadScope: ImageUploadScope | undefined;
+	emitValueToParent: (nextValue: string) => void;
+	fileInputRef: React.RefObject<HTMLInputElement | null>;
+}) {
+	const uploadSessionIdRef = useRef<string | null>(null);
+	const lastScopeRef = useRef<string | null>(null);
 
 	const ensureUploadSessionId = useCallback(async () => {
 		const scopeType = imageUploadScope?.scopeType;
@@ -1445,7 +1648,6 @@ export default function TiptapEditor({
 		},
 		[ensureUploadSessionId, post],
 	);
-	uploadAndInsertImagesRef.current = uploadAndInsertImages;
 
 	const replaceBase64Images = useCallback(
 		async (editorInstance: Editor) => {
@@ -1467,21 +1669,27 @@ export default function TiptapEditor({
 				return;
 			}
 
-			const urlMap = new Map<string, string>();
-			for (const dataUri of dataUris) {
-				try {
-					const res = await fetch(dataUri);
-					const blob = await res.blob();
-					const ext = blob.type.split("/")[1]?.replace("+xml", "") || "png";
-					const file = new File([blob], `pasted-image.${ext}`, {
-						type: blob.type,
-					});
-					const attachment = await uploadFile(file, sessionId, post);
-					urlMap.set(dataUri, attachment.public_url);
-				} catch {
-					toast.error("붙여넣기된 이미지 업로드에 실패했습니다.");
-				}
-			}
+			// 각 dataUri 업로드는 서로 독립적이므로 병렬로 실행한다.
+			const uploadedEntries = await Promise.all(
+				dataUris.map(async (dataUri): Promise<[string, string] | null> => {
+					try {
+						const res = await fetch(dataUri);
+						const blob = await res.blob();
+						const ext = blob.type.split("/")[1]?.replace("+xml", "") || "png";
+						const file = new File([blob], `pasted-image.${ext}`, {
+							type: blob.type,
+						});
+						const attachment = await uploadFile(file, sessionId, post);
+						return [dataUri, attachment.public_url];
+					} catch {
+						toast.error("붙여넣기된 이미지 업로드에 실패했습니다.");
+						return null;
+					}
+				}),
+			);
+			const urlMap = new Map<string, string>(
+				uploadedEntries.filter((e): e is [string, string] => e !== null),
+			);
 			if (urlMap.size === 0) return;
 
 			const { tr } = editorInstance.state;
@@ -1503,7 +1711,6 @@ export default function TiptapEditor({
 		},
 		[ensureUploadSessionId, post, emitValueToParent],
 	);
-	replaceBase64ImagesRef.current = replaceBase64Images;
 
 	const handleWordPaste = useCallback(
 		async (
@@ -1523,7 +1730,7 @@ export default function TiptapEditor({
 			}
 
 			// 2. 이미지 업로드
-			const uploadedUrls: string[] = [];
+			let uploadedUrls: string[] = [];
 			if (imageBlobs.length > 0) {
 				let sessionId: string;
 				try {
@@ -1540,15 +1747,19 @@ export default function TiptapEditor({
 					return;
 				}
 
-				for (const blob of imageBlobs) {
-					try {
-						const attachment = await uploadFile(blob, sessionId, post);
-						uploadedUrls.push(attachment.public_url);
-					} catch {
-						toast.error(`이미지 업로드 실패: ${blob.name}`);
-						uploadedUrls.push("");
-					}
-				}
+				// 업로드는 서로 독립적이므로 병렬 실행한다. Promise.all 은 입력 순서를
+				// 보존하므로 아래 file:/// 치환의 위치 매칭(urlIndex)이 그대로 유지된다.
+				uploadedUrls = await Promise.all(
+					imageBlobs.map(async (blob) => {
+						try {
+							const attachment = await uploadFile(blob, sessionId, post);
+							return attachment.public_url;
+						} catch {
+							toast.error(`이미지 업로드 실패: ${blob.name}`);
+							return "";
+						}
+					}),
+				);
 			}
 
 			// 3. HTML에서 file:/// 참조를 업로드된 URL로 교체
@@ -1569,7 +1780,6 @@ export default function TiptapEditor({
 		},
 		[ensureUploadSessionId, post, emitValueToParent],
 	);
-	handleWordPasteRef.current = handleWordPaste;
 
 	const openImagePicker = useCallback(() => {
 		if (!imageUploadScope?.scopeType || !imageUploadScope?.scopeKey) {
@@ -1577,11 +1787,283 @@ export default function TiptapEditor({
 			return;
 		}
 		fileInputRef.current?.click();
-	}, [imageUploadScope]);
+	}, [imageUploadScope, fileInputRef]);
 
-	// ── Editor setup ─────────────────────────────────────────────
+	return {
+		uploadAndInsertImages,
+		replaceBase64Images,
+		handleWordPaste,
+		openImagePicker,
+	};
+}
 
-	const extensions = useMemo(
+// 임시저장(draft) 자동저장/복원 로직 (private hook). 디바운스 저장, 키 변경 시
+// render 단계 reset, 마운트 해제 시 flush, 비동기 로드/sweep 를 캡슐화한다.
+function useTiptapDraft({
+	draftKey,
+	draftDisabled,
+	readonly,
+	disabled,
+	value,
+	editorInstanceRef,
+	lastEmittedValueRef,
+	pendingExternalValueRef,
+	setValueRef,
+}: {
+	draftKey: string | undefined;
+	draftDisabled: boolean;
+	readonly: boolean;
+	disabled: boolean;
+	value: string;
+	editorInstanceRef: React.RefObject<Editor | null>;
+	lastEmittedValueRef: React.RefObject<string>;
+	pendingExternalValueRef: React.RefObject<string | null>;
+	setValueRef: React.RefObject<(value: string) => void>;
+}) {
+	const effectiveDraftKey = useMemo(() => {
+		if (draftDisabled || readonly || disabled) return null;
+		if (draftKey !== undefined) return draftKey || null;
+		return getCurrentDraftKey();
+	}, [draftKey, draftDisabled, readonly, disabled]);
+	const effectiveDraftKeyRef = useRef<string | null>(effectiveDraftKey);
+	effectiveDraftKeyRef.current = effectiveDraftKey;
+	const draftSaveTimerRef = useRef<number | null>(null);
+	const draftSavePendingHtmlRef = useRef<string | null>(null);
+	const [draftState, dispatchDraft] = useReducer(draftReducer, {
+		key: effectiveDraftKey,
+		record: null,
+		dismissed: false,
+	});
+	// effectiveDraftKey 가 바뀌면 render 단계에서 draft 캐시를 즉시 초기화한다.
+	// (effect 안에서 prop 변화에 맞춰 state 를 조정하지 않도록 하는 표준 패턴)
+	if (draftState.key !== effectiveDraftKey) {
+		dispatchDraft({ type: "resetForKey", key: effectiveDraftKey });
+	}
+	const draft = draftState.record;
+	const draftBannerDismissed = draftState.dismissed;
+
+	const scheduleDraftSave = useCallback((html: string) => {
+		const key = effectiveDraftKeyRef.current;
+		if (!key) return;
+		if (isEmptyTiptapContent(html)) return;
+		draftSavePendingHtmlRef.current = html;
+		if (draftSaveTimerRef.current !== null) {
+			window.clearTimeout(draftSaveTimerRef.current);
+		}
+		draftSaveTimerRef.current = window.setTimeout(() => {
+			draftSaveTimerRef.current = null;
+			const pending = draftSavePendingHtmlRef.current;
+			draftSavePendingHtmlRef.current = null;
+			if (pending === null) return;
+			void saveTiptapDraft(key, pending);
+		}, 1000);
+	}, []);
+
+	// 언마운트 시 "가장 최근" 디바운스 타이머를 취소하고 아직 flush 되지 않은 draft 를
+	// 저장해야 한다. 두 ref 모두 mount 이후 scheduleDraftSave 에서 비동기로 기록되므로
+	// effect 셋업 시점 스냅샷은 항상 null → 의도적으로 cleanup 에서 최신 ref 를 읽는다.
+	// react-doctor-disable-next-line exhaustive-deps
+	useEffect(() => {
+		return () => {
+			if (draftSaveTimerRef.current !== null) {
+				window.clearTimeout(draftSaveTimerRef.current);
+				draftSaveTimerRef.current = null;
+			}
+			const key = effectiveDraftKeyRef.current;
+			const pending = draftSavePendingHtmlRef.current;
+			draftSavePendingHtmlRef.current = null;
+			if (key && pending !== null && !isEmptyTiptapContent(pending)) {
+				void saveTiptapDraft(key, pending);
+			}
+		};
+	}, []);
+
+	// effectiveDraftKey 가 있을 때만 저장된 draft 를 비동기로 로드한다. draft/dismissed
+	// 의 reset 은 위 render 단계에서 끝났으므로 여기서는 순수 side-effect(로드/sweep)만 수행.
+	useEffect(() => {
+		if (!effectiveDraftKey) return;
+		let cancelled = false;
+		void loadTiptapDraft(effectiveDraftKey).then((rec) => {
+			if (!cancelled) dispatchDraft({ type: "setRecord", record: rec });
+		});
+		if (typeof requestIdleCallback === "function") {
+			requestIdleCallback(
+				() => {
+					void sweepExpiredTiptapDrafts();
+				},
+				{ timeout: 2000 },
+			);
+		} else {
+			setTimeout(() => {
+				void sweepExpiredTiptapDrafts();
+			}, 0);
+		}
+		return () => {
+			cancelled = true;
+		};
+	}, [effectiveDraftKey]);
+
+	const handleRestoreDraft = useCallback(() => {
+		const ed = editorInstanceRef.current;
+		if (!ed || !draft) return;
+		ed.commands.setContent(draft.content, { emitUpdate: false });
+		lastEmittedValueRef.current = draft.content;
+		pendingExternalValueRef.current = null;
+		setValueRef.current(draft.content);
+		dispatchDraft({ type: "dismiss" });
+	}, [
+		draft,
+		editorInstanceRef,
+		lastEmittedValueRef,
+		pendingExternalValueRef,
+		setValueRef,
+	]);
+
+	const handleDiscardDraft = useCallback(() => {
+		const key = effectiveDraftKeyRef.current;
+		dispatchDraft({ type: "discard" });
+		if (key) void clearTiptapDraft(key);
+	}, []);
+
+	const showDraftBanner =
+		!!draft &&
+		!draftBannerDismissed &&
+		!readonly &&
+		!disabled &&
+		draft.content !== value;
+
+	return {
+		draft,
+		showDraftBanner,
+		scheduleDraftSave,
+		handleRestoreDraft,
+		handleDiscardDraft,
+	};
+}
+
+// 모바일 뷰포트 여부 (private hook). matchMedia 변화에 반응한다.
+function useMobileViewport() {
+	const [isMobileViewport, setIsMobileViewport] = useState(() => {
+		if (typeof window === "undefined") return false;
+		if (typeof window.matchMedia !== "function") return false;
+		return window.matchMedia(EDITOR_MOBILE_MEDIA_QUERY).matches;
+	});
+
+	useEffect(() => {
+		if (typeof window === "undefined") return;
+		if (typeof window.matchMedia !== "function") return;
+		const mql = window.matchMedia(EDITOR_MOBILE_MEDIA_QUERY);
+		const handler = (event: MediaQueryListEvent) => {
+			setIsMobileViewport(event.matches);
+		};
+		mql.addEventListener("change", handler);
+		return () => mql.removeEventListener("change", handler);
+	}, []);
+
+	return isMobileViewport;
+}
+
+// 사용자가 리사이즈한 에디터 높이를 localStorage 에 저장한다 (데스크톱만, private hook).
+function useEditorHeightPersistence(
+	editor: Editor | null,
+	showSource: boolean,
+	isMobileViewport: boolean,
+	surfaceRef: React.RefObject<HTMLDivElement | null>,
+) {
+	useEffect(() => {
+		if (
+			!editor ||
+			showSource ||
+			isMobileViewport ||
+			typeof ResizeObserver === "undefined"
+		) {
+			return;
+		}
+		const el = surfaceRef.current;
+		if (!el) return;
+		let saveTimer: number | null = null;
+		const observer = new ResizeObserver((entries) => {
+			const entry = entries[0];
+			if (!entry) return;
+			const next = Math.round(entry.contentRect.height);
+			if (
+				Number.isNaN(next) ||
+				next < EDITOR_HEIGHT_MIN ||
+				next > EDITOR_HEIGHT_MAX
+			) {
+				return;
+			}
+			if (saveTimer !== null) window.clearTimeout(saveTimer);
+			saveTimer = window.setTimeout(() => {
+				saveTimer = null;
+				try {
+					window.localStorage.setItem(EDITOR_HEIGHT_STORAGE_KEY, String(next));
+				} catch {}
+			}, 300);
+		});
+		observer.observe(el);
+		return () => {
+			observer.disconnect();
+			if (saveTimer !== null) window.clearTimeout(saveTimer);
+		};
+	}, [editor, showSource, isMobileViewport, surfaceRef]);
+}
+
+// 이미지 선택 시 표시할 플로팅 툴바 위치를 계산한다 (private hook).
+function useImageFloatingToolbar(
+	editor: Editor | null,
+	surfaceRef: React.RefObject<HTMLDivElement | null>,
+	setImageToolbar: React.Dispatch<
+		React.SetStateAction<{ top: number; left: number; pos: number } | null>
+	>,
+) {
+	useEffect(() => {
+		if (!editor) return;
+		// 다음 툴바 위치를 단일 값으로 계산해 setImageToolbar 를 한 번만 호출한다.
+		const computeNext = (): {
+			top: number;
+			left: number;
+			pos: number;
+		} | null => {
+			if (!editor.isEditable) return null;
+			const { selection } = editor.state;
+			const node =
+				"node" in selection
+					? (selection as unknown as { node: PmNode }).node
+					: null;
+			if (node?.type.name !== "image") return null;
+			const pos = selection.from;
+			const dom = editor.view.nodeDOM(pos) as HTMLElement | null;
+			const surface = surfaceRef.current;
+			if (!dom || !surface) return null;
+			const img = (dom.querySelector("img") ?? dom) as HTMLElement;
+			const imgRect = img.getBoundingClientRect();
+			const surfaceRect = surface.getBoundingClientRect();
+			return {
+				top: imgRect.top - surfaceRect.top + surface.scrollTop + 12,
+				left:
+					imgRect.left -
+					surfaceRect.left +
+					surface.scrollLeft +
+					imgRect.width / 2,
+				pos,
+			};
+		};
+		const update = () => {
+			setImageToolbar(computeNext());
+		};
+		editor.on("selectionUpdate", update);
+		editor.on("transaction", update);
+		return () => {
+			editor.off("selectionUpdate", update);
+			editor.off("transaction", update);
+		};
+	}, [editor, surfaceRef, setImageToolbar]);
+}
+
+// tiptap extension 목록 구성 (private hook). placeholderText 외에는 정적이다.
+function useEditorExtensions(placeholderText: string) {
+	return useMemo(
 		() => [
 			StarterKit.configure({
 				heading: { levels: [1, 2, 3, 4] },
@@ -1628,78 +2110,288 @@ export default function TiptapEditor({
 		],
 		[placeholderText],
 	);
+}
 
-	const editor = useEditor({
-		// TanStack Start는 SSR이므로 초기 렌더를 클라이언트로 미뤄 hydration 불일치를 방지
-		immediatelyRender: false,
-		extensions,
-		content: value,
-		editable: !readonly && !disabled,
-		editorProps: {
-			attributes: {
-				class: cn("tiptap-content-area", editorClassName),
-			},
-			handleDrop: (_view, event, _slice, moved) => {
-				if (moved) return false;
-				const files = event.dataTransfer?.files;
-				if (!files || files.length === 0) return false;
+// 이미지 노드에서 크기 조절 다이얼로그 초기 state 를 계산한다 (private, pure).
+function computeImageEditDialogState(
+	editor: Editor,
+	pos: number,
+): ImageEditDialogState | null {
+	const node = editor.state.doc.nodeAt(pos);
+	if (!node || node.type.name !== "image") return null;
+	const { width, height, sizeStyle } = node.attrs as {
+		width: number | string | null;
+		height: number | string | null;
+		sizeStyle: string | null;
+	};
+	const dom = editor.view.nodeDOM(pos) as HTMLElement | null;
+	const imgEl = dom?.querySelector("img") as HTMLImageElement | null;
+
+	// 현재 렌더링된 px 크기 — px 단위의 기본값으로 사용
+	let pxWidth = "";
+	let pxHeight = "";
+	if (width != null) {
+		pxWidth = String(width);
+	} else if (imgEl && imgEl.offsetWidth > 0) {
+		pxWidth = String(Math.round(imgEl.offsetWidth));
+	}
+	if (height != null) {
+		pxHeight = String(height);
+	} else if (imgEl && imgEl.offsetHeight > 0) {
+		pxHeight = String(Math.round(imgEl.offsetHeight));
+	}
+
+	// 이미 sizeStyle(%) 로 저장돼 있으면 해당 값, 아니면 기본 100
+	let pctWidth = "100";
+	let pctHeight = "100";
+	let unit: "px" | "%" = "px";
+	if (sizeStyle) {
+		const mw = /width\s*:\s*([\d.]+)\s*%/i.exec(sizeStyle);
+		const mh = /height\s*:\s*([\d.]+)\s*%/i.exec(sizeStyle);
+		if (mw || mh) {
+			unit = "%";
+			if (mw) pctWidth = mw[1];
+			if (mh) pctHeight = mh[1];
+		}
+	}
+
+	const aspectRatio =
+		imgEl && imgEl.naturalWidth > 0 && imgEl.naturalHeight > 0
+			? imgEl.naturalWidth / imgEl.naturalHeight
+			: null;
+	return {
+		pos,
+		width: unit === "px" ? pxWidth : pctWidth,
+		height: unit === "px" ? pxHeight : pctHeight,
+		unit,
+		lockAspect: true,
+		aspectRatio,
+		pxWidth,
+		pxHeight,
+		pctWidth,
+		pctHeight,
+	};
+}
+
+// useEditor 의 editorProps(드롭/붙여넣기 이미지 처리) 를 구성한다 (private).
+// 핸들러는 ref 를 통해 최신 콜백을 참조하므로 안정적인 객체를 반환한다.
+function buildImageEditorProps(
+	editorClassName: string | undefined,
+	refs: {
+		editorInstanceRef: React.RefObject<Editor | null>;
+		uploadAndInsertImagesRef: React.RefObject<
+			(ed: Editor, files: File[]) => Promise<void>
+		>;
+		replaceBase64ImagesRef: React.RefObject<(ed: Editor) => Promise<void>>;
+		handleWordPasteRef: React.RefObject<
+			(ed: Editor, html: string, items: DataTransferItemList | null) => void
+		>;
+	},
+) {
+	const {
+		editorInstanceRef,
+		uploadAndInsertImagesRef,
+		replaceBase64ImagesRef,
+		handleWordPasteRef,
+	} = refs;
+	return {
+		attributes: {
+			class: cn("tiptap-content-area", editorClassName),
+		},
+		handleDrop: (
+			_view: unknown,
+			event: DragEvent,
+			_slice: unknown,
+			moved: boolean,
+		) => {
+			if (moved) return false;
+			const files = event.dataTransfer?.files;
+			if (!files || files.length === 0) return false;
+			const imageFiles = Array.from(files).filter((f) =>
+				f.type.startsWith("image/"),
+			);
+			if (imageFiles.length === 0) return false;
+			event.preventDefault();
+			event.stopPropagation();
+			const ed = editorInstanceRef.current;
+			if (ed) {
+				void uploadAndInsertImagesRef.current(ed, imageFiles);
+			}
+			return true;
+		},
+		handlePaste: (_view: unknown, event: ClipboardEvent) => {
+			// Case 1: Direct image files (screenshot paste)
+			const files = event.clipboardData?.files;
+			if (files && files.length > 0) {
 				const imageFiles = Array.from(files).filter((f) =>
 					f.type.startsWith("image/"),
 				);
-				if (imageFiles.length === 0) return false;
-				event.preventDefault();
-				event.stopPropagation();
-				const ed = editorInstanceRef.current;
-				if (ed) {
-					void uploadAndInsertImagesRef.current(ed, imageFiles);
+				if (imageFiles.length > 0) {
+					event.preventDefault();
+					const ed = editorInstanceRef.current;
+					if (ed) {
+						void uploadAndInsertImagesRef.current(ed, imageFiles);
+					}
+					return true;
 				}
-				return true;
-			},
-			handlePaste: (_view, event) => {
-				// Case 1: Direct image files (screenshot paste)
-				const files = event.clipboardData?.files;
-				if (files && files.length > 0) {
-					const imageFiles = Array.from(files).filter((f) =>
-						f.type.startsWith("image/"),
-					);
-					if (imageFiles.length > 0) {
-						event.preventDefault();
+			}
+			const html = event.clipboardData?.getData("text/html");
+			if (html) {
+				// Case 2: file:/// 이미지 (Word 붙여넣기)
+				if (/src\s*=\s*["']file:\/\/\//i.test(html)) {
+					event.preventDefault();
+					const ed = editorInstanceRef.current;
+					if (ed) {
+						void handleWordPasteRef.current(
+							ed,
+							html,
+							event.clipboardData?.items ?? null,
+						);
+					}
+					return true;
+				}
+				// Case 3: base64 이미지 (웹 붙여넣기)
+				if (/src\s*=\s*["']data:image\//i.test(html)) {
+					setTimeout(() => {
 						const ed = editorInstanceRef.current;
 						if (ed) {
-							void uploadAndInsertImagesRef.current(ed, imageFiles);
+							void replaceBase64ImagesRef.current(ed);
 						}
-						return true;
-					}
+					}, 100);
 				}
-				const html = event.clipboardData?.getData("text/html");
-				if (html) {
-					// Case 2: file:/// 이미지 (Word 붙여넣기)
-					if (/src\s*=\s*["']file:\/\/\//i.test(html)) {
-						event.preventDefault();
-						const ed = editorInstanceRef.current;
-						if (ed) {
-							void handleWordPasteRef.current(
-								ed,
-								html,
-								event.clipboardData?.items ?? null,
-							);
-						}
-						return true;
-					}
-					// Case 3: base64 이미지 (웹 붙여넣기)
-					if (/src\s*=\s*["']data:image\//i.test(html)) {
-						setTimeout(() => {
-							const ed = editorInstanceRef.current;
-							if (ed) {
-								void replaceBase64ImagesRef.current(ed);
-							}
-						}, 100);
-					}
-				}
-				return false;
-			},
+			}
+			return false;
 		},
-		onUpdate: ({ editor: ed }) => {
+	};
+}
+
+// 에디터 전체 레이아웃 (private). 배너 / 툴바 / 소스뷰·표면 / 파일입력 / 다이얼로그를
+// 조립한다. 상태/핸들러는 모두 부모(TiptapEditor)가 소유하고 props 로 전달한다.
+function EditorLayout({
+	editor,
+	className,
+	rootRef,
+	surfaceRef,
+	fileInputRef,
+	toolbar,
+	showSource,
+	sourceHtml,
+	initialEditorHeight,
+	showDraftBanner,
+	draft,
+	imageToolbar,
+	editDialog,
+	onSourceHtmlChange,
+	onImageUpload,
+	onToggleSource,
+	onRestoreDraft,
+	onDiscardDraft,
+	onDropImages,
+	onEditImage,
+	onDeleteImage,
+	onFileInputChange,
+	onEditDialogChange,
+}: {
+	editor: Editor;
+	className: string | undefined;
+	rootRef: React.RefObject<HTMLDivElement | null>;
+	surfaceRef: React.RefObject<HTMLDivElement | null>;
+	fileInputRef: React.RefObject<HTMLInputElement | null>;
+	toolbar: boolean;
+	showSource: boolean;
+	sourceHtml: string;
+	initialEditorHeight: number;
+	showDraftBanner: boolean;
+	draft: TiptapDraftRecord | null;
+	imageToolbar: { top: number; left: number; pos: number } | null;
+	editDialog: ImageEditDialogState | null;
+	onSourceHtmlChange: (html: string) => void;
+	onImageUpload: () => void;
+	onToggleSource: () => void;
+	onRestoreDraft: () => void;
+	onDiscardDraft: () => void;
+	onDropImages: (files: File[]) => void;
+	onEditImage: () => void;
+	onDeleteImage: () => void;
+	onFileInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+	onEditDialogChange: React.Dispatch<
+		React.SetStateAction<ImageEditDialogState | null>
+	>;
+}) {
+	return (
+		<div ref={rootRef} className={cn("rounded-sm border", className)}>
+			{showDraftBanner && draft && (
+				<DraftBanner
+					draft={draft}
+					onRestore={onRestoreDraft}
+					onDiscard={onDiscardDraft}
+				/>
+			)}
+			{toolbar && (
+				<EditorToolbar
+					editor={editor}
+					onImageUpload={onImageUpload}
+					onToggleSource={onToggleSource}
+					showSource={showSource}
+				/>
+			)}
+			{showSource ? (
+				<textarea
+					value={sourceHtml}
+					onChange={(e) => onSourceHtmlChange(e.target.value)}
+					aria-label="HTML 소스 편집"
+					className="w-full resize-y overflow-auto bg-muted/30 p-3 font-mono text-sm outline-none"
+					style={{ height: initialEditorHeight, minHeight: EDITOR_HEIGHT_MIN }}
+				/>
+			) : (
+				<EditorSurface
+					editor={editor}
+					height={initialEditorHeight}
+					surfaceRef={surfaceRef}
+					imageToolbar={imageToolbar}
+					onDropImages={onDropImages}
+					onEditImage={onEditImage}
+					onDeleteImage={onDeleteImage}
+				/>
+			)}
+			<input
+				ref={fileInputRef}
+				type="file"
+				accept="image/*"
+				multiple
+				aria-label="이미지 파일 선택"
+				className="hidden"
+				onChange={onFileInputChange}
+			/>
+			<ImageEditDialog
+				editor={editor}
+				state={editDialog}
+				setState={onEditDialogChange}
+			/>
+		</div>
+	);
+}
+
+// useEditor 의 onUpdate/onFocus/onBlur 라이프사이클 핸들러를 구성한다 (private).
+// 이벤트 핸들러 내부에서만 클로저/ref 를 참조하므로 안정적인 객체를 반환한다.
+function buildEditorLifecycle(deps: {
+	scheduleValueUpdate: (nextValue: string, useIdle: boolean) => void;
+	scheduleDraftSave: (html: string) => void;
+	emitValueToParent: (nextValue: string) => void;
+	isEditorFocusedRef: React.RefObject<boolean>;
+	pendingExternalValueRef: React.RefObject<string | null>;
+	lastEmittedValueRef: React.RefObject<string>;
+}) {
+	const {
+		scheduleValueUpdate,
+		scheduleDraftSave,
+		emitValueToParent,
+		isEditorFocusedRef,
+		pendingExternalValueRef,
+		lastEmittedValueRef,
+	} = deps;
+	return {
+		onUpdate: ({ editor: ed }: { editor: Editor }) => {
 			const html = ed.getHTML();
 			const shouldDefer = html.length > LARGE_CONTENT_THRESHOLD;
 			scheduleValueUpdate(html, shouldDefer);
@@ -1708,7 +2400,7 @@ export default function TiptapEditor({
 		onFocus: () => {
 			isEditorFocusedRef.current = true;
 		},
-		onBlur: ({ editor: ed }) => {
+		onBlur: ({ editor: ed }: { editor: Editor }) => {
 			isEditorFocusedRef.current = false;
 			// Force immediate sync on blur
 			emitValueToParent(ed.getHTML());
@@ -1720,16 +2412,196 @@ export default function TiptapEditor({
 				lastEmittedValueRef.current = pending;
 			}
 		},
+	};
+}
+
+// ─── Main Component ─────────────────────────────────────────────────
+
+export default function TiptapEditor({
+	value,
+	setValue,
+	height = 480,
+	placeholder: placeholderText = "",
+	setEditor: setEditorProp,
+	readonly = false,
+	disabled = false,
+	toolbar = true,
+	className,
+	editorClassName,
+	imageUploadScope,
+	draftKey,
+	draftDisabled = false,
+}: TiptapEditorProps) {
+	const { post } = useRequest({ suppressErrorToast: true });
+	const fileInputRef = useRef<HTMLInputElement>(null);
+	const editorRootRef = useRef<HTMLDivElement>(null);
+	const editorSurfaceRef = useRef<HTMLDivElement>(null);
+	const isEditorFocusedRef = useRef(false);
+	const lastEmittedValueRef = useRef(value);
+	const pendingExternalValueRef = useRef<string | null>(null);
+	const pendingIdleRef = useRef<number | null>(null);
+	const setValueRef = useRef(setValue);
+	setValueRef.current = setValue;
+	const editorInstanceRef = useRef<Editor | null>(null);
+	const uploadAndInsertImagesRef = useRef<
+		(ed: Editor, files: File[]) => Promise<void>
+	>(async () => {});
+	const replaceBase64ImagesRef = useRef<(ed: Editor) => Promise<void>>(
+		async () => {},
+	);
+	const handleWordPasteRef = useRef<
+		(ed: Editor, html: string, items: DataTransferItemList | null) => void
+	>(() => {});
+
+	const isMobileViewport = useMobileViewport();
+
+	const initialEditorHeight = useMemo(
+		() =>
+			isMobileViewport ? EDITOR_HEIGHT_MOBILE : loadStoredEditorHeight(height),
+		[height, isMobileViewport],
+	);
+
+	const [sourceView, dispatchSourceView] = useReducer(sourceViewReducer, {
+		open: false,
+		html: "",
+	});
+	const showSource = sourceView.open;
+	const sourceHtml = sourceView.html;
+	const [imageToolbar, setImageToolbar] = useState<{
+		top: number;
+		left: number;
+		pos: number;
+	} | null>(null);
+	const [editDialog, setEditDialog] = useState<ImageEditDialogState | null>(
+		null,
+	);
+
+	// ── Value management ─────────────────────────────────────────
+	const emitValueToParent = useCallback((nextValue: string) => {
+		lastEmittedValueRef.current = nextValue;
+		setValueRef.current(nextValue);
+	}, []);
+
+	const scheduleValueUpdate = useCallback(
+		(nextValue: string, useIdle: boolean) => {
+			if (pendingIdleRef.current !== null) {
+				cancelIdleCallback(pendingIdleRef.current);
+				pendingIdleRef.current = null;
+			}
+			if (!useIdle) {
+				emitValueToParent(nextValue);
+				return;
+			}
+			if (typeof requestIdleCallback === "function") {
+				pendingIdleRef.current = requestIdleCallback(
+					() => {
+						pendingIdleRef.current = null;
+						emitValueToParent(nextValue);
+					},
+					{ timeout: 1500 },
+				);
+			} else {
+				pendingIdleRef.current = window.setTimeout(() => {
+					pendingIdleRef.current = null;
+					emitValueToParent(nextValue);
+				}, 0) as unknown as number;
+			}
+		},
+		[emitValueToParent],
+	);
+
+	// 언마운트 시 "가장 최근에" 예약된 idle 콜백을 취소해야 한다. idle id 는 mount
+	// 이후 scheduleValueUpdate 에서 비동기로 ref 에 기록되므로, effect 셋업 시점 값을
+	// 스냅샷하면 항상 null 이라 취소가 동작하지 않는다 → cleanup 에서 최신 ref 를 읽는 것이 의도된 동작.
+	// react-doctor-disable-next-line exhaustive-deps
+	useEffect(() => {
+		return () => {
+			if (pendingIdleRef.current !== null) {
+				if (typeof cancelIdleCallback === "function") {
+					cancelIdleCallback(pendingIdleRef.current);
+				} else {
+					clearTimeout(pendingIdleRef.current);
+				}
+			}
+		};
+	}, []);
+
+	// ── Draft autosave ───────────────────────────────────────────
+	const {
+		draft,
+		showDraftBanner,
+		scheduleDraftSave,
+		handleRestoreDraft,
+		handleDiscardDraft,
+	} = useTiptapDraft({
+		draftKey,
+		draftDisabled,
+		readonly,
+		disabled,
+		value,
+		editorInstanceRef,
+		lastEmittedValueRef,
+		pendingExternalValueRef,
+		setValueRef,
+	});
+
+	// ── Image upload ─────────────────────────────────────────────
+
+	const {
+		uploadAndInsertImages,
+		replaceBase64Images,
+		handleWordPaste,
+		openImagePicker,
+	} = useImageUpload({
+		post,
+		imageUploadScope,
+		emitValueToParent,
+		fileInputRef,
+	});
+	// editorProps(handleDrop/handlePaste) 핸들러에서 최신 함수를 참조하도록 ref 동기화
+	uploadAndInsertImagesRef.current = uploadAndInsertImages;
+	replaceBase64ImagesRef.current = replaceBase64Images;
+	handleWordPasteRef.current = handleWordPaste;
+
+	// ── Editor setup ─────────────────────────────────────────────
+
+	const extensions = useEditorExtensions(placeholderText);
+
+	const editor = useEditor({
+		// TanStack Start는 SSR이므로 초기 렌더를 클라이언트로 미뤄 hydration 불일치를 방지
+		immediatelyRender: false,
+		extensions,
+		content: value,
+		editable: !readonly && !disabled,
+		editorProps: buildImageEditorProps(editorClassName, {
+			editorInstanceRef,
+			uploadAndInsertImagesRef,
+			replaceBase64ImagesRef,
+			handleWordPasteRef,
+		}),
+		...buildEditorLifecycle({
+			scheduleValueUpdate,
+			scheduleDraftSave,
+			emitValueToParent,
+			isEditorFocusedRef,
+			pendingExternalValueRef,
+			lastEmittedValueRef,
+		}),
 	});
 
 	// Keep ref in sync for editorProps handlers (handleDrop/handlePaste)
 	editorInstanceRef.current = editor ?? null;
 
 	// Expose editor instance
+	// setEditorProp 은 reactive 의존성이 아니므로(부모가 매 렌더마다 새 함수를 넘겨도
+	// effect 를 재구독할 필요 없음) useEffectEvent 로 감싸 editor 변화에만 반응한다.
+	const emitEditor = useEffectEvent((value: Editor | null) => {
+		setEditorProp?.(value);
+	});
 	useEffect(() => {
-		setEditorProp?.(editor ?? null);
-		return () => setEditorProp?.(null);
-	}, [editor, setEditorProp]);
+		emitEditor(editor ?? null);
+		return () => emitEditor(null);
+	}, [editor]);
 
 	// External value sync
 	useEffect(() => {
@@ -1750,93 +2622,15 @@ export default function TiptapEditor({
 	}, [editor, readonly, disabled]);
 
 	// Persist user-resized editor height to localStorage (desktop only)
-	useEffect(() => {
-		if (
-			!editor ||
-			showSource ||
-			isMobileViewport ||
-			typeof ResizeObserver === "undefined"
-		) {
-			return;
-		}
-		const el = editorSurfaceRef.current;
-		if (!el) return;
-		let saveTimer: number | null = null;
-		const observer = new ResizeObserver((entries) => {
-			const entry = entries[0];
-			if (!entry) return;
-			const next = Math.round(entry.contentRect.height);
-			if (
-				Number.isNaN(next) ||
-				next < EDITOR_HEIGHT_MIN ||
-				next > EDITOR_HEIGHT_MAX
-			) {
-				return;
-			}
-			if (saveTimer !== null) window.clearTimeout(saveTimer);
-			saveTimer = window.setTimeout(() => {
-				saveTimer = null;
-				try {
-					window.localStorage.setItem(EDITOR_HEIGHT_STORAGE_KEY, String(next));
-				} catch {}
-			}, 300);
-		});
-		observer.observe(el);
-		return () => {
-			observer.disconnect();
-			if (saveTimer !== null) window.clearTimeout(saveTimer);
-		};
-	}, [editor, showSource, isMobileViewport]);
+	useEditorHeightPersistence(
+		editor,
+		showSource,
+		isMobileViewport,
+		editorSurfaceRef,
+	);
 
 	// ── Image floating toolbar ───────────────────────────────────
-	useEffect(() => {
-		if (!editor) return;
-		const update = () => {
-			if (!editor.isEditable) {
-				setImageToolbar(null);
-				return;
-			}
-			const { selection } = editor.state;
-			const node =
-				"node" in selection
-					? (selection as unknown as { node: PmNode }).node
-					: null;
-			if (node?.type.name !== "image") {
-				setImageToolbar(null);
-				return;
-			}
-			const pos = selection.from;
-			const dom = editor.view.nodeDOM(pos) as HTMLElement | null;
-			const surface = editorSurfaceRef.current;
-			if (!dom || !surface) {
-				setImageToolbar(null);
-				return;
-			}
-			const img = (dom.querySelector("img") ?? dom) as HTMLElement;
-			const imgRect = img.getBoundingClientRect();
-			const surfaceRect = surface.getBoundingClientRect();
-			setImageToolbar({
-				top: imgRect.top - surfaceRect.top + surface.scrollTop + 12,
-				left:
-					imgRect.left -
-					surfaceRect.left +
-					surface.scrollLeft +
-					imgRect.width / 2,
-				pos,
-			});
-		};
-		editor.on("selectionUpdate", update);
-		editor.on("transaction", update);
-		return () => {
-			editor.off("selectionUpdate", update);
-			editor.off("transaction", update);
-		};
-	}, [editor]);
-
-	// 소스뷰 토글 시 툴바 닫기
-	useEffect(() => {
-		if (showSource) setImageToolbar(null);
-	}, [showSource]);
+	useImageFloatingToolbar(editor, editorSurfaceRef, setImageToolbar);
 
 	const deleteSelectedImage = useCallback(() => {
 		if (!editor) return;
@@ -1846,134 +2640,9 @@ export default function TiptapEditor({
 
 	const openImageEditDialog = useCallback(() => {
 		if (!editor || !imageToolbar) return;
-		const node = editor.state.doc.nodeAt(imageToolbar.pos);
-		if (!node || node.type.name !== "image") return;
-		const { width, height, sizeStyle } = node.attrs as {
-			width: number | string | null;
-			height: number | string | null;
-			sizeStyle: string | null;
-		};
-		const dom = editor.view.nodeDOM(imageToolbar.pos) as HTMLElement | null;
-		const imgEl = dom?.querySelector("img") as HTMLImageElement | null;
-
-		// 현재 렌더링된 px 크기 — px 단위의 기본값으로 사용
-		let pxWidth = "";
-		let pxHeight = "";
-		if (width != null) {
-			pxWidth = String(width);
-		} else if (imgEl && imgEl.offsetWidth > 0) {
-			pxWidth = String(Math.round(imgEl.offsetWidth));
-		}
-		if (height != null) {
-			pxHeight = String(height);
-		} else if (imgEl && imgEl.offsetHeight > 0) {
-			pxHeight = String(Math.round(imgEl.offsetHeight));
-		}
-
-		// 이미 sizeStyle(%) 로 저장돼 있으면 해당 값, 아니면 기본 100
-		let pctWidth = "100";
-		let pctHeight = "100";
-		let unit: "px" | "%" = "px";
-		if (sizeStyle) {
-			const mw = /width\s*:\s*([\d.]+)\s*%/i.exec(sizeStyle);
-			const mh = /height\s*:\s*([\d.]+)\s*%/i.exec(sizeStyle);
-			if (mw || mh) {
-				unit = "%";
-				if (mw) pctWidth = mw[1];
-				if (mh) pctHeight = mh[1];
-			}
-		}
-
-		const aspectRatio =
-			imgEl && imgEl.naturalWidth > 0 && imgEl.naturalHeight > 0
-				? imgEl.naturalWidth / imgEl.naturalHeight
-				: null;
-		setEditDialog({
-			pos: imageToolbar.pos,
-			width: unit === "px" ? pxWidth : pctWidth,
-			height: unit === "px" ? pxHeight : pctHeight,
-			unit,
-			lockAspect: true,
-			aspectRatio,
-			pxWidth,
-			pxHeight,
-			pctWidth,
-			pctHeight,
-		});
+		const next = computeImageEditDialogState(editor, imageToolbar.pos);
+		if (next) setEditDialog(next);
 	}, [editor, imageToolbar]);
-
-	const handleDialogDimChange = useCallback(
-		(field: "width" | "height", value: string) => {
-			setEditDialog((s) => {
-				if (!s) return s;
-				const next = { ...s, [field]: value };
-				if (s.lockAspect && value) {
-					const n = Number(value);
-					if (Number.isFinite(n) && n > 0) {
-						if (s.unit === "px" && s.aspectRatio) {
-							if (field === "width") {
-								next.height = String(Math.round(n / s.aspectRatio));
-							} else {
-								next.width = String(Math.round(n * s.aspectRatio));
-							}
-						} else if (s.unit === "%") {
-							// % 모드에서는 동일한 값으로 맞춤
-							if (field === "width") {
-								next.height = value;
-							} else {
-								next.width = value;
-							}
-						}
-					}
-				}
-				// 현재 단위의 캐시에도 써넣어서 단위 전환 후 다시 돌아올 때 유지되도록 한다.
-				if (s.unit === "px") {
-					next.pxWidth = next.width;
-					next.pxHeight = next.height;
-				} else {
-					next.pctWidth = next.width;
-					next.pctHeight = next.height;
-				}
-				return next;
-			});
-		},
-		[],
-	);
-
-	const applyImageSize = useCallback(() => {
-		if (!editor || !editDialog) return;
-		const { pos, width, height, unit } = editDialog;
-		const w = width.trim();
-		const h = height.trim();
-		const attrs: Record<string, unknown> = {};
-		if (unit === "px") {
-			const wNum = w ? Number(w) : null;
-			const hNum = h ? Number(h) : null;
-			attrs.width =
-				wNum != null && Number.isFinite(wNum) && wNum > 0 ? wNum : null;
-			attrs.height =
-				hNum != null && Number.isFinite(hNum) && hNum > 0 ? hNum : null;
-			attrs.sizeStyle = null;
-		} else {
-			const hasWidth = w && Number.isFinite(Number(w)) && Number(w) > 0;
-			const hasHeight = h && Number.isFinite(Number(h)) && Number(h) > 0;
-			const parts: string[] = [];
-			if (hasWidth) parts.push(`width: ${w}%`);
-			if (hasHeight) parts.push(`height: ${h}%`);
-			// 가로만 입력한 경우 세로는 비율 유지를 위해 auto로 명시
-			if (hasWidth && !hasHeight) parts.push("height: auto");
-			attrs.width = null;
-			attrs.height = null;
-			attrs.sizeStyle = parts.length > 0 ? parts.join("; ") : null;
-		}
-		editor
-			.chain()
-			.focus()
-			.setNodeSelection(pos)
-			.updateAttributes("image", attrs)
-			.run();
-		setEditDialog(null);
-	}, [editor, editDialog]);
 
 	// ── Source view toggle ────────────────────────────────────────
 
@@ -1983,10 +2652,11 @@ export default function TiptapEditor({
 			// Apply source changes back to editor
 			editor.commands.setContent(sourceHtml, { emitUpdate: false });
 			emitValueToParent(sourceHtml);
-			setShowSource(false);
+			dispatchSourceView({ type: "close" });
 		} else {
-			setSourceHtml(editor.getHTML());
-			setShowSource(true);
+			dispatchSourceView({ type: "open", html: editor.getHTML() });
+			// 소스뷰 진입 시 이미지 플로팅 툴바를 닫는다 (이전엔 showSource 효과에서 처리)
+			setImageToolbar(null);
 		}
 	}, [editor, showSource, sourceHtml, emitValueToParent]);
 
@@ -2008,245 +2678,34 @@ export default function TiptapEditor({
 	if (!editor) return null;
 
 	return (
-		<div ref={editorRootRef} className={cn("rounded-sm border", className)}>
-			{showDraftBanner && draft && (
-				<div className="flex flex-wrap bg-primary/5 items-center justify-between gap-2 border-b px-3 py-2">
-					<span className="text-sm">
-						{formatDraftRelativeTime(draft.updatedAt)} 임시저장된 내용이
-						있습니다.
-					</span>
-					<div className="flex gap-1">
-						<Button
-							type="button"
-							size="sm"
-							variant="default"
-							onClick={handleRestoreDraft}
-						>
-							복원
-						</Button>
-						<Button
-							type="button"
-							size="sm"
-							variant="destructive"
-							onClick={handleDiscardDraft}
-						>
-							삭제
-						</Button>
-					</div>
-				</div>
-			)}
-			{toolbar && (
-				<EditorToolbar
-					editor={editor}
-					onImageUpload={openImagePicker}
-					onToggleSource={handleToggleSource}
-					showSource={showSource}
-				/>
-			)}
-			{showSource ? (
-				<textarea
-					value={sourceHtml}
-					onChange={(e) => setSourceHtml(e.target.value)}
-					className="w-full resize-y overflow-auto bg-muted/30 p-3 font-mono text-sm outline-none"
-					style={{ height: initialEditorHeight, minHeight: EDITOR_HEIGHT_MIN }}
-				/>
-			) : (
-				<div
-					ref={editorSurfaceRef}
-					className="tiptap-content relative overflow-auto resize-y cursor-text"
-					style={{ height: initialEditorHeight, minHeight: EDITOR_HEIGHT_MIN }}
-					onClick={(e) => {
-						if (!editor.isEditable) return;
-						const target = e.target as HTMLElement | null;
-						if (!target) return;
-						if (target.closest(".ProseMirror")) return;
-						editor.commands.focus("end");
-					}}
-					onDragOver={(e) => {
-						if (!editor.isEditable) return;
-						if (!e.dataTransfer.types.includes("Files")) return;
-						e.preventDefault();
-					}}
-					onDrop={(e) => {
-						if (!editor.isEditable) return;
-						const files = e.dataTransfer.files;
-						if (!files || files.length === 0) return;
-						const imageFiles = Array.from(files).filter((f) =>
-							f.type.startsWith("image/"),
-						);
-						if (imageFiles.length === 0) return;
-						e.preventDefault();
-						void uploadAndInsertImagesRef.current(editor, imageFiles);
-					}}
-				>
-					<EditorContent editor={editor} />
-					{imageToolbar && (
-						<div
-							className="pointer-events-auto absolute z-20 flex -translate-x-1/2 gap-0.5 rounded-md border bg-popover p-1 shadow-md"
-							style={{
-								top: Math.max(imageToolbar.top, 4),
-								left: imageToolbar.left,
-							}}
-						>
-							<button
-								type="button"
-								onMouseDown={(e) => e.preventDefault()}
-								onClick={openImageEditDialog}
-								title="이미지 편집"
-								className="inline-flex size-7 items-center justify-center rounded-sm text-sm transition-colors hover:bg-muted"
-							>
-								<Pencil className="size-4" />
-							</button>
-							<button
-								type="button"
-								onMouseDown={(e) => e.preventDefault()}
-								onClick={deleteSelectedImage}
-								title="이미지 삭제"
-								className="inline-flex size-7 items-center justify-center rounded-sm text-sm text-destructive transition-colors hover:bg-muted"
-							>
-								<Trash2 className="size-4" />
-							</button>
-						</div>
-					)}
-				</div>
-			)}
-			<input
-				ref={fileInputRef}
-				type="file"
-				accept="image/*"
-				multiple
-				className="hidden"
-				onChange={handleFileInputChange}
-			/>
-			<Dialog
-				open={editDialog !== null}
-				onOpenChange={(o) => {
-					if (!o) setEditDialog(null);
-				}}
-			>
-				<DialogContent className="sm:max-w-sm">
-					<DialogHeader>
-						<DialogTitle>이미지 크기 조절</DialogTitle>
-					</DialogHeader>
-					{editDialog && (
-						<DialogBody>
-							<div className="flex gap-2">
-								<Button
-									type="button"
-									size="sm"
-									variant={editDialog.unit === "px" ? "default" : "outline"}
-									onClick={() =>
-										setEditDialog((s) => {
-											if (!s || s.unit === "px") return s;
-											return {
-												...s,
-												unit: "px",
-												width: s.pxWidth,
-												height: s.pxHeight,
-											};
-										})
-									}
-								>
-									px
-								</Button>
-								<Button
-									type="button"
-									size="sm"
-									variant={editDialog.unit === "%" ? "default" : "outline"}
-									onClick={() =>
-										setEditDialog((s) => {
-											if (!s || s.unit === "%") return s;
-											return {
-												...s,
-												unit: "%",
-												width: s.pctWidth,
-												height: s.pctHeight,
-											};
-										})
-									}
-								>
-									%
-								</Button>
-							</div>
-							<div className="grid grid-cols-2 gap-3">
-								<div className="flex flex-col gap-1.5">
-									<Label htmlFor={widthInputId}>가로</Label>
-									<div className="flex items-center gap-1">
-										<Input
-											id={widthInputId}
-											type="number"
-											min={1}
-											value={editDialog.width}
-											onChange={(e) =>
-												handleDialogDimChange("width", e.target.value)
-											}
-										/>
-										<span className="text-muted-foreground text-sm">
-											{editDialog.unit}
-										</span>
-									</div>
-								</div>
-								<div className="flex flex-col gap-1.5">
-									<Label htmlFor={heightInputId}>세로</Label>
-									<div className="flex items-center gap-1">
-										<Input
-											id={heightInputId}
-											type="number"
-											min={1}
-											value={editDialog.height}
-											onChange={(e) =>
-												handleDialogDimChange("height", e.target.value)
-											}
-										/>
-										<span className="text-muted-foreground text-sm">
-											{editDialog.unit}
-										</span>
-									</div>
-								</div>
-							</div>
-							<div className="flex items-center gap-2">
-								<Checkbox
-									id={lockAspectId}
-									checked={editDialog.lockAspect}
-									disabled={!editDialog.aspectRatio}
-									onCheckedChange={(v) =>
-										setEditDialog((s) =>
-											s ? { ...s, lockAspect: v === true } : s,
-										)
-									}
-								/>
-								<Label htmlFor={lockAspectId} className="text-sm font-normal">
-									비율 유지
-									{!editDialog.aspectRatio && (
-										<span className="text-muted-foreground ml-1 text-xs">
-											(원본 크기를 읽을 수 없음)
-										</span>
-									)}
-								</Label>
-							</div>
-							{editDialog.unit === "%" && (
-								<p className="text-muted-foreground text-xs">
-									가로·세로 중 한쪽만 입력하면 나머지는 자동(auto)으로
-									처리됩니다.
-								</p>
-							)}
-						</DialogBody>
-					)}
-					<DialogFooter>
-						<Button
-							type="button"
-							variant="outline"
-							size="xl"
-							onClick={() => setEditDialog(null)}
-						>
-							취소
-						</Button>
-						<Button type="button" size="xl" onClick={applyImageSize}>
-							적용
-						</Button>
-					</DialogFooter>
-				</DialogContent>
-			</Dialog>
-		</div>
+		<EditorLayout
+			editor={editor}
+			className={className}
+			rootRef={editorRootRef}
+			surfaceRef={editorSurfaceRef}
+			fileInputRef={fileInputRef}
+			toolbar={toolbar}
+			showSource={showSource}
+			sourceHtml={sourceHtml}
+			initialEditorHeight={initialEditorHeight}
+			showDraftBanner={showDraftBanner}
+			draft={draft}
+			imageToolbar={imageToolbar}
+			editDialog={editDialog}
+			onSourceHtmlChange={(html) =>
+				dispatchSourceView({ type: "setHtml", html })
+			}
+			onImageUpload={openImagePicker}
+			onToggleSource={handleToggleSource}
+			onRestoreDraft={handleRestoreDraft}
+			onDiscardDraft={handleDiscardDraft}
+			onDropImages={(files) =>
+				void uploadAndInsertImagesRef.current(editor, files)
+			}
+			onEditImage={openImageEditDialog}
+			onDeleteImage={deleteSelectedImage}
+			onFileInputChange={handleFileInputChange}
+			onEditDialogChange={setEditDialog}
+		/>
 	);
 }

@@ -55,6 +55,13 @@ function isSameDay(a: Date | null | undefined, b: Date | null | undefined) {
 	);
 }
 
+const weekday = (idx: number) =>
+	idx === 0
+		? "text-danger-strong"
+		: idx === 6
+			? "text-brand"
+			: "text-body-soft";
+
 /** 그리드에 그릴 6주 × 7일 셀 목록 (앞뒤 달 포함) */
 function buildGrid(viewYear: number, viewMonth: number) {
 	const first = new Date(viewYear, viewMonth, 1);
@@ -162,13 +169,6 @@ function Calendar(props: CalendarProps) {
 			!rangeEnd;
 		return { selected: false, rangeStart, rangeEnd, inRange };
 	}
-
-	const weekday = (idx: number) =>
-		idx === 0
-			? "text-danger-strong"
-			: idx === 6
-				? "text-brand"
-				: "text-body-soft";
 
 	return (
 		<div
