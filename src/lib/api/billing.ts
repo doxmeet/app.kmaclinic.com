@@ -33,6 +33,68 @@ export type BillingKey = {
 	[key: string]: unknown;
 };
 
+/** 결제 주기(백엔드 `billing_cycle`). 미전달 시 백엔드는 `monthly`로 동작(하위호환). */
+export type BillingCycle = "monthly" | "annual" | "one_time";
+
+/**
+ * 결제 주기 옵션 — 금액/기간/갱신 정책(백엔드 API 계약).
+ * - monthly : ₩10,000 / 1개월 / 매월 자동청구 (기본)
+ * - annual  : ₩100,000 / 1년 / 매년 자동청구 (월 환산 대비 ₩20,000 절약)
+ * - one_time: ₩10,000 / 1개월 / 자동 갱신 없음(기간 만료 시 expired)
+ *
+ * 금액은 백엔드가 주기에 맞춰 청구하지만, 결제 화면 표시·요약에 쓰려고 동일 값을 둔다.
+ */
+export const BILLING_CYCLES: ReadonlyArray<{
+	value: BillingCycle;
+	/** 선택지 라벨(예: "월간"). */
+	label: string;
+	/** 청구 금액(KRW 정수). */
+	amount: number;
+	/** 금액 옆 기간 접미사(예: "월" → "10,000원 / 월"). */
+	periodSuffix: string;
+	/** 보조 설명(자동 갱신 여부 등). */
+	description: string;
+}> = [
+	{
+		value: "monthly",
+		label: "월간",
+		amount: 10000,
+		periodSuffix: "월",
+		description: "매월 자동 결제",
+	},
+	{
+		value: "annual",
+		label: "연간",
+		amount: 100000,
+		periodSuffix: "년",
+		description: "매년 자동 결제 · ₩20,000 절약",
+	},
+	{
+		value: "one_time",
+		label: "단건",
+		amount: 10000,
+		periodSuffix: "1개월",
+		description: "1개월 이용 · 자동 갱신 없음",
+	},
+];
+
+/** 주기 enum 검증(쿼리/외부 입력 정규화용). 유효하지 않으면 null. */
+export function asBillingCycle(value: unknown): BillingCycle | null {
+	return value === "monthly" || value === "annual" || value === "one_time"
+		? value
+		: null;
+}
+
+/** 주기별 청구 금액(표시용). 알 수 없으면 monthly 금액(₩10,000). */
+export function amountForCycle(cycle: BillingCycle): number {
+	return BILLING_CYCLES.find((c) => c.value === cycle)?.amount ?? 10000;
+}
+
+/** 주기별 메타(라벨/접미사/설명). 알 수 없으면 monthly. */
+export function billingCycleMeta(cycle: BillingCycle) {
+	return BILLING_CYCLES.find((c) => c.value === cycle) ?? BILLING_CYCLES[0];
+}
+
 /** 구독(문서 §6.5). */
 export type Subscription = {
 	no?: number;
@@ -107,6 +169,11 @@ export function createSubscription(
 		marketing_consent?: boolean;
 		authKey?: string;
 		customerKey?: string;
+		/**
+		 * 결제 주기. 미전달 시 백엔드가 `monthly`로 동작(하위호환). 허용값 외는 백엔드가
+		 * `ERROR_400_INVALID_BILLING_CYCLE`로 막으므로 BillingCycle로 좁혀 보낸다.
+		 */
+		billing_cycle?: BillingCycle;
 	} = {},
 ) {
 	return http.post<{ subscription: Subscription; payment: Payment }>(
@@ -117,6 +184,7 @@ export function createSubscription(
 			...(opts.authKey && opts.customerKey
 				? { customerKey: opts.customerKey }
 				: {}),
+			...(opts.billing_cycle ? { billing_cycle: opts.billing_cycle } : {}),
 			...(opts.marketing_consent !== undefined
 				? { marketing_consent: opts.marketing_consent }
 				: {}),

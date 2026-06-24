@@ -10,7 +10,12 @@ import {
 import { AppShell } from "#/components/layout/app-shell.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { ApiError } from "#/lib/api";
-import { createSubscription, issueBilling } from "#/lib/api/billing.ts";
+import {
+	asBillingCycle,
+	type BillingCycle,
+	createSubscription,
+	issueBilling,
+} from "#/lib/api/billing.ts";
 import { apiErrorMessage } from "#/lib/api-error-message.ts";
 import { useSession } from "#/lib/auth/use-session.ts";
 
@@ -42,6 +47,9 @@ export const Route = createFileRoute("/billing/callback")({
 			search.marketing_consent === "1" || search.marketing_consent === 1
 				? true
 				: undefined,
+		// 결제 단계에서 고른 결제 주기(monthly/annual/one_time). toss 리다이렉트로 보존된다.
+		// 유효하지 않거나 없으면 undefined → 백엔드 기본(monthly).
+		billing_cycle: asBillingCycle(search.billing_cycle) ?? undefined,
 		// 흐름 모드(문서 §9.5/§9.6):
 		//  - 미지정/"subscribe": 온보딩 최초 결제(빌링키 발급 + 구독 생성)
 		//  - "card": 결제수단(카드) 변경 — 빌링키만 재발급(저장된 구독에 자동 재연결)
@@ -76,6 +84,7 @@ function BillingCallbackPage() {
 		customerKey,
 		hospital_no,
 		marketing_consent,
+		billing_cycle,
 		mode,
 		fail,
 		code,
@@ -113,8 +122,8 @@ function BillingCallbackPage() {
 						결제 정보가 올바르지 않습니다.
 					</p>
 					<p className="text-sm text-body">
-						카드 등록 정보가 정상적으로 전달되지 않았습니다. 작성 화면에서 결제를
-						다시 시도해 주세요.
+						카드 등록 정보가 정상적으로 전달되지 않았습니다. 작성 화면에서
+						결제를 다시 시도해 주세요.
 					</p>
 					<Button
 						variant="brand"
@@ -134,6 +143,7 @@ function BillingCallbackPage() {
 			customerKey={customerKey}
 			hospitalNo={hospital_no}
 			marketingConsent={marketing_consent === true}
+			billingCycle={billing_cycle}
 			mode={mode}
 		/>
 	);
@@ -146,12 +156,14 @@ function BillingFlow({
 	customerKey,
 	hospitalNo,
 	marketingConsent,
+	billingCycle,
 	mode,
 }: {
 	authKey: string;
 	customerKey: string;
 	hospitalNo: number;
 	marketingConsent: boolean;
+	billingCycle?: BillingCycle;
 	mode: BillingMode;
 }) {
 	const navigate = useNavigate();
@@ -184,6 +196,7 @@ function BillingFlow({
 			if (!cardOnly) {
 				await createSubscription(hospitalNo, {
 					marketing_consent: marketingConsent,
+					...(billingCycle ? { billing_cycle: billingCycle } : {}),
 				});
 			}
 		},
@@ -408,7 +421,7 @@ function BillingSuccess({
 						</h1>
 						<p className="text-[15px] leading-7 text-body-soft">
 							정기 결제가 다시 시작됐습니다. 병원이 비공개 상태라면 구독
-							관리에서 다시 게시할 수 있어요.
+							관리에서 다시 공개할 수 있어요.
 						</p>
 					</div>
 					<Button
@@ -442,14 +455,14 @@ function BillingSuccess({
 					<p className="text-[15px] leading-7 text-body-soft">
 						정기 결제 카드 등록과 구독이 완료됐습니다.
 						<br />
-						이제 <span className="font-semibold text-ink">게시</span>하면 병원
+						이제 <span className="font-semibold text-ink">공개</span>하면 병원
 						홈페이지가 공개됩니다.
 					</p>
 				</div>
 				<InfoCallout tone="info" className="w-full text-left">
 					<p className="text-sm">
 						대시보드에서 이 병원의{" "}
-						<span className="font-semibold text-ink">게시하기</span> 버튼으로
+						<span className="font-semibold text-ink">공개하기</span> 버튼으로
 						공개 주소를 정하고 공개할 수 있어요.
 					</p>
 				</InfoCallout>
@@ -460,7 +473,7 @@ function BillingSuccess({
 					size="cta"
 					className="w-full"
 				>
-					대시보드로 가서 게시하기
+					대시보드로 가서 공개하기
 				</Button>
 			</SectionCard>
 		</AppShell>

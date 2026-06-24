@@ -10,9 +10,10 @@ import {
 } from "#/components/common/section-card.tsx";
 import { isSlugValid, SlugField } from "#/components/onboarding/slug-field.tsx";
 import { Button } from "#/components/ui/button.tsx";
-import { Checkbox } from "#/components/ui/checkbox.tsx";
 import { ApiError } from "#/lib/api";
 import {
+	amountForCycle,
+	type BillingCycle,
 	type BillingKey,
 	createSubscription,
 	listBilling,
@@ -22,6 +23,7 @@ import type { CommitResult } from "#/lib/api/onboarding.ts";
 import { toastApiError } from "#/lib/api-error-message.ts";
 import { useSession } from "#/lib/auth/use-session.ts";
 import { startCardBillingAuth } from "#/lib/toss.ts";
+import { cn } from "#/lib/utils.ts";
 
 /**
  * 온보딩/직접입력 commit 결과 화면.
@@ -31,12 +33,9 @@ import { startCardBillingAuth } from "#/lib/toss.ts";
  */
 export function CommitComplete({
 	result,
-	onStartOver,
 	onComplete,
 }: {
 	result: CommitResult;
-	/** 결제 화면에서 "병원 지우고 새로 시작" — 제공 시 결제 단계에 버튼 노출. */
-	onStartOver?: () => Promise<void>;
 	/**
 	 * 저장된 카드로 즉시 결제가 완료됐을 때(toss 리다이렉트 없는 경로) 대시보드로 돌아갈 핸들러.
 	 * 미제공 시 결제 완료 화면은 `/onboarding`으로 링크 이동한다.
@@ -48,12 +47,7 @@ export function CommitComplete({
 
 	if (payment?.required === true) {
 		return (
-			<PaymentStep
-				payment={payment}
-				slug={slug}
-				onStartOver={onStartOver}
-				onComplete={onComplete}
-			/>
+			<PaymentStep payment={payment} slug={slug} onComplete={onComplete} />
 		);
 	}
 
@@ -200,20 +194,60 @@ function FreeProfileComplete({ commitSlug }: { commitSlug: string | null }) {
 // 결제(toss) 단계 — commit 후 병원이면 카드(빌링키) 등록으로 유도
 // ─────────────────────────────────────────────────────────────────────
 
+/**
+ * 결제 주기 선택 카드(Figma 1:11958). 연간을 맨 위·기본값으로 노출한다.
+ * 금액은 amountForCycle(billing.ts) 단일 출처에서 가져오고, 여기서는 표기 텍스트만 정의한다.
+ */
+const CYCLE_CARDS: ReadonlyArray<{
+	value: BillingCycle;
+	title: string;
+	/** 가격 줄 접두사("연 "/"월 "). 단건은 없음. */
+	pricePrefix: string;
+	/** 우측 회색 보조 라벨(월간/단건). */
+	note?: string;
+	/** 강조 배지(연간). */
+	badge?: string;
+	/** 카드 하단 설명 한 줄(연간). */
+	blurb?: string;
+}> = [
+	{
+		value: "annual",
+		title: "정기 결제 (연간 구독)",
+		pricePrefix: "연 ",
+		badge: "2개월 무료 혜택",
+		blurb: "연 1회 정기적으로 자동 결제되는 알뜰형 플랜입니다.",
+	},
+	{
+		value: "monthly",
+		title: "정기 결제 (월간 구독)",
+		pricePrefix: "월 ",
+		note: "매월 자동 결제",
+	},
+	{
+		value: "one_time",
+		title: "1개월 이용권 결제",
+		pricePrefix: "",
+		note: "1회 결제",
+	},
+];
+
+/** 카드 가격 표기(예: "연 100,000원 (부가세 포함)"). 금액은 amountForCycle 단일 출처. */
+function cyclePriceText(card: (typeof CYCLE_CARDS)[number]): string {
+	return `${card.pricePrefix}${amountForCycle(card.value).toLocaleString("ko-KR")}원 (부가세 포함)`;
+}
+
 function PaymentStep({
 	payment,
 	slug,
-	onStartOver,
 	onComplete,
 }: {
 	payment: NonNullable<CommitResult["payment"]>;
 	slug: string | null;
-	onStartOver?: () => Promise<void>;
 	onComplete?: () => void;
 }) {
 	const [loading, setLoading] = useState(false);
-	const [marketingConsent, setMarketingConsent] = useState(false);
-	const [startingOver, setStartingOver] = useState(false);
+	// 연간을 기본 선택값으로(Figma 1:11958).
+	const [cycle, setCycle] = useState<BillingCycle>("annual");
 	// 저장된 카드가 있어도 "다른 카드로 변경"을 누르면 toss 위젯으로 새 카드를 등록한다.
 	const [useNewCard, setUseNewCard] = useState(false);
 	// 저장된 카드로 즉시 결제(toss 리다이렉트 없음)가 끝나면 성공 화면을 보여준다.
@@ -222,7 +256,6 @@ function PaymentStep({
 	const clientKey = payment.toss_client_key;
 	const customerKey = payment.customer_key;
 	const hospitalNo = payment.hospital_no;
-	const amount = payment.amount;
 
 	// 결제화면 진입 시 먼저 저장된 카드(active 빌링키)를 확인한다(가이드: GET /billing).
 	const billingQuery = useQuery({
@@ -242,7 +275,7 @@ function PaymentStep({
 	const chargeMutation = useMutation({
 		mutationFn: () =>
 			createSubscription(hospitalNo as number, {
-				marketing_consent: marketingConsent,
+				billing_cycle: cycle,
 			}),
 		onSuccess: () => setDone(true),
 		onError: (err) => {
@@ -262,21 +295,6 @@ function PaymentStep({
 		},
 	});
 
-	async function handleStartOver() {
-		if (!onStartOver) return;
-		const ok = window.confirm(
-			"지금 만든 병원 정보를 모두 지우고 처음부터 다시 시작할까요?\n결제 전 입력한 내용은 복구할 수 없습니다.",
-		);
-		if (!ok) return;
-		setStartingOver(true);
-		try {
-			await onStartOver();
-		} catch {
-			toast.error("새로 시작에 실패했어요. 잠시 후 다시 시도해 주세요.");
-			setStartingOver(false);
-		}
-	}
-
 	// 새 카드 등록(toss) 경로는 클라이언트 키·고객 키·병원 번호가 모두 있어야 시작할 수 있다.
 	const ready = Boolean(clientKey && customerKey && hospitalNo != null);
 
@@ -289,7 +307,7 @@ function PaymentStep({
 			// 그래서 customerKey를 그대로 넣으면 콜백에서 사라진다 → 예약 안 된 이름(ck)으로 전달한다.
 			const successUrl = `${origin}/billing/callback?hospital_no=${hospitalNo}&ck=${encodeURIComponent(
 				customerKey,
-			)}${marketingConsent ? "&marketing_consent=1" : ""}`;
+			)}&billing_cycle=${cycle}`;
 			const failUrl = `${origin}/billing/callback?fail=1`;
 			await startCardBillingAuth({
 				clientKey,
@@ -321,54 +339,91 @@ function PaymentStep({
 				</p>
 			</div>
 
-			<div className="rounded-xl border border-line bg-app-bg p-5">
-				<div className="flex items-center justify-between">
-					<span className="text-sm text-body-soft">월 정기 결제</span>
-					<span className="text-lg font-bold text-ink">
-						{typeof amount === "number"
-							? `${amount.toLocaleString("ko-KR")}원 / 월`
-							: "월 정기 결제"}
-					</span>
-				</div>
+			{/* 결제 주기 선택 — Figma 1:11958. 백엔드 billing_cycle(monthly/annual/one_time). */}
+			<div className="flex flex-col gap-4">
+				{CYCLE_CARDS.map((card) => {
+					const selected = cycle === card.value;
+					return (
+						<button
+							key={card.value}
+							type="button"
+							onClick={() => setCycle(card.value)}
+							aria-pressed={selected}
+							className={cn(
+								"flex w-full items-start gap-4 rounded-xl p-6 text-left transition-colors",
+								selected
+									? "border-2 border-brand bg-surface"
+									: card.value === "one_time"
+										? "border border-line-soft bg-app-bg hover:border-brand/40"
+										: "border border-line-soft bg-surface hover:border-brand/40",
+							)}
+						>
+							{/* 라디오 */}
+							<span
+								className={cn(
+									"mt-1 flex size-6 shrink-0 items-center justify-center rounded-full border-2",
+									selected ? "border-brand" : "border-line-soft",
+								)}
+							>
+								{selected ? (
+									<span className="size-3 rounded-full bg-brand" />
+								) : null}
+							</span>
+
+							{/* 내용 */}
+							<span className="flex min-w-0 flex-1 flex-col gap-0.5">
+								<span className="flex items-center justify-between gap-3">
+									<span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+										<span className="text-[17px] font-medium text-ink">
+											{card.title}
+										</span>
+										{card.badge ? (
+											<span className="shrink-0 rounded bg-brand px-2 py-0.5 text-xs font-bold text-white">
+												{card.badge}
+											</span>
+										) : null}
+									</span>
+									{card.note ? (
+										<span className="shrink-0 text-base text-muted-fg">
+											{card.note}
+										</span>
+									) : null}
+								</span>
+								<span className="text-[17px] font-semibold text-ink">
+									{cyclePriceText(card)}
+								</span>
+								{card.blurb ? (
+									<span className="pt-1 text-base text-body-soft">
+										{card.blurb}
+									</span>
+								) : null}
+							</span>
+						</button>
+					);
+				})}
 			</div>
 
-			{/* 저장된 카드 — 카드 재입력 없이 바로 결제(가이드 2-A). */}
+			{/* 저장된 카드 — 카드 재입력 없이 바로 결제(가이드 2-A). 글씨/여백을 결제 주기 카드와 맞춤. */}
 			{showSavedCard && savedCard ? (
-				<div className="flex items-center justify-between gap-3 rounded-xl border border-line bg-surface px-4 py-3.5">
+				<div className="flex items-center justify-between gap-3 rounded-xl border border-line-soft bg-surface p-6">
 					<div className="flex min-w-0 items-center gap-3">
-						<CreditCard className="size-5 shrink-0 text-brand" />
-						<div className="flex min-w-0 flex-col">
-							<span className="truncate text-[15px] font-semibold text-ink">
+						<CreditCard className="size-6 shrink-0 text-brand" />
+						<div className="flex min-w-0 flex-col gap-0.5">
+							<span className="truncate text-[17px] font-semibold text-ink">
 								{cardLabel(savedCard)}
 							</span>
-							<span className="text-xs text-body-soft">저장된 결제 카드</span>
+							<span className="text-base text-body-soft">저장된 결제 카드</span>
 						</div>
 					</div>
 					<button
 						type="button"
 						onClick={() => setUseNewCard(true)}
-						className="shrink-0 text-sm font-medium text-brand underline-offset-4 transition-colors hover:underline"
+						className="shrink-0 text-base font-medium text-brand underline-offset-4 transition-colors hover:underline"
 					>
 						다른 카드로 변경
 					</button>
 				</div>
 			) : null}
-
-			<div className="flex items-start gap-2.5 rounded-xl border border-line bg-app-bg px-4 py-3">
-				<Checkbox
-					id="marketing-consent"
-					checked={marketingConsent}
-					onCheckedChange={(v) => setMarketingConsent(v === true)}
-					className="mt-0.5"
-				/>
-				<label
-					htmlFor="marketing-consent"
-					className="cursor-pointer text-sm text-body"
-				>
-					<span className="font-medium text-ink">[선택]</span> 혜택·소식 등
-					마케팅 정보 수신에 동의합니다.
-				</label>
-			</div>
 
 			{billingQuery.isPending ? (
 				<div className="flex items-center justify-center py-3">
@@ -423,22 +478,6 @@ function PaymentStep({
 				결제가 완료되면 병원 홈페이지가 공개됩니다
 				{slug ? ` (${slug}.kmaclinic.com)` : ""}.
 			</p>
-
-			{/* 미결제 병원 폐기 후 처음부터 새로 시작(파괴적 → confirm 보호). */}
-			{onStartOver ? (
-				<div className="flex flex-col items-center border-t border-line pt-4">
-					<button
-						type="button"
-						disabled={startingOver}
-						onClick={handleStartOver}
-						className="cursor-pointer text-sm text-muted-fg underline-offset-4 transition-colors hover:text-danger-strong hover:underline disabled:opacity-50"
-					>
-						{startingOver
-							? "초기화 중…"
-							: "이 병원 지우고 처음부터 새로 시작하기"}
-					</button>
-				</div>
-			) : null}
 		</SectionCard>
 	);
 }
@@ -464,7 +503,7 @@ function PaidComplete({
 				<p className="text-[15px] leading-7 text-body-soft">
 					저장된 카드로 정기 결제가 시작됐어요.
 					<br />
-					이제 <span className="font-semibold text-ink">게시</span>하면 병원
+					이제 <span className="font-semibold text-ink">공개</span>하면 병원
 					홈페이지가 공개됩니다
 					{slug ? ` (${slug}.kmaclinic.com)` : ""}.
 				</p>
@@ -472,7 +511,7 @@ function PaidComplete({
 			<InfoCallout tone="info" className="w-full text-left">
 				<p className="text-sm">
 					대시보드에서 이 병원의{" "}
-					<span className="font-semibold text-ink">게시하기</span> 버튼으로 공개
+					<span className="font-semibold text-ink">공개하기</span> 버튼으로 공개
 					주소를 정하고 공개할 수 있어요.
 				</p>
 			</InfoCallout>
@@ -483,7 +522,7 @@ function PaidComplete({
 					className="w-full"
 					onClick={onComplete}
 				>
-					대시보드로 가서 게시하기
+					대시보드로 가서 공개하기
 				</Button>
 			) : (
 				<Button
@@ -493,7 +532,7 @@ function PaidComplete({
 					size="cta"
 					className="w-full"
 				>
-					대시보드로 가서 게시하기
+					대시보드로 가서 공개하기
 				</Button>
 			)}
 		</SectionCard>

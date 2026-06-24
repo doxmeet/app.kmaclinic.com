@@ -21,7 +21,6 @@ import {
 	setProfileSlug,
 } from "#/lib/api/billing.ts";
 import {
-	deleteHospital,
 	getOverview,
 	type OverviewHospital,
 	type PaymentIntent,
@@ -103,12 +102,6 @@ function OnboardingOrchestrator() {
 					<CommitComplete
 						result={{ payment: paymentTarget }}
 						onComplete={backToDashboard}
-						onStartOver={async () => {
-							if (paymentTarget.hospital_no != null) {
-								await deleteHospital(paymentTarget.hospital_no);
-							}
-							backToDashboard();
-						}}
 					/>
 				</div>
 			</AppShell>
@@ -249,7 +242,7 @@ function PublishPanel({
 	return (
 		<SectionCard className="flex flex-col gap-6">
 			<div className="flex flex-col gap-2">
-				<SectionTitle>병원 홈페이지 게시</SectionTitle>
+				<SectionTitle>병원 홈페이지 공개</SectionTitle>
 				<p className="text-[15px] leading-7 text-body-soft">
 					<span className="font-semibold text-ink">{title}</span> 홈페이지를
 					공개합니다. 방문자에게 보일 공개 주소를 정해 주세요.
@@ -303,7 +296,7 @@ function PublishPanel({
 
 				<InfoCallout tone="warning">
 					<p className="text-sm">
-						공개 주소는 한 번 정하면 바꿀 수 없어요. 게시하려면 활성
+						공개 주소는 한 번 정하면 바꿀 수 없어요. 공개하려면 활성
 						구독(결제)이 필요합니다.
 					</p>
 				</InfoCallout>
@@ -318,7 +311,7 @@ function PublishPanel({
 					{publishMutation.isPending ? (
 						<Loader2 className="size-5 animate-spin" />
 					) : null}
-					게시하기
+					공개하기
 				</Button>
 			</form>
 		</SectionCard>

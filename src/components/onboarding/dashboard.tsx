@@ -293,8 +293,9 @@ function DraftCard({
 
 				<div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
 					<Button
-						variant="neutral-outline"
+						variant="destructive"
 						size="xl"
+						className="border-[#fee2e2] bg-white text-[#f87171] hover:bg-[#fef2f2]"
 						onClick={onDelete}
 						disabled={deleting}
 					>
@@ -338,7 +339,7 @@ function ProfileCard({
 	const publishMutation = useMutation({
 		mutationFn: publishProfile,
 		onSuccess: () => {
-			toast.success("프로필을 발행했어요.");
+			toast.success("프로필을 공개했어요.");
 			onRefetch();
 		},
 		onError: (err) => toastApiError(err),
@@ -396,7 +397,7 @@ function ProfileCard({
 					<>
 						<InfoCallout tone="info">
 							<p className="text-sm">
-								의사 프로필이 아직 비공개예요. 발행하면 공개 주소로 프로필이
+								의사 프로필이 아직 비공개예요. 공개하면 공개 주소로 프로필이
 								공개됩니다.
 							</p>
 						</InfoCallout>
@@ -410,7 +411,7 @@ function ProfileCard({
 								{publishMutation.isPending ? (
 									<Loader2 className="size-4 animate-spin" />
 								) : null}
-								발행하기
+								공개하기
 							</Button>
 						</div>
 					</>
@@ -482,8 +483,9 @@ function HospitalCard({
 							</InfoCallout>
 							<div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
 								<Button
-									variant="neutral-outline"
+									variant="destructive"
 									size="xl"
+									className="border-[#fee2e2] bg-white text-[#f87171] hover:bg-[#fef2f2]"
 									onClick={handleDelete}
 									disabled={deleteMutation.isPending}
 								>
@@ -511,7 +513,7 @@ function HospitalCard({
 						<>
 							<InfoCallout tone="info">
 								<p className="text-sm">
-									결제가 완료됐어요. 공개 주소를 정하고 게시하면 병원 홈페이지가
+									결제가 완료됐어요. 공개 주소를 정하고 공개하면 병원 홈페이지가
 									공개됩니다.
 								</p>
 							</InfoCallout>
@@ -521,7 +523,7 @@ function HospitalCard({
 									size="xl"
 									onClick={() => onPublish(hospital)}
 								>
-									게시하기
+									공개하기
 									<ArrowRight className="size-4" />
 								</Button>
 							</div>
@@ -601,7 +603,7 @@ function HospitalStatusBadge({ status }: { status: string }) {
 	if (status === "ready_to_publish") {
 		return (
 			<Badge variant="soft" className="w-fit">
-				게시 대기
+				공개 대기
 			</Badge>
 		);
 	}

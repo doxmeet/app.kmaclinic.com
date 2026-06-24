@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ChevronRight, CreditCard, Loader2 } from "lucide-react";
+import { ChevronRight, Loader2 } from "lucide-react";
 import { AuthGuard } from "#/components/auth/auth-guard.tsx";
 import { InfoRows } from "#/components/common/data-list.tsx";
 import { CardShell, SectionCard } from "#/components/common/section-card.tsx";
@@ -22,47 +22,67 @@ const LEVEL_LABEL: Record<number, string> = {
 	9: "운영자",
 };
 
-const SUB_STATUS_BADGE: Record<
-	string,
-	{ label: string; variant: "success" | "warning" | "soft" | "destructive" }
-> = {
-	active: { label: "이용 중", variant: "success" },
-	past_due: { label: "결제 연체", variant: "warning" },
-	canceled: { label: "해지됨", variant: "destructive" },
-	expired: { label: "만료됨", variant: "destructive" },
-};
+function formatDate(value: string | null | undefined): string | null {
+	if (!value) return null;
+	const d = new Date(value);
+	if (Number.isNaN(d.getTime())) return null;
+	return new Intl.DateTimeFormat("ko-KR", {
+		year: "numeric",
+		month: "long",
+		day: "numeric",
+	}).format(d);
+}
 
-/** 소유 병원 1개의 구독 상태 요약 + 구독 관리 진입(문서 §8.7/§9.6). */
-function HospitalSubscriptionRow({ hospital }: { hospital: AccountHospital }) {
+/** 구독/결제 카드의 보조 라인 — 구독 상태/결제일을 한 줄로 요약한다. */
+function subscriptionSummary(hospital: AccountHospital): string {
 	const status = hospital.subscription_status ?? null;
-	const meta = status ? SUB_STATUS_BADGE[status] : undefined;
+	switch (status) {
+		case "active": {
+			const next = formatDate(hospital.next_billing_at);
+			return next ? `다음 결제 ${next}` : "이용 중";
+		}
+		case "past_due":
+			return "결제가 연체되었어요";
+		case "canceled": {
+			const end = formatDate(hospital.current_period_end);
+			return end ? `${end}까지 이용 가능` : "해지됨";
+		}
+		case "expired":
+			return "구독이 만료됐어요";
+		default:
+			return "아직 구독을 시작하지 않았어요";
+	}
+}
+
+/**
+ * 소유 병원 1개의 구독 상태 요약 + 구독 관리 진입(문서 §8.7/§9.6).
+ * 시각 언어는 Figma "병의원" 1:11841(구독 플랜 카드)을 따른다 —
+ * 연한 카드 → hover 시 흰 배경 + 브랜드 테두리 + 그림자, 이름 + 보조 라인 + 상태 알약.
+ */
+function HospitalSubscriptionRow({ hospital }: { hospital: AccountHospital }) {
+	const published = hospital.is_published === true;
 	return (
 		<Link
 			to="/subscription/$hospitalNo"
 			params={{ hospitalNo: String(hospital.no) }}
-			className="flex items-center justify-between gap-3 rounded-xl border border-line bg-app-bg px-4 py-3 transition-colors hover:border-brand hover:bg-brand-50"
+			className="flex items-center justify-between gap-4 rounded-2xl border border-line-soft bg-surface px-4 py-4 transition-colors hover:border-brand hover:bg-brand-50 sm:px-5"
 		>
-			<div className="flex items-center gap-3">
-				<CreditCard className="size-5 shrink-0 text-brand" />
-				<div className="flex flex-col">
-					<span className="text-[15px] font-medium text-ink">
-						{hospital.name?.trim() || "내 병원"}
-					</span>
-					<span className="text-sm text-body-soft">
-						{hospital.is_published ? "공개 중" : "비공개"}
-					</span>
-				</div>
+			<div className="flex min-w-0 flex-col gap-1">
+				<span className="truncate text-[16px] font-semibold text-ink sm:text-[17px]">
+					{hospital.name?.trim() || "내 병원"}
+				</span>
+				<span className="truncate text-[13px] text-body-soft sm:text-sm">
+					{subscriptionSummary(hospital)}
+				</span>
 			</div>
-			<div className="flex items-center gap-2">
-				{meta ? (
-					<Badge variant={meta.variant} className="rounded-full">
-						{meta.label}
-					</Badge>
-				) : (
-					<Badge variant="outline" className="rounded-full">
-						구독 없음
-					</Badge>
-				)}
+			<div className="flex shrink-0 items-center gap-2">
+				<Badge
+					size="lg"
+					variant={published ? "success" : "outline"}
+					className="rounded-full"
+				>
+					{published ? "공개 중" : "비공개"}
+				</Badge>
 				<ChevronRight className="size-4 text-muted-fg" />
 			</div>
 		</Link>

@@ -32,7 +32,9 @@ import {
 import { Textarea } from "#/components/ui/textarea.tsx";
 import { ApiError } from "#/lib/api";
 import {
+	asBillingCycle,
 	type BillingKey,
+	billingCycleMeta,
 	cancelSubscription,
 	createSubscription,
 	getHospitalSubscription,
@@ -127,6 +129,9 @@ function SubscriptionManagePage({ hospitalNo }: { hospitalNo: number }) {
 	const subscription = subQuery.data?.subscription ?? null;
 	const subNo = subscription?.no ?? null;
 	const status = subscription?.status ?? null;
+	// 재구독 시 기존 구독과 동일한 결제 주기를 유지한다(없으면 백엔드 기본 monthly).
+	const existingCycle =
+		asBillingCycle(subscription?.billing_cycle) ?? undefined;
 	// active 빌링키(현재 등록된 카드).
 	const activeCard: BillingKey | null =
 		billingQuery.data?.items?.find((b) => b.status === "active") ??
@@ -161,7 +166,8 @@ function SubscriptionManagePage({ hospitalNo }: { hospitalNo: number }) {
 
 	// ── 재구독(해지/만료) — 저장된 빌링키로 즉시 재구독, 없으면 카드 등록(toss)으로 폴백 ──
 	const resubscribeMutation = useMutation({
-		mutationFn: () => createSubscription(hospitalNo),
+		mutationFn: () =>
+			createSubscription(hospitalNo, { billing_cycle: existingCycle }),
 		onSuccess: () => {
 			toast.success("재구독이 완료됐어요.");
 			refetchAll();
@@ -201,9 +207,14 @@ function SubscriptionManagePage({ hospitalNo }: { hospitalNo: number }) {
 			const customerKey = customerKeyForUser(user.no);
 			const origin = window.location.origin;
 			// toss는 successUrl의 예약 파라미터를 떼므로 customerKey는 예약 안 된 이름(ck)으로 넘긴다.
+			// 재구독은 콜백에서 구독을 다시 만들므로 기존 결제 주기를 함께 보존한다(카드 변경은 무시됨).
+			const cycleParam =
+				mode === "resubscribe" && existingCycle
+					? `&billing_cycle=${existingCycle}`
+					: "";
 			const successUrl = `${origin}/billing/callback?mode=${mode}&hospital_no=${hospitalNo}&ck=${encodeURIComponent(
 				customerKey,
-			)}`;
+			)}${cycleParam}`;
 			const failUrl = `${origin}/billing/callback?fail=1&mode=${mode}&hospital_no=${hospitalNo}`;
 			await startCardBillingAuth({
 				clientKey,
@@ -409,21 +420,34 @@ function StatusSection({
 		</Badge>
 	);
 
+	// 결제 주기별 금액 접미사/라벨(monthly/annual/one_time). 알 수 없으면 월간으로 표시.
+	const cycle = asBillingCycle(subscription.billing_cycle);
+	const amountSuffix =
+		cycle === "annual" ? " / 년" : cycle === "one_time" ? " · 단건" : " / 월";
+
 	const rows: Array<{ label: string; value: ReactNode }> = [
 		{ label: "상태", value: statusBadge },
-		{ label: "금액", value: `${money(subscription.amount)} / 월` },
+	];
+	if (cycle) {
+		rows.push({ label: "결제 방식", value: billingCycleMeta(cycle).label });
+	}
+	rows.push(
+		{ label: "금액", value: `${money(subscription.amount)}${amountSuffix}` },
 		{
 			label: "이용 기간",
 			value: `${formatDate(subscription.current_period_start)} ~ ${formatDate(
 				subscription.current_period_end,
 			)}`,
 		},
-	];
+	);
 	if (status === "canceled") {
 		rows.push({
 			label: "이용 종료 예정",
 			value: formatDate(subscription.current_period_end),
 		});
+	} else if (cycle === "one_time") {
+		// 단건 결제는 자동 갱신이 없다(기간 만료 시 expired).
+		rows.push({ label: "자동 갱신", value: "없음 (기간 만료 시 종료)" });
 	} else {
 		rows.push({
 			label: "다음 결제 예정",

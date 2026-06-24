@@ -853,7 +853,7 @@ function AdminCredentialsDialog({
 								className={
 									loginIdInvalid
 										? "text-sm text-danger-strong"
-										: "text-xs text-body-soft"
+										: "text-sm text-body-soft"
 								}
 							>
 								{LOGIN_ID_HINT}

@@ -149,7 +149,7 @@ const THEME_COLORS = [
 function DoctorField({ label, value }: { label: string; value: string }) {
 	return (
 		<div className="flex flex-col gap-2">
-			<span className="text-sm text-body-soft">{label}</span>
+			<span className="text-base text-body-soft">{label}</span>
 			<input
 				readOnly
 				defaultValue={value}

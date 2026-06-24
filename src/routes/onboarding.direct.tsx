@@ -26,7 +26,6 @@ import {
 	type CommitResult,
 	type DirectOnboardingInput,
 	directOnboarding,
-	discardPending,
 	type PaymentIntent,
 	patchDraft,
 	startSession,
@@ -682,7 +681,7 @@ function DirectOnboardingForm() {
 						</h1>
 						<Link
 							to="/onboarding"
-							className="shrink-0 text-xs font-medium text-brand transition-colors hover:underline"
+							className="shrink-0 text-sm font-medium text-brand transition-colors hover:underline"
 						>
 							대화형으로 만들기
 						</Link>
@@ -703,14 +702,7 @@ function DirectOnboardingForm() {
 				maxWidth="1280px"
 				innerMaxWidth="820px"
 			>
-				<CommitComplete
-					result={{ payment: pendingPayment }}
-					onStartOver={async () => {
-						// 미결제 병원 폐기 후 빈 폼으로 새로 시작.
-						await discardPending();
-						setPendingPayment(null);
-					}}
-				/>
+				<CommitComplete result={{ payment: pendingPayment }} />
 			</AppShell>
 		);
 	}
@@ -743,7 +735,7 @@ function DirectOnboardingForm() {
 						</h1>
 						<Link
 							to="/onboarding"
-							className="shrink-0 text-xs font-medium text-brand transition-colors hover:underline"
+							className="shrink-0 text-sm font-medium text-brand transition-colors hover:underline"
 						>
 							대화형으로 만들기
 						</Link>
