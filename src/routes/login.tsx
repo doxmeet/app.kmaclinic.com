@@ -51,7 +51,7 @@ function LoginPage() {
 					onClick={handleLogin}
 				>
 					<LogIn className="size-5" />
-					Doxmeet 계정으로 로그인
+					닥스밋 계정으로 로그인
 				</Button>
 
 				{!configured ? (
@@ -63,10 +63,6 @@ function LoginPage() {
 						</p>
 					</InfoCallout>
 				) : null}
-
-				<p className="text-center text-sm text-muted-fg">
-					휴대폰 본인인증 · 아이디/비밀번호 찾기는 후속 제공 예정입니다.
-				</p>
 			</div>
 		</AuthShell>
 	);
