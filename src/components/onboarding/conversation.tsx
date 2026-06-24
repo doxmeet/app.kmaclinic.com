@@ -78,6 +78,28 @@ const HOLDING_POLL_MAX_MS = 60000;
 /** 온보딩 개요 쿼리 키 — 메시지/파일/충돌/commit이 바꾸는 상태(대시보드와 동일). */
 const OVERVIEW_KEY = ["onboarding", "overview"] as const;
 
+/** 대화형 온보딩 파일 첨부 허용 확장자(문서/표/압축만). */
+const ALLOWED_FILE_EXTENSIONS: readonly string[] = [
+	"txt",
+	"md",
+	"csv",
+	"rtf",
+	"doc",
+	"docx",
+	"xls",
+	"xlsx",
+	"hwp",
+	"hwpx",
+	"pdf",
+	"zip",
+];
+/** input[type=file] 의 accept 속성값(허용 확장자에서 생성). */
+const FILE_ACCEPT = ALLOWED_FILE_EXTENSIONS.map((ext) => `.${ext}`).join(",");
+/** 안내/에러 메시지용 허용 확장자 표기(예: "TXT, MD, ..."). */
+const FILE_ACCEPT_LABEL = ALLOWED_FILE_EXTENSIONS.map((ext) =>
+	ext.toUpperCase(),
+).join(", ");
+
 /** 세션 진행 상태 묶음(단일 진실원 + 시작/완료/대기·다이얼로그 흐름). */
 type ConvState = {
 	/** 진행중 세션 뷰(폴링/메시지 응답으로 갱신). null=아직 시작 전. */
@@ -337,7 +359,15 @@ export function OnboardingConversation({
 	function handlePickFile(e: React.ChangeEvent<HTMLInputElement>) {
 		const file = e.target.files?.[0];
 		e.target.value = ""; // 같은 파일 재선택 허용
-		if (file) fileMutation.mutate(file);
+		if (!file) return;
+		const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+		if (!ALLOWED_FILE_EXTENSIONS.includes(ext)) {
+			toast.error(
+				`지원하지 않는 파일 형식입니다. ${FILE_ACCEPT_LABEL} 파일만 첨부할 수 있습니다.`,
+			);
+			return;
+		}
+		fileMutation.mutate(file);
 	}
 
 	function handleCommit() {
@@ -935,7 +965,7 @@ function Composer({
 						type="file"
 						className="hidden"
 						onChange={onPickFile}
-						accept="image/*,application/pdf,.doc,.docx,.hwp,.xlsx,.xls"
+						accept={FILE_ACCEPT}
 						aria-label="파일 선택"
 					/>
 					{allowFile ? (
