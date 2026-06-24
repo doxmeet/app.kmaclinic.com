@@ -131,7 +131,9 @@ function HospitalConfirmPage() {
 
 				{/* 필수 정보 */}
 				<SectionCard>
-					<SectionTitle className="mb-4">필수 정보</SectionTitle>
+					<SectionTitle variant="info" className="mb-4">
+						필수 정보
+					</SectionTitle>
 					<DataList>
 						<DataRow label="병원명">닥스밋 의원</DataRow>
 						<DataRow label="주소">
@@ -165,7 +167,7 @@ function HospitalConfirmPage() {
 
 				{/* 홈페이지 디자인 & 문구 설정 */}
 				<SectionCard>
-					<SectionTitle className="mb-6">
+					<SectionTitle variant="info" className="mb-6">
 						홈페이지 디자인 &amp; 문구 설정
 					</SectionTitle>
 					<div className="flex flex-col gap-8 sm:flex-row sm:items-start">
@@ -199,7 +201,9 @@ function HospitalConfirmPage() {
 
 				{/* 오시는 길 */}
 				<SectionCard>
-					<SectionTitle className="mb-4">오시는 길</SectionTitle>
+					<SectionTitle variant="info" className="mb-4">
+						오시는 길
+					</SectionTitle>
 					<DataList>
 						<DataRow label="네이버 지도 URL">
 							<span className="inline-flex items-center gap-1.5 text-brand">
@@ -228,7 +232,9 @@ function HospitalConfirmPage() {
 
 				{/* 비급여 정보 */}
 				<SectionCard>
-					<SectionTitle className="mb-6">비급여 정보</SectionTitle>
+					<SectionTitle variant="info" className="mb-6">
+						비급여 정보
+					</SectionTitle>
 					<div className="overflow-hidden rounded-xl border border-line">
 						<Table>
 							<TableHeader>
@@ -265,7 +271,9 @@ function HospitalConfirmPage() {
 
 				{/* 결제 및 이용약관 */}
 				<SectionCard>
-					<SectionTitle className="mb-2">결제 및 이용약관</SectionTitle>
+					<SectionTitle variant="info" className="mb-2">
+						결제 및 이용약관
+					</SectionTitle>
 					<AgreementList agreements={AGREEMENTS} />
 				</SectionCard>
 

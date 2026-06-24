@@ -15,8 +15,8 @@ import { apiErrorMessage } from "#/lib/api-error-message.ts";
 import { useSession } from "#/lib/auth/use-session.ts";
 
 /**
- * 결제(Toss) 콜백 — 2단계 (문서 §9).
- * Toss requestBillingAuth 성공 시 successUrl 로 리다이렉트되며 authKey/customerKey 가 쿼리로 전달된다.
+ * 결제(toss) 콜백 — 2단계 (문서 §9).
+ * toss requestBillingAuth 성공 시 successUrl 로 리다이렉트되며 authKey/customerKey 가 쿼리로 전달된다.
  *   ① POST /billing/issue { authKey, customerKey }  (authKey→빌링키 발급·저장, authKey는 1회용)
  *   ② POST /subscription { hospital_no, marketing_consent }  (저장된 빌링키로 즉시 1개월 청구)
  *
@@ -29,8 +29,8 @@ export const Route = createFileRoute("/billing/callback")({
 	component: BillingCallbackPage,
 	validateSearch: (search: Record<string, unknown>) => ({
 		authKey: typeof search.authKey === "string" ? search.authKey : undefined,
-		// 우리는 customerKey를 예약 안 된 이름 `ck`로 넘긴다(Toss가 customerKey는 떼어냄).
-		// 혹시 Toss가 customerKey를 붙여주는 환경이면 그것도 fallback으로 받는다.
+		// 우리는 customerKey를 예약 안 된 이름 `ck`로 넘긴다(toss가 customerKey는 떼어냄).
+		// 혹시 toss가 customerKey를 붙여주는 환경이면 그것도 fallback으로 받는다.
 		customerKey:
 			typeof search.ck === "string" && search.ck
 				? search.ck
@@ -42,8 +42,18 @@ export const Route = createFileRoute("/billing/callback")({
 			search.marketing_consent === "1" || search.marketing_consent === 1
 				? true
 				: undefined,
+		// 흐름 모드(문서 §9.5/§9.6):
+		//  - 미지정/"subscribe": 온보딩 최초 결제(빌링키 발급 + 구독 생성)
+		//  - "card": 결제수단(카드) 변경 — 빌링키만 재발급(저장된 구독에 자동 재연결)
+		//  - "resubscribe": 해지/만료 후 재구독(빌링키 발급 + 구독 재생성)
+		mode:
+			search.mode === "card"
+				? ("card" as const)
+				: search.mode === "resubscribe"
+					? ("resubscribe" as const)
+					: ("subscribe" as const),
 		fail: search.fail === "1" || search.fail === 1 ? true : undefined,
-		// Toss는 카드 등록/결제 실패 시 failUrl 에 code/message 를 붙여 돌려보낸다.
+		// toss는 카드 등록/결제 실패 시 failUrl 에 code/message 를 붙여 돌려보낸다.
 		// (예: ?fail=1&code=INVALID_CARD_NUMBER&message=신용카드가+아니거나…)
 		code:
 			typeof search.code === "string" && search.code ? search.code : undefined,
@@ -66,19 +76,30 @@ function BillingCallbackPage() {
 		customerKey,
 		hospital_no,
 		marketing_consent,
+		mode,
 		fail,
 		code,
 		message,
 	} = Route.useSearch();
 	const navigate = useNavigate();
 
-	// 결제 실패 콜백 — Toss가 failUrl 에 code/message 를 붙여 돌려보낸다.
+	// 카드 변경/재구독은 실패 시 해당 병원의 구독 관리 화면으로, 최초 결제는 온보딩으로 돌려보낸다.
+	const retryTarget: () => void =
+		(mode === "card" || mode === "resubscribe") && hospital_no != null
+			? () =>
+					navigate({
+						to: "/subscription/$hospitalNo",
+						params: { hospitalNo: String(hospital_no) },
+					})
+			: () => navigate({ to: "/onboarding" });
+
+	// 결제 실패 콜백 — toss가 failUrl 에 code/message 를 붙여 돌려보낸다.
 	if (fail || code || message) {
 		return (
 			<PaymentFailed
 				code={code ?? null}
 				message={message}
-				onRetry={() => navigate({ to: "/onboarding" })}
+				onRetry={retryTarget}
 			/>
 		);
 	}
@@ -92,7 +113,7 @@ function BillingCallbackPage() {
 						결제 정보가 올바르지 않습니다.
 					</p>
 					<p className="text-sm text-body">
-						카드 등록 정보가 정상적으로 전달되지 않았습니다. 온보딩에서 결제를
+						카드 등록 정보가 정상적으로 전달되지 않았습니다. 작성 화면에서 결제를
 						다시 시도해 주세요.
 					</p>
 					<Button
@@ -100,7 +121,7 @@ function BillingCallbackPage() {
 						size="2xl"
 						onClick={() => navigate({ to: "/onboarding" })}
 					>
-						온보딩으로 돌아가기
+						작성 화면으로 돌아가기
 					</Button>
 				</SectionCard>
 			</AppShell>
@@ -113,23 +134,28 @@ function BillingCallbackPage() {
 			customerKey={customerKey}
 			hospitalNo={hospital_no}
 			marketingConsent={marketing_consent === true}
+			mode={mode}
 		/>
 	);
 }
+
+type BillingMode = "subscribe" | "card" | "resubscribe";
 
 function BillingFlow({
 	authKey,
 	customerKey,
 	hospitalNo,
 	marketingConsent,
+	mode,
 }: {
 	authKey: string;
 	customerKey: string;
 	hospitalNo: number;
 	marketingConsent: boolean;
+	mode: BillingMode;
 }) {
 	const navigate = useNavigate();
-	// 토스 리다이렉트는 전체 새로고침이라 메모리의 액세스 토큰이 사라진다.
+	// toss 리다이렉트는 전체 새로고침이라 메모리의 액세스 토큰이 사라진다.
 	// useSession이 refresh 토큰으로 액세스 토큰을 재발급(bootstrap)하므로 그 준비가 끝난 뒤 호출한다.
 	const { isLoading: sessionLoading, isAuthenticated } = useSession();
 	const running = useRef(false);
@@ -142,6 +168,11 @@ function BillingFlow({
 		message: string;
 	} | null>(null);
 
+	// 카드 변경(mode="card")은 빌링키만 재발급한다(저장된 활성/연체 구독에 백엔드가 자동 재연결 — 문서 §9.5).
+	const cardOnly = mode === "card";
+	// 카드 변경/재구독 실패·완료 후 돌아갈 곳은 해당 병원의 구독 관리 화면.
+	const backToManage = mode === "card" || mode === "resubscribe";
+
 	const mutation = useMutation({
 		mutationFn: async () => {
 			// ① 빌링키 발급(아직 안 했을 때만 — authKey는 1회용).
@@ -149,10 +180,12 @@ function BillingFlow({
 				await issueBilling({ authKey, customerKey });
 				issuedRef.current = true;
 			}
-			// ② 저장된 빌링키로 구독 생성 + 즉시 첫 결제.
-			await createSubscription(hospitalNo, {
-				marketing_consent: marketingConsent,
-			});
+			// ② (카드 변경이 아니면) 저장된 빌링키로 구독 생성/재구독 + 즉시 첫 결제.
+			if (!cardOnly) {
+				await createSubscription(hospitalNo, {
+					marketing_consent: marketingConsent,
+				});
+			}
 		},
 		onSuccess: () => {
 			setError(null);
@@ -205,7 +238,7 @@ function BillingFlow({
 		);
 	}
 
-	if (done) return <BillingSuccess />;
+	if (done) return <BillingSuccess mode={mode} hospitalNo={hospitalNo} />;
 
 	if (error) {
 		return (
@@ -214,7 +247,14 @@ function BillingFlow({
 				message={error.message}
 				pending={mutation.isPending}
 				onRetry={() => mutation.mutate()}
-				onReRegister={() => navigate({ to: "/onboarding" })}
+				onReRegister={() =>
+					backToManage
+						? navigate({
+								to: "/subscription/$hospitalNo",
+								params: { hospitalNo: String(hospitalNo) },
+							})
+						: navigate({ to: "/onboarding" })
+				}
 			/>
 		);
 	}
@@ -312,7 +352,85 @@ function BillingError({
 	);
 }
 
-function BillingSuccess() {
+function BillingSuccess({
+	mode,
+	hospitalNo,
+}: {
+	mode: BillingMode;
+	hospitalNo: number;
+}) {
+	// 카드 변경: 빌링키만 교체됨 → 구독 관리로 복귀.
+	if (mode === "card") {
+		return (
+			<AppShell maxWidth="560px">
+				<SectionCard className="flex flex-col items-center gap-6 text-center">
+					<div className="flex size-16 items-center justify-center rounded-full bg-success-bg">
+						<CheckCircle2 className="size-8 text-success" />
+					</div>
+					<div className="flex flex-col gap-2">
+						<h1 className="text-2xl font-bold text-ink">
+							결제 카드를 변경했어요
+						</h1>
+						<p className="text-[15px] leading-7 text-body-soft">
+							새 카드가 등록되어 다음 정기 결제부터 적용됩니다.
+						</p>
+					</div>
+					<Button
+						nativeButton={false}
+						render={
+							<Link
+								to="/subscription/$hospitalNo"
+								params={{ hospitalNo: String(hospitalNo) }}
+							/>
+						}
+						variant="brand"
+						size="cta"
+						className="w-full"
+					>
+						구독 관리로 돌아가기
+					</Button>
+				</SectionCard>
+			</AppShell>
+		);
+	}
+
+	// 재구독: 구독이 다시 활성화됨 → 구독 관리로 복귀.
+	if (mode === "resubscribe") {
+		return (
+			<AppShell maxWidth="560px">
+				<SectionCard className="flex flex-col items-center gap-6 text-center">
+					<div className="flex size-16 items-center justify-center rounded-full bg-success-bg">
+						<CheckCircle2 className="size-8 text-success" />
+					</div>
+					<div className="flex flex-col gap-2">
+						<h1 className="text-2xl font-bold text-ink">
+							재구독이 완료됐어요!
+						</h1>
+						<p className="text-[15px] leading-7 text-body-soft">
+							정기 결제가 다시 시작됐습니다. 병원이 비공개 상태라면 구독
+							관리에서 다시 게시할 수 있어요.
+						</p>
+					</div>
+					<Button
+						nativeButton={false}
+						render={
+							<Link
+								to="/subscription/$hospitalNo"
+								params={{ hospitalNo: String(hospitalNo) }}
+							/>
+						}
+						variant="brand"
+						size="cta"
+						className="w-full"
+					>
+						구독 관리로 돌아가기
+					</Button>
+				</SectionCard>
+			</AppShell>
+		);
+	}
+
+	// 최초 결제(subscribe): 게시 단계로 유도.
 	return (
 		<AppShell maxWidth="560px">
 			<SectionCard className="flex flex-col items-center gap-6 text-center">

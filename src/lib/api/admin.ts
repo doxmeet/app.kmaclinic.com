@@ -32,7 +32,6 @@ export type AdminSubscription = Record<string, unknown> & {
 	hospital_no?: number;
 	hospital_slug?: string;
 	hospital_name?: string;
-	hospital_region?: string;
 	owner_name?: string;
 	last_payment_method?: string | null;
 	last_payment_amount?: number | null;

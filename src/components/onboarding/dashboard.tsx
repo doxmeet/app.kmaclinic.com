@@ -1,7 +1,8 @@
 import { useMutation } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import {
 	ArrowRight,
+	CreditCard,
 	ExternalLink,
 	Loader2,
 	MessageSquareText,
@@ -10,18 +11,23 @@ import {
 	Trash2,
 } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
+import { InfoRows } from "#/components/common/data-list.tsx";
 import { InfoCallout } from "#/components/common/info-callout.tsx";
-import { SectionCard } from "#/components/common/section-card.tsx";
+import { CardShell, SectionCard } from "#/components/common/section-card.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
+import { publishProfile } from "#/lib/api/billing.ts";
 import type {
 	Overview,
 	OverviewDraft,
 	OverviewHospital,
+	OverviewProfile,
 	PaymentIntent,
 } from "#/lib/api/onboarding.ts";
 import { deleteHospital, resetSession } from "#/lib/api/onboarding.ts";
 import { toastApiError } from "#/lib/api-error-message.ts";
+import { cn } from "#/lib/utils.ts";
 
 /**
  * 온보딩 대시보드 — 내 병원/프로필 카드 목록.
@@ -52,6 +58,7 @@ export function OnboardingDashboard({
 	const [menuOpen, setMenuOpen] = useState(false);
 
 	const draft = overview.draft ?? null;
+	const profile = overview.profile ?? null;
 	const hospitals = overview.hospitals ?? [];
 	// 진행 중인 작성(draft)은 한 번에 하나 → 이미 있으면 새로 시작 불가.
 	// 이어서 쓰는 동작은 아래 draft 카드의 "이어서 작성"이 담당한다.
@@ -78,7 +85,7 @@ export function OnboardingDashboard({
 		resetMutation.mutate();
 	}
 
-	const isEmpty = !hasDraft && hospitals.length === 0;
+	const isEmpty = !hasDraft && hospitals.length === 0 && profile == null;
 
 	return (
 		<div className="flex flex-col gap-6">
@@ -207,6 +214,9 @@ export function OnboardingDashboard({
 				/>
 			) : null}
 
+			{/* 의사 프로필 카드 (overview.profile) */}
+			{profile ? <ProfileCard profile={profile} onRefetch={onRefetch} /> : null}
+
 			{/* 병원 카드 목록 */}
 			{hospitals.length > 0 ? (
 				<div className="flex flex-col gap-4">
@@ -245,58 +255,168 @@ function DraftCard({
 	const nextQuestion = draft.next_question?.trim() ? draft.next_question : null;
 
 	return (
-		<SectionCard className="flex flex-col gap-4">
-			<div className="flex items-start justify-between gap-3">
-				<div className="flex flex-col gap-1">
-					<div className="flex items-center gap-2">
-						<Badge variant="warning">작성 중</Badge>
-						{draft.is_clinic_owner != null ? (
-							<Badge variant="soft">
-								{draft.is_clinic_owner ? "병원 홈페이지까지" : "프로필만"}
-							</Badge>
-						) : null}
+		<CardShell
+			title={title}
+			action={
+				<div className="flex flex-wrap items-center justify-end gap-2">
+					<Badge variant="warning">작성 중</Badge>
+					{draft.is_clinic_owner != null ? (
+						<Badge variant="soft">
+							{draft.is_clinic_owner ? "병원 홈페이지까지" : "프로필만"}
+						</Badge>
+					) : null}
+				</div>
+			}
+		>
+			<div className="flex flex-col gap-4 p-5 sm:p-8">
+				<div className="flex flex-col gap-2">
+					<div className="flex items-center justify-between gap-3">
+						<span className="text-sm text-body-soft">진행률</span>
+						<span className="text-sm font-medium text-body-soft">
+							{progress}% 완료
+						</span>
 					</div>
-					<p className="text-lg font-bold text-ink">{title}</p>
+					<div className="h-2 w-full overflow-hidden rounded-full bg-line-soft">
+						<div
+							className="h-full rounded-full bg-brand transition-all duration-500"
+							style={{ width: `${progress}%` }}
+						/>
+					</div>
 				</div>
-				<span className="shrink-0 text-sm font-medium text-body-soft">
-					{progress}% 완료
-				</span>
-			</div>
 
-			<div className="h-2 w-full overflow-hidden rounded-full bg-line-soft">
-				<div
-					className="h-full rounded-full bg-brand transition-all duration-500"
-					style={{ width: `${progress}%` }}
-				/>
-			</div>
+				{nextQuestion ? (
+					<div className="rounded-xl border border-line bg-app-bg px-4 py-3">
+						<p className="text-xs font-medium text-body-soft">다음 질문</p>
+						<p className="mt-1 text-sm text-body">{nextQuestion}</p>
+					</div>
+				) : null}
 
-			{nextQuestion ? (
-				<div className="rounded-xl border border-line bg-app-bg px-4 py-3">
-					<p className="text-xs font-medium text-body-soft">다음 질문</p>
-					<p className="mt-1 text-sm text-body">{nextQuestion}</p>
+				<div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+					<Button
+						variant="neutral-outline"
+						size="xl"
+						onClick={onDelete}
+						disabled={deleting}
+					>
+						{deleting ? (
+							<Loader2 className="size-4 animate-spin" />
+						) : (
+							<Trash2 className="size-4" />
+						)}
+						삭제
+					</Button>
+					<Button variant="brand" size="xl" onClick={onContinue}>
+						이어서 작성
+						<ArrowRight className="size-4" />
+					</Button>
 				</div>
-			) : null}
-
-			<div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-				<Button
-					variant="neutral-outline"
-					size="xl"
-					onClick={onDelete}
-					disabled={deleting}
-				>
-					{deleting ? (
-						<Loader2 className="size-4 animate-spin" />
-					) : (
-						<Trash2 className="size-4" />
-					)}
-					삭제
-				</Button>
-				<Button variant="brand" size="xl" onClick={onContinue}>
-					이어서 작성
-					<ArrowRight className="size-4" />
-				</Button>
 			</div>
-		</SectionCard>
+		</CardShell>
+	);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// 의사 프로필 카드 (overview.profile)
+//  게시 가능 여부는 status로 판단(editing → 발행, published → 공개 링크).
+//  완성도(%)는 프로필이 아닌 draft에만 오므로 여기서는 표시하지 않는다.
+// ─────────────────────────────────────────────────────────────────────
+
+function ProfileCard({
+	profile,
+	onRefetch,
+}: {
+	profile: OverviewProfile;
+	onRefetch: () => void;
+}) {
+	const published =
+		profile.status === "published" || profile.is_published === true;
+	const slug = profile.slug?.trim() || null;
+	const name = profile.display_name?.trim() || "원장님";
+	const kmadocUrl = slug ? `https://${slug}.kmadoc.com` : null;
+
+	// 발행하기 → 프로필 발행 API(병원 publish와 대칭). slug는 선설정돼 있어야 한다.
+	const publishMutation = useMutation({
+		mutationFn: publishProfile,
+		onSuccess: () => {
+			toast.success("프로필을 발행했어요.");
+			onRefetch();
+		},
+		onError: (err) => toastApiError(err),
+	});
+
+	const rows: Array<{ label: string; value: string }> = [];
+	if (slug) rows.push({ label: "공개 주소", value: `${slug}.kmadoc.com` });
+
+	return (
+		<CardShell
+			title={`${name} 프로필`}
+			action={
+				<Badge variant={published ? "success" : "soft"}>
+					{published ? "공개 중" : "작성 중"}
+				</Badge>
+			}
+		>
+			{/* 공개 주소 — 구독 상태 카드와 동일한 InfoRows */}
+			{rows.length > 0 ? <InfoRows rows={rows} /> : null}
+
+			{/* 상태별 게시 액션 — status 기준 */}
+			<div
+				className={cn(
+					"flex flex-col gap-3 p-5 sm:p-8",
+					rows.length > 0 && "border-t border-line-soft",
+				)}
+			>
+				{published ? (
+					<>
+						<InfoCallout tone="success">
+							<p className="text-sm">
+								의사 프로필이 공개 중입니다. 프로필 콘텐츠 관리는 별도 관리자
+								페이지에서 진행해 주세요.
+							</p>
+						</InfoCallout>
+						{kmadocUrl ? (
+							<div className="flex justify-end">
+								<Button
+									nativeButton={false}
+									render={
+										// biome-ignore lint/a11y/useAnchorContent: Button이 자식으로 콘텐츠를 주입한다.
+										<a href={kmadocUrl} target="_blank" rel="noreferrer" />
+									}
+									variant="brand-outline"
+									size="xl"
+									className="w-full sm:w-auto"
+								>
+									<ExternalLink className="size-4" />
+									공개 페이지 보기
+								</Button>
+							</div>
+						) : null}
+					</>
+				) : (
+					<>
+						<InfoCallout tone="info">
+							<p className="text-sm">
+								의사 프로필이 아직 비공개예요. 발행하면 공개 주소로 프로필이
+								공개됩니다.
+							</p>
+						</InfoCallout>
+						<div className="flex justify-end">
+							<Button
+								variant="brand"
+								size="xl"
+								onClick={() => publishMutation.mutate()}
+								disabled={publishMutation.isPending}
+							>
+								{publishMutation.isPending ? (
+									<Loader2 className="size-4 animate-spin" />
+								) : null}
+								발행하기
+							</Button>
+						</div>
+					</>
+				)}
+			</div>
+		</CardShell>
 	);
 }
 
@@ -333,109 +453,139 @@ function HospitalCard({
 		deleteMutation.mutate(hospital.hospital_no);
 	}
 
-	return (
-		<SectionCard className="flex flex-col gap-4">
-			<div className="flex items-start justify-between gap-3">
-				<div className="flex flex-col gap-1.5">
-					<HospitalStatusBadge status={status} />
-					<p className="text-lg font-bold text-ink">{title}</p>
-					{hospital.region?.trim() ? (
-						<p className="text-sm text-body-soft">{hospital.region}</p>
-					) : null}
-				</div>
-			</div>
+	const rows = hospitalRows(hospital);
+	const hasActions =
+		status === "pending_payment" ||
+		status === "ready_to_publish" ||
+		status === "published";
 
-			{/* 메타 정보 */}
-			<HospitalMeta hospital={hospital} />
+	return (
+		<CardShell title={title} action={<HospitalStatusBadge status={status} />}>
+			{/* 메타 정보 — 구독 상태 카드와 동일한 InfoRows */}
+			{rows.length > 0 ? <InfoRows rows={rows} /> : null}
 
 			{/* 상태별 액션 */}
-			{status === "pending_payment" ? (
-				<div className="flex flex-col gap-3">
-					<InfoCallout tone="warning">
-						<p className="text-sm">
-							아직 결제 전이에요. 정기 결제 카드를 등록하면 병원 홈페이지를
-							공개할 수 있습니다.
-						</p>
-					</InfoCallout>
-					<div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-						<Button
-							variant="neutral-outline"
-							size="xl"
-							onClick={handleDelete}
-							disabled={deleteMutation.isPending}
-						>
-							{deleteMutation.isPending ? (
-								<Loader2 className="size-4 animate-spin" />
+			{hasActions ? (
+				<div
+					className={cn(
+						"flex flex-col gap-3 p-5 sm:p-8",
+						rows.length > 0 && "border-t border-line-soft",
+					)}
+				>
+					{status === "pending_payment" ? (
+						<>
+							<InfoCallout tone="warning">
+								<p className="text-sm">
+									아직 결제 전이에요. 정기 결제 카드를 등록하면 병원 홈페이지를
+									공개할 수 있습니다.
+								</p>
+							</InfoCallout>
+							<div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+								<Button
+									variant="neutral-outline"
+									size="xl"
+									onClick={handleDelete}
+									disabled={deleteMutation.isPending}
+								>
+									{deleteMutation.isPending ? (
+										<Loader2 className="size-4 animate-spin" />
+									) : (
+										<Trash2 className="size-4" />
+									)}
+									삭제
+								</Button>
+								<Button
+									variant="brand"
+									size="xl"
+									disabled={!hospital.payment}
+									onClick={() => hospital.payment && onPay(hospital.payment)}
+								>
+									결제하기
+									<ArrowRight className="size-4" />
+								</Button>
+							</div>
+						</>
+					) : null}
+
+					{status === "ready_to_publish" ? (
+						<>
+							<InfoCallout tone="info">
+								<p className="text-sm">
+									결제가 완료됐어요. 공개 주소를 정하고 게시하면 병원 홈페이지가
+									공개됩니다.
+								</p>
+							</InfoCallout>
+							<div className="flex justify-end">
+								<Button
+									variant="brand"
+									size="xl"
+									onClick={() => onPublish(hospital)}
+								>
+									게시하기
+									<ArrowRight className="size-4" />
+								</Button>
+							</div>
+						</>
+					) : null}
+
+					{status === "published" ? (
+						<>
+							{hospital.subscription_status === "past_due" ? (
+								<InfoCallout tone="warning">
+									<p className="text-sm">
+										정기 결제가 연체된 상태입니다. 구독 관리에서 결제수단을
+										갱신해 주세요.
+									</p>
+								</InfoCallout>
 							) : (
-								<Trash2 className="size-4" />
+								<InfoCallout tone="success">
+									<p className="text-sm">
+										병원 홈페이지가 공개 중입니다. 콘텐츠 등 일상 관리는 별도
+										관리자 페이지에서 진행해 주세요.
+									</p>
+								</InfoCallout>
 							)}
-							삭제
-						</Button>
-						<Button
-							variant="brand"
-							size="xl"
-							disabled={!hospital.payment}
-							onClick={() => hospital.payment && onPay(hospital.payment)}
-						>
-							결제하기
-							<ArrowRight className="size-4" />
-						</Button>
-					</div>
-				</div>
-			) : null}
-
-			{status === "ready_to_publish" ? (
-				<div className="flex flex-col gap-3">
-					<InfoCallout tone="info">
-						<p className="text-sm">
-							결제가 완료됐어요. 공개 주소를 정하고 게시하면 병원 홈페이지가
-							공개됩니다.
-						</p>
-					</InfoCallout>
-					<div className="flex justify-end">
-						<Button
-							variant="brand"
-							size="xl"
-							onClick={() => onPublish(hospital)}
-						>
-							게시하기
-							<ArrowRight className="size-4" />
-						</Button>
-					</div>
-				</div>
-			) : null}
-
-			{status === "published" ? (
-				<div className="flex flex-col gap-3">
-					<InfoCallout tone="success">
-						<p className="text-sm">
-							병원 홈페이지가 공개 중입니다. 콘텐츠 등 일상 관리는 별도 관리자
-							페이지에서 진행해 주세요.
-						</p>
-					</InfoCallout>
-					{hospital.slug?.trim() ? (
-						<div className="flex justify-end">
-							<Button
-								nativeButton={false}
-								render={
-									// biome-ignore lint/a11y/useAnchorContent: Button이 자식으로 콘텐츠를 주입한다.
-									<a
-										href={`https://${hospital.slug}.kmaclinic.com`}
-										target="_blank"
-										rel="noreferrer"
-									/>
-								}
-								variant="brand-outline"
-								size="xl"
-							>
-								<ExternalLink className="size-4" />
-								공개 페이지 보기
-							</Button>
-						</div>
+							<div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+								{hospital.hospital_no != null ? (
+									<Button
+										nativeButton={false}
+										render={
+											<Link
+												to="/subscription/$hospitalNo"
+												params={{ hospitalNo: String(hospital.hospital_no) }}
+											/>
+										}
+										variant="neutral-outline"
+										size="xl"
+									>
+										<CreditCard className="size-4" />
+										구독 관리
+									</Button>
+								) : null}
+								{hospital.slug?.trim() ? (
+									<Button
+										nativeButton={false}
+										render={
+											// biome-ignore lint/a11y/useAnchorContent: Button이 자식으로 콘텐츠를 주입한다.
+											<a
+												href={`https://${hospital.slug}.kmaclinic.com`}
+												target="_blank"
+												rel="noreferrer"
+											/>
+										}
+										variant="brand-outline"
+										size="xl"
+									>
+										<ExternalLink className="size-4" />
+										공개 페이지 보기
+									</Button>
+								) : null}
+							</div>
+						</>
 					) : null}
 				</div>
 			) : null}
-		</SectionCard>
+		</CardShell>
 	);
 }
 
@@ -469,9 +619,15 @@ function HospitalStatusBadge({ status }: { status: string }) {
 	);
 }
 
-function HospitalMeta({ hospital }: { hospital: OverviewHospital }) {
+/** 병원 카드 InfoRows용 라벨/값 행 (지역·공개 주소·구독 상태·다음 갱신). */
+function hospitalRows(
+	hospital: OverviewHospital,
+): Array<{ label: string; value: string }> {
 	const rows: Array<{ label: string; value: string }> = [];
 
+	if (hospital.region?.trim()) {
+		rows.push({ label: "지역", value: hospital.region });
+	}
 	if (hospital.slug?.trim()) {
 		rows.push({ label: "공개 주소", value: `${hospital.slug}.kmaclinic.com` });
 	}
@@ -486,21 +642,7 @@ function HospitalMeta({ hospital }: { hospital: OverviewHospital }) {
 		rows.push({ label: "다음 갱신 예정", value: periodEnd });
 	}
 
-	if (rows.length === 0) return null;
-
-	return (
-		<dl className="flex flex-col gap-2 rounded-xl border border-line bg-app-bg px-4 py-3">
-			{rows.map((row) => (
-				<div
-					key={row.label}
-					className="flex items-center justify-between gap-3 text-sm"
-				>
-					<dt className="text-body-soft">{row.label}</dt>
-					<dd className="font-medium text-ink">{row.value}</dd>
-				</div>
-			))}
-		</dl>
-	);
+	return rows;
 }
 
 // ─────────────────────────────────────────────────────────────────────

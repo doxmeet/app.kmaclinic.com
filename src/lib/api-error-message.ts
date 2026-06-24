@@ -12,7 +12,7 @@ const MESSAGES: Record<string, string> = {
 	ERROR_403_USER_WITHDRAWN: "탈퇴한 계정입니다. 로그인할 수 없습니다.",
 	// 온보딩
 	ERROR_404_ONBOARDING_SESSION_NOT_FOUND:
-		"진행 중인 온보딩이 없습니다. 처음부터 시작해 주세요.",
+		"작성 중인 내용이 없습니다. 처음부터 시작해 주세요.",
 	ERROR_409_ONBOARDING_FILES_PROCESSING:
 		"업로드한 파일을 분석 중입니다. 분석이 끝나면 완료할 수 있어요.",
 	ERROR_400_ADMIN_LOGIN_ID_REQUIRED: "관리자 아이디를 입력해 주세요.",

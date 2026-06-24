@@ -13,18 +13,39 @@ import {
 	Sparkles,
 	Stethoscope,
 } from "lucide-react";
-import { BrandLogo } from "#/components/layout/brand-logo.tsx";
-import { UserMenu } from "#/components/layout/user-menu.tsx";
+import {
+	AppHeader,
+	type HeaderNavItem,
+} from "#/components/layout/app-header.tsx";
+import { SiteFooter } from "#/components/layout/site-footer.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { useSession } from "#/lib/auth/use-session.ts";
 
 export const Route = createFileRoute("/")({ component: HomePage });
 
+/**
+ * 같은 섹션을 다시 눌러도 스크롤되도록 프로그래밍적으로 이동한다.
+ * (href="#id"는 주소창 해시가 동일하면 동작하지 않는 문제 회피)
+ */
+function scrollToSection(id: string) {
+	const el = document.getElementById(id);
+	if (!el) return;
+	el.scrollIntoView({ behavior: "smooth" });
+	window.history.replaceState(null, "", `#${id}`);
+}
+
+/** 홈 상단 마케팅 섹션 내비(헤더 가운데). */
+const HOME_NAV: HeaderNavItem[] = [
+	{ label: "작동 방식", sectionId: "how" },
+	{ label: "만들어지는 것", sectionId: "create" },
+	{ label: "요금", sectionId: "pricing" },
+];
+
 function HomePage() {
 	return (
 		<div className="flex min-h-screen flex-col bg-app-bg">
-			<HomeHeader />
+			<AppHeader nav={HOME_NAV} />
 			<main className="flex-1">
 				<Hero />
 				<HowItWorks />
@@ -32,60 +53,8 @@ function HomePage() {
 				<Pricing />
 				<FinalCta />
 			</main>
-			<HomeFooter />
+			<SiteFooter />
 		</div>
-	);
-}
-
-/* ─────────────────────────── 헤더 (세션 인식) ─────────────────────────── */
-
-function HomeHeader() {
-	const { isAuthenticated } = useSession();
-
-	return (
-		<header className="sticky top-0 z-40 w-full border-b border-line bg-surface/90 backdrop-blur">
-			<div className="mx-auto flex h-16 w-full max-w-[1120px] items-center justify-between gap-4 px-4 sm:px-6">
-				<BrandLogo label="KMA Clinic" to="/" />
-
-				<nav className="hidden items-center gap-7 text-[15px] font-medium text-body md:flex">
-					<a href="#how" className="transition-colors hover:text-ink">
-						작동 방식
-					</a>
-					<a href="#create" className="transition-colors hover:text-ink">
-						만들어지는 것
-					</a>
-					<a href="#pricing" className="transition-colors hover:text-ink">
-						요금
-					</a>
-				</nav>
-
-				<div className="flex items-center gap-2">
-					{isAuthenticated ? (
-						<>
-							<Button
-								nativeButton={false}
-								render={<Link to="/onboarding" />}
-								variant="brand"
-								size="sm"
-							>
-								온보딩 이어가기
-							</Button>
-							<UserMenu />
-						</>
-					) : (
-						<Button
-							nativeButton={false}
-							render={<Link to="/login" />}
-							variant="brand"
-							size="sm"
-						>
-							<LogIn className="size-4" />
-							로그인
-						</Button>
-					)}
-				</div>
-			</div>
-		</header>
 	);
 }
 
@@ -100,7 +69,7 @@ function Hero() {
 				<div className="flex flex-col items-start gap-6">
 					<Badge variant="soft" size="lg" className="rounded-full">
 						<Sparkles className="size-3.5" />
-						의료진 전용 · Doxmeet 연동
+						의료진 전용 · 닥스밋 연동
 					</Badge>
 					<h1 className="text-[26px] font-extrabold leading-tight tracking-tight text-ink sm:text-[44px] sm:leading-[1.18]">
 						의사 프로필도 병원 홈페이지도,
@@ -120,12 +89,11 @@ function Hero() {
 							size="cta"
 							className="w-full sm:w-auto"
 						>
-							{isAuthenticated ? "온보딩 이어가기" : "Doxmeet으로 시작하기"}
+							{isAuthenticated ? "작성 이어가기" : "닥스밋 계정으로 시작하기"}
 							<ArrowRight className="size-5" />
 						</Button>
 						<Button
-							nativeButton={false}
-							render={<Link to="/" hash="how" />}
+							onClick={() => scrollToSection("how")}
 							variant="neutral-outline"
 							size="cta"
 							className="w-full sm:w-auto"
@@ -140,7 +108,7 @@ function Hero() {
 						</li>
 						<li className="flex items-center gap-1.5">
 							<CreditCard className="size-4 text-brand" />
-							안전한 정기결제 (Toss)
+							안전한 정기결제 (toss)
 						</li>
 						<li className="flex items-center gap-1.5">
 							<Globe className="size-4 text-brand" />
@@ -162,26 +130,24 @@ function HeroChatPreview() {
 			<div className="absolute -inset-3 -z-10 rounded-[28px] bg-brand-50/70 blur-xl" />
 			<div className="overflow-hidden rounded-3xl border border-line bg-app-bg shadow-xl">
 				<div className="flex items-center gap-2 border-b border-line bg-surface px-5 py-3.5">
-					<span className="flex size-7 items-center justify-center rounded-lg bg-brand text-xs font-bold text-brand-foreground">
+					<span className="flex size-7 items-center justify-center rounded-lg bg-brand text-xs font-semibold text-brand-foreground">
 						AI
 					</span>
-					<span className="text-sm font-semibold text-ink">온보딩 도우미</span>
+					<span className="text-sm font-semibold text-ink">작성 도우미</span>
 					<Badge variant="success" className="ml-auto rounded-full">
 						진행 중
 					</Badge>
 				</div>
 				<div className="flex flex-col gap-3 p-5">
 					<ChatBubble from="ai">
-						안녕하세요 원장님! 먼저 어느 진료과를 전문으로 하시나요?
+						안녕하세요 원장님! 어느 진료과를 전문으로 하시나요?
 					</ChatBubble>
 					<ChatBubble from="me">소화기내과 전문의입니다.</ChatBubble>
-					<ChatBubble from="ai">
-						좋아요. 면허증 사진을 올려주시면 자동으로 인증을 도와드릴게요.
-					</ChatBubble>
-					<ChatBubble from="me">방금 올렸어요 📎</ChatBubble>
+					<ChatBubble from="ai">병원 주소를 알려주세요.</ChatBubble>
+					<ChatBubble from="me">서울시 강남구 역삼동 123-456</ChatBubble>
 					<div className="mt-1 flex items-center gap-2 rounded-xl border border-brand-100 bg-brand-50/60 px-4 py-3 text-sm font-medium text-brand">
 						<CheckCircle2 className="size-4" />
-						면허 인증 완료 · 프로필 초안 생성 중…
+						초안 생성 중…
 					</div>
 				</div>
 			</div>
@@ -225,14 +191,14 @@ const STEPS: StepItem[] = [
 	{
 		icon: LogIn,
 		step: "01",
-		title: "Doxmeet으로 로그인",
-		desc: "이미 쓰던 Doxmeet 의사 계정으로 1초 만에 시작합니다.",
+		title: "닥스밋으로 로그인",
+		desc: "이미 쓰던 닥스밋 의사 계정으로 1초 만에 시작합니다.",
 	},
 	{
 		icon: MessageSquareText,
 		step: "02",
-		title: "대화형 온보딩",
-		desc: "AI가 묻는 말에 답하고 면허증·사진만 올리면 초안이 완성됩니다.",
+		title: "대화로 작성하기",
+		desc: "AI가 묻는 말에 답하고 사진만 올리면 초안이 완성됩니다.",
 	},
 	{
 		icon: CreditCard,
@@ -252,11 +218,11 @@ function HowItWorks() {
 	return (
 		<section
 			id="how"
-			className="mx-auto w-full max-w-[1120px] px-4 py-16 sm:px-6 sm:py-20"
+			className="mx-auto w-full max-w-[1120px] scroll-mt-16 px-4 py-16 sm:px-6 sm:py-20"
 		>
 			<SectionHeading
 				eyebrow="작동 방식"
-				title="네 단계면 충분합니다"
+				title="4단계면 충분합니다"
 				desc="복잡한 설정 없이, 로그인부터 공개까지 하나의 흐름으로 이어집니다."
 			/>
 			<ol className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
@@ -274,7 +240,9 @@ function HowItWorks() {
 							</span>
 						</div>
 						<h3 className="text-[17px] font-bold text-ink">{s.title}</h3>
-						<p className="text-sm leading-relaxed text-body">{s.desc}</p>
+						<p className="text-sm leading-relaxed text-body text-balance break-keep">
+							{s.desc}
+						</p>
 					</li>
 				))}
 			</ol>
@@ -286,27 +254,30 @@ function HowItWorks() {
 
 function WhatYouGet() {
 	return (
-		<section id="create" className="border-y border-line bg-surface">
+		<section
+			id="create"
+			className="scroll-mt-16 border-y border-line bg-surface"
+		>
 			<div className="mx-auto w-full max-w-[1120px] px-4 py-16 sm:px-6 sm:py-20">
 				<SectionHeading
 					eyebrow="만들어지는 것"
-					title="하나의 온보딩, 두 개의 사이트"
+					title="한 번 작성, 두 개의 사이트"
 					desc="의사 개인 프로필과 병원 홈페이지가 한 번에 만들어집니다."
 				/>
 				<div className="mt-10 grid gap-6 lg:grid-cols-2">
 					<CreateCard
 						icon={Stethoscope}
 						title="의사 공개 프로필"
-						domain="***.kmadoc.com"
+						domain="*.kmadoc.com"
 						desc="경력·학력, 전문 자격, 진료 일정, 대표 논문까지. 환자가 신뢰할 수 있는 공개 프로필이 자동으로 구성됩니다."
-						bullets={["면허 인증 배지", "주간 진료 일정", "경력 타임라인"]}
+						bullets={["진료 일정", "경력 타임라인"]}
 						to="/doctor/preview"
 						ctaLabel="공개 프로필 예시 보기"
 					/>
 					<CreateCard
 						icon={LayoutGrid}
 						title="병원 홈페이지"
-						domain="***.kmaclinic.com"
+						domain="*.kmaclinic.com"
 						desc="병원 소개, 진료 안내, 공지·칼럼 게시판을 갖춘 홈페이지. 구독 결제 후 즉시 공개됩니다."
 						bullets={[
 							"병원 소개·진료안내",
@@ -377,7 +348,7 @@ function Pricing() {
 	return (
 		<section
 			id="pricing"
-			className="mx-auto w-full max-w-[1120px] px-4 py-16 sm:px-6 sm:py-20"
+			className="mx-auto w-full max-w-[1120px] scroll-mt-16 px-4 py-16 sm:px-6 sm:py-20"
 		>
 			<SectionHeading
 				eyebrow="요금"
@@ -414,7 +385,7 @@ function Pricing() {
 					<p className="text-3xl font-extrabold text-ink">
 						월 구독
 						<span className="ml-1 text-base font-medium text-muted-fg">
-							/ Toss 정기결제
+							/ toss 정기결제
 						</span>
 					</p>
 					<p className="text-sm leading-relaxed text-body">
@@ -430,7 +401,7 @@ function Pricing() {
 					size="cta"
 					className="w-full sm:w-auto"
 				>
-					{isAuthenticated ? "온보딩 이어가기" : "지금 시작하기"}
+					{isAuthenticated ? "작성 이어가기" : "지금 시작하기"}
 					<ArrowRight className="size-5" />
 				</Button>
 			</div>
@@ -450,7 +421,7 @@ function FinalCta() {
 					오늘 등록하고, 오늘 공개하세요.
 				</h2>
 				<p className="max-w-[520px] text-[15px] leading-relaxed text-brand-foreground/85">
-					대화형 온보딩으로 10분이면 충분합니다. 지금 바로 프로필과 병원
+					대화로 작성하면 10분이면 충분합니다. 지금 바로 프로필과 병원
 					홈페이지를 만들어 보세요.
 				</p>
 				<Button
@@ -460,7 +431,7 @@ function FinalCta() {
 					size="cta"
 					className="w-full border-transparent bg-surface text-brand hover:bg-surface/90 sm:w-auto"
 				>
-					{isAuthenticated ? "온보딩 이어가기" : "Doxmeet으로 시작하기"}
+					{isAuthenticated ? "작성 이어가기" : "닥스밋 계정으로 시작하기"}
 					<ArrowRight className="size-5" />
 				</Button>
 			</div>
@@ -491,46 +462,5 @@ function SectionHeading({
 				{desc}
 			</p>
 		</div>
-	);
-}
-
-function HomeFooter() {
-	return (
-		<footer className="border-t border-line bg-surface">
-			<div className="mx-auto flex w-full max-w-[1120px] flex-col gap-6 px-4 py-10 sm:px-6 md:flex-row md:items-start md:justify-between">
-				<div className="flex flex-col gap-3">
-					<BrandLogo label="KMA Clinic" to="/" />
-					<p className="max-w-[320px] text-sm leading-relaxed text-muted-fg">
-						의료진을 위한 프로필·병원 홈페이지 자동 생성 서비스. Doxmeet
-						계정으로 간편하게 시작하세요.
-					</p>
-				</div>
-				<nav className="grid grid-cols-2 gap-x-12 gap-y-2 text-sm">
-					<Link
-						to="/login"
-						className="text-body transition-colors hover:text-brand"
-					>
-						로그인
-					</Link>
-					<Link
-						to="/onboarding"
-						className="text-body transition-colors hover:text-brand"
-					>
-						온보딩 시작
-					</Link>
-					<Link
-						to="/doctor/preview"
-						className="text-body transition-colors hover:text-brand"
-					>
-						프로필 예시
-					</Link>
-				</nav>
-			</div>
-			<div className="border-t border-line">
-				<p className="mx-auto w-full max-w-[1120px] px-4 py-4 text-sm text-muted-fg sm:px-6">
-					© 2026 KMA Clinic. All rights reserved.
-				</p>
-			</div>
-		</footer>
 	);
 }

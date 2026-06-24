@@ -32,15 +32,15 @@ function LoginPage() {
 	}
 
 	return (
-		<AuthShell title="로그인" eyebrow="KMA Clinic">
+		<AuthShell title="로그인" eyebrow="K CLINIC">
 			<div className="mx-auto flex max-w-[480px] flex-col gap-6">
 				<div className="flex flex-col gap-2">
 					<h2 className="text-xl font-medium text-ink">
-						Doxmeet 계정으로 로그인
+						닥스밋 계정으로 로그인
 					</h2>
 					<p className="text-base text-body">
-						가입·결제 콘솔은 Doxmeet 의사 계정으로 로그인합니다. 로그인 후
-						대화형 온보딩으로 프로필과 병원 홈페이지를 한 번에 만들 수 있어요.
+						가입·결제 콘솔은 닥스밋 의사 계정으로 로그인합니다. 로그인 후 대화로
+						작성하면 프로필과 병원 홈페이지를 한 번에 만들 수 있어요.
 					</p>
 				</div>
 

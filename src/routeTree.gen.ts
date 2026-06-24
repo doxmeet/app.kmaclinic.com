@@ -14,9 +14,11 @@ import { Route as FindPasswordRouteImport } from './routes/find-password'
 import { Route as FindIdRouteImport } from './routes/find-id'
 import { Route as DemoRouteImport } from './routes/demo'
 import { Route as ComponentsRouteImport } from './routes/components'
+import { Route as AccountRouteImport } from './routes/account'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as OnboardingIndexRouteImport } from './routes/onboarding.index'
 import { Route as BoardIndexRouteImport } from './routes/board.index'
+import { Route as SubscriptionHospitalNoRouteImport } from './routes/subscription.$hospitalNo'
 import { Route as PlaygroundEditorRouteImport } from './routes/playground.editor'
 import { Route as OnboardingDirectRouteImport } from './routes/onboarding.direct'
 import { Route as Landing5RouteImport } from './routes/landing.5'
@@ -36,6 +38,8 @@ import { Route as BoardOutputRouteImport } from './routes/board.output'
 import { Route as BoardIdRouteImport } from './routes/board.$id'
 import { Route as BillingCallbackRouteImport } from './routes/billing.callback'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
+import { Route as AdminPaymentsRouteImport } from './routes/admin.payments'
+import { Route as AdminNotificationsRouteImport } from './routes/admin.notifications'
 import { Route as AdminLicensesRouteImport } from './routes/admin.licenses'
 import { Route as AdminInstitutionsIndexRouteImport } from './routes/admin.institutions.index'
 import { Route as OauthDoxmeetCallbackRouteImport } from './routes/oauth.doxmeet.callback'
@@ -66,6 +70,11 @@ const ComponentsRoute = ComponentsRouteImport.update({
   path: '/components',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AccountRoute = AccountRouteImport.update({
+  id: '/account',
+  path: '/account',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -79,6 +88,11 @@ const OnboardingIndexRoute = OnboardingIndexRouteImport.update({
 const BoardIndexRoute = BoardIndexRouteImport.update({
   id: '/board/',
   path: '/board/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SubscriptionHospitalNoRoute = SubscriptionHospitalNoRouteImport.update({
+  id: '/subscription/$hospitalNo',
+  path: '/subscription/$hospitalNo',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PlaygroundEditorRoute = PlaygroundEditorRouteImport.update({
@@ -176,6 +190,16 @@ const AdminUsersRoute = AdminUsersRouteImport.update({
   path: '/admin/users',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminPaymentsRoute = AdminPaymentsRouteImport.update({
+  id: '/admin/payments',
+  path: '/admin/payments',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminNotificationsRoute = AdminNotificationsRouteImport.update({
+  id: '/admin/notifications',
+  path: '/admin/notifications',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminLicensesRoute = AdminLicensesRouteImport.update({
   id: '/admin/licenses',
   path: '/admin/licenses',
@@ -199,12 +223,15 @@ const AdminInstitutionsIdRoute = AdminInstitutionsIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/account': typeof AccountRoute
   '/components': typeof ComponentsRoute
   '/demo': typeof DemoRoute
   '/find-id': typeof FindIdRoute
   '/find-password': typeof FindPasswordRoute
   '/login': typeof LoginRoute
   '/admin/licenses': typeof AdminLicensesRoute
+  '/admin/notifications': typeof AdminNotificationsRoute
+  '/admin/payments': typeof AdminPaymentsRoute
   '/admin/users': typeof AdminUsersRoute
   '/billing/callback': typeof BillingCallbackRoute
   '/board/$id': typeof BoardIdRoute
@@ -224,6 +251,7 @@ export interface FileRoutesByFullPath {
   '/landing/5': typeof Landing5Route
   '/onboarding/direct': typeof OnboardingDirectRoute
   '/playground/editor': typeof PlaygroundEditorRoute
+  '/subscription/$hospitalNo': typeof SubscriptionHospitalNoRoute
   '/board/': typeof BoardIndexRoute
   '/onboarding/': typeof OnboardingIndexRoute
   '/admin/institutions/$id': typeof AdminInstitutionsIdRoute
@@ -232,12 +260,15 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/account': typeof AccountRoute
   '/components': typeof ComponentsRoute
   '/demo': typeof DemoRoute
   '/find-id': typeof FindIdRoute
   '/find-password': typeof FindPasswordRoute
   '/login': typeof LoginRoute
   '/admin/licenses': typeof AdminLicensesRoute
+  '/admin/notifications': typeof AdminNotificationsRoute
+  '/admin/payments': typeof AdminPaymentsRoute
   '/admin/users': typeof AdminUsersRoute
   '/billing/callback': typeof BillingCallbackRoute
   '/board/$id': typeof BoardIdRoute
@@ -257,6 +288,7 @@ export interface FileRoutesByTo {
   '/landing/5': typeof Landing5Route
   '/onboarding/direct': typeof OnboardingDirectRoute
   '/playground/editor': typeof PlaygroundEditorRoute
+  '/subscription/$hospitalNo': typeof SubscriptionHospitalNoRoute
   '/board': typeof BoardIndexRoute
   '/onboarding': typeof OnboardingIndexRoute
   '/admin/institutions/$id': typeof AdminInstitutionsIdRoute
@@ -266,12 +298,15 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/account': typeof AccountRoute
   '/components': typeof ComponentsRoute
   '/demo': typeof DemoRoute
   '/find-id': typeof FindIdRoute
   '/find-password': typeof FindPasswordRoute
   '/login': typeof LoginRoute
   '/admin/licenses': typeof AdminLicensesRoute
+  '/admin/notifications': typeof AdminNotificationsRoute
+  '/admin/payments': typeof AdminPaymentsRoute
   '/admin/users': typeof AdminUsersRoute
   '/billing/callback': typeof BillingCallbackRoute
   '/board/$id': typeof BoardIdRoute
@@ -291,6 +326,7 @@ export interface FileRoutesById {
   '/landing/5': typeof Landing5Route
   '/onboarding/direct': typeof OnboardingDirectRoute
   '/playground/editor': typeof PlaygroundEditorRoute
+  '/subscription/$hospitalNo': typeof SubscriptionHospitalNoRoute
   '/board/': typeof BoardIndexRoute
   '/onboarding/': typeof OnboardingIndexRoute
   '/admin/institutions/$id': typeof AdminInstitutionsIdRoute
@@ -301,12 +337,15 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/account'
     | '/components'
     | '/demo'
     | '/find-id'
     | '/find-password'
     | '/login'
     | '/admin/licenses'
+    | '/admin/notifications'
+    | '/admin/payments'
     | '/admin/users'
     | '/billing/callback'
     | '/board/$id'
@@ -326,6 +365,7 @@ export interface FileRouteTypes {
     | '/landing/5'
     | '/onboarding/direct'
     | '/playground/editor'
+    | '/subscription/$hospitalNo'
     | '/board/'
     | '/onboarding/'
     | '/admin/institutions/$id'
@@ -334,12 +374,15 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/account'
     | '/components'
     | '/demo'
     | '/find-id'
     | '/find-password'
     | '/login'
     | '/admin/licenses'
+    | '/admin/notifications'
+    | '/admin/payments'
     | '/admin/users'
     | '/billing/callback'
     | '/board/$id'
@@ -359,6 +402,7 @@ export interface FileRouteTypes {
     | '/landing/5'
     | '/onboarding/direct'
     | '/playground/editor'
+    | '/subscription/$hospitalNo'
     | '/board'
     | '/onboarding'
     | '/admin/institutions/$id'
@@ -367,12 +411,15 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/account'
     | '/components'
     | '/demo'
     | '/find-id'
     | '/find-password'
     | '/login'
     | '/admin/licenses'
+    | '/admin/notifications'
+    | '/admin/payments'
     | '/admin/users'
     | '/billing/callback'
     | '/board/$id'
@@ -392,6 +439,7 @@ export interface FileRouteTypes {
     | '/landing/5'
     | '/onboarding/direct'
     | '/playground/editor'
+    | '/subscription/$hospitalNo'
     | '/board/'
     | '/onboarding/'
     | '/admin/institutions/$id'
@@ -401,12 +449,15 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AccountRoute: typeof AccountRoute
   ComponentsRoute: typeof ComponentsRoute
   DemoRoute: typeof DemoRoute
   FindIdRoute: typeof FindIdRoute
   FindPasswordRoute: typeof FindPasswordRoute
   LoginRoute: typeof LoginRoute
   AdminLicensesRoute: typeof AdminLicensesRoute
+  AdminNotificationsRoute: typeof AdminNotificationsRoute
+  AdminPaymentsRoute: typeof AdminPaymentsRoute
   AdminUsersRoute: typeof AdminUsersRoute
   BillingCallbackRoute: typeof BillingCallbackRoute
   BoardIdRoute: typeof BoardIdRoute
@@ -426,6 +477,7 @@ export interface RootRouteChildren {
   Landing5Route: typeof Landing5Route
   OnboardingDirectRoute: typeof OnboardingDirectRoute
   PlaygroundEditorRoute: typeof PlaygroundEditorRoute
+  SubscriptionHospitalNoRoute: typeof SubscriptionHospitalNoRoute
   BoardIndexRoute: typeof BoardIndexRoute
   OnboardingIndexRoute: typeof OnboardingIndexRoute
   AdminInstitutionsIdRoute: typeof AdminInstitutionsIdRoute
@@ -470,6 +522,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ComponentsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/account': {
+      id: '/account'
+      path: '/account'
+      fullPath: '/account'
+      preLoaderRoute: typeof AccountRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -489,6 +548,13 @@ declare module '@tanstack/react-router' {
       path: '/board'
       fullPath: '/board/'
       preLoaderRoute: typeof BoardIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/subscription/$hospitalNo': {
+      id: '/subscription/$hospitalNo'
+      path: '/subscription/$hospitalNo'
+      fullPath: '/subscription/$hospitalNo'
+      preLoaderRoute: typeof SubscriptionHospitalNoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/playground/editor': {
@@ -624,6 +690,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminUsersRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/payments': {
+      id: '/admin/payments'
+      path: '/admin/payments'
+      fullPath: '/admin/payments'
+      preLoaderRoute: typeof AdminPaymentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/notifications': {
+      id: '/admin/notifications'
+      path: '/admin/notifications'
+      fullPath: '/admin/notifications'
+      preLoaderRoute: typeof AdminNotificationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/licenses': {
       id: '/admin/licenses'
       path: '/admin/licenses'
@@ -657,12 +737,15 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AccountRoute: AccountRoute,
   ComponentsRoute: ComponentsRoute,
   DemoRoute: DemoRoute,
   FindIdRoute: FindIdRoute,
   FindPasswordRoute: FindPasswordRoute,
   LoginRoute: LoginRoute,
   AdminLicensesRoute: AdminLicensesRoute,
+  AdminNotificationsRoute: AdminNotificationsRoute,
+  AdminPaymentsRoute: AdminPaymentsRoute,
   AdminUsersRoute: AdminUsersRoute,
   BillingCallbackRoute: BillingCallbackRoute,
   BoardIdRoute: BoardIdRoute,
@@ -682,6 +765,7 @@ const rootRouteChildren: RootRouteChildren = {
   Landing5Route: Landing5Route,
   OnboardingDirectRoute: OnboardingDirectRoute,
   PlaygroundEditorRoute: PlaygroundEditorRoute,
+  SubscriptionHospitalNoRoute: SubscriptionHospitalNoRoute,
   BoardIndexRoute: BoardIndexRoute,
   OnboardingIndexRoute: OnboardingIndexRoute,
   AdminInstitutionsIdRoute: AdminInstitutionsIdRoute,

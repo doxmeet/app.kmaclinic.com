@@ -25,7 +25,7 @@ function BrandLogo({
 					markClassName,
 				)}
 			>
-				D
+				K
 			</span>
 			<span className="text-base font-bold text-ink">{label}</span>
 		</>

@@ -1,6 +1,6 @@
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { ArrowLeft, ArrowUpRight } from "lucide-react";
-import { BrandLogo } from "#/components/layout/brand-logo.tsx";
+import { AppHeader } from "#/components/layout/app-header.tsx";
 import { SiteFooter } from "#/components/layout/site-footer.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 
@@ -27,7 +27,7 @@ const GROUPS: Group[] = [
 			{ to: "/onboarding", title: "대화형 온보딩", note: "AI 챗", ready: true },
 			{
 				to: "/billing/callback",
-				title: "결제 콜백 (Toss)",
+				title: "결제 콜백 (toss)",
 				note: "내부",
 				ready: true,
 			},
@@ -99,14 +99,7 @@ const GROUPS: Group[] = [
 function ShowcaseIndex() {
 	return (
 		<div className="flex min-h-screen flex-col bg-app-bg">
-			<header className="border-b border-line bg-surface">
-				<div className="mx-auto flex max-w-[1080px] items-center justify-between px-4 py-4 sm:px-6">
-					<BrandLogo label="KMA Clinic" to="/" />
-					<Badge variant="soft" size="lg">
-						디자인 구현 카탈로그
-					</Badge>
-				</div>
-			</header>
+			<AppHeader />
 
 			<main className="mx-auto w-full max-w-[1080px] flex-1 px-4 py-10 sm:px-6">
 				<Link

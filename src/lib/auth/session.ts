@@ -1,4 +1,5 @@
-import { http, publicApi, publicHttp } from "#/lib/api";
+import { z } from "zod";
+import { http, parse, publicApi, publicHttp } from "#/lib/api";
 import {
 	clearTokens,
 	getRefreshToken,
@@ -13,44 +14,55 @@ import { env } from "#/lib/env.ts";
  * 토큰은 응답 헤더(KCLINIC-*)로 내려오며 api 레이어의 captureHook이 저장.
  */
 
-/** GET /account/me 응답(문서 §7.1) — { user, profile, hospitals }. */
-export type AccountUser = {
-	no: number;
-	id?: string;
-	name?: string | null;
-	phone?: string | null;
-	hospital_name?: string | null;
-	level: number;
-	is_withdrawn?: boolean;
-	created_at?: string;
-	[key: string]: unknown;
-};
+/**
+ * GET /account/me 응답(문서 §7.1) — { user, profile, hospitals }.
+ *
+ * 백엔드 bigint PK(no/subscription_no 등)는 JSON에서 **문자열**로 직렬화되므로
+ * (예: "12") 경계에서 숫자로 정규화한다(onboarding.ts의 `numeric`과 동일 규약).
+ * 라우트 파라미터(Number)와 strict 비교가 깨지지 않도록 하기 위함.
+ */
+const numericId = z.coerce.number();
+const numericIdOpt = z.coerce.number().optional();
+const numericIdNullish = z.coerce.number().nullish();
 
-export type AccountProfile = {
-	no?: number;
-	slug?: string | null;
-	is_published?: boolean;
-	completion_percent?: number;
-	[key: string]: unknown;
-} | null;
+export const AccountUserSchema = z.looseObject({
+	no: numericId,
+	id: z.string().optional(),
+	name: z.string().nullish(),
+	phone: z.string().nullish(),
+	hospital_name: z.string().nullish(),
+	level: z.coerce.number().default(0),
+	is_withdrawn: z.boolean().optional(),
+	created_at: z.string().optional(),
+});
+export type AccountUser = z.infer<typeof AccountUserSchema>;
 
-export type AccountHospital = {
-	no: number;
-	slug?: string | null;
-	name?: string;
-	is_published?: boolean;
-	subscription_no?: number | null;
-	subscription_status?: "active" | "past_due" | string | null;
-	next_billing_at?: string | null;
-	current_period_end?: string | null;
-	[key: string]: unknown;
-};
+export const AccountProfileSchema = z.looseObject({
+	no: numericIdOpt,
+	slug: z.string().nullish(),
+	is_published: z.boolean().optional(),
+	completion_percent: z.coerce.number().optional(),
+});
+export type AccountProfile = z.infer<typeof AccountProfileSchema> | null;
 
-export type AccountMe = {
-	user: AccountUser;
-	profile: AccountProfile;
-	hospitals: AccountHospital[];
-};
+export const AccountHospitalSchema = z.looseObject({
+	no: numericId,
+	slug: z.string().nullish(),
+	name: z.string().optional(),
+	is_published: z.boolean().optional(),
+	subscription_no: numericIdNullish,
+	subscription_status: z.string().nullish(),
+	next_billing_at: z.string().nullish(),
+	current_period_end: z.string().nullish(),
+});
+export type AccountHospital = z.infer<typeof AccountHospitalSchema>;
+
+export const AccountMeSchema = z.looseObject({
+	user: AccountUserSchema,
+	profile: AccountProfileSchema.nullish(),
+	hospitals: z.array(AccountHospitalSchema).nullish().default([]),
+});
+export type AccountMe = z.infer<typeof AccountMeSchema>;
 
 /** Doxmeet code → 토큰 교환(로그인 완료). 백엔드 엔드포인트는 POST /oauth/callback. */
 export async function exchangeOAuthCode(
@@ -60,9 +72,9 @@ export async function exchangeOAuthCode(
 	await publicHttp.post("oauth/callback", { site, code });
 }
 
-/** 내 계정 + 프로필 요약 + 소유 병원/구독 상태. */
+/** 내 계정 + 프로필 요약 + 소유 병원/구독 상태. ID는 경계에서 숫자로 정규화. */
 export async function fetchAccount(): Promise<AccountMe> {
-	return http.get<AccountMe>("account/me");
+	return parse(await http.get("account/me"), AccountMeSchema);
 }
 
 /** 전화번호 수정 → { user: { no, phone } }. */

@@ -356,10 +356,6 @@ function InstitutionDetailPage() {
 									value={str(getField(subscription, ["owner_name"]))}
 								/>
 								<ReadField
-									label="지역"
-									value={str(getField(subscription, ["hospital_region"]))}
-								/>
-								<ReadField
 									label="병원 번호"
 									value={str(getField(subscription, ["hospital_no"]))}
 								/>

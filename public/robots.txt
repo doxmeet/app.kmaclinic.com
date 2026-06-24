@@ -1,3 +1,22 @@
 # https://www.robotstxt.org/robotstxt.html
 User-agent: *
-Disallow:
+Allow: /
+
+# 로그인이 필요한 콘솔/계정 영역 및 개발용 페이지는 색인에서 제외
+Disallow: /admin
+Disallow: /account
+Disallow: /onboarding
+Disallow: /billing
+Disallow: /subscription
+Disallow: /oauth
+Disallow: /hospital
+Disallow: /board
+Disallow: /find-id
+Disallow: /find-password
+Disallow: /error
+Disallow: /demo
+Disallow: /components
+Disallow: /playground
+Disallow: /landing
+
+Sitemap: https://app.kmaclinic.com/sitemap.xml

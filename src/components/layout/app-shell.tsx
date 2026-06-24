@@ -15,6 +15,7 @@ function AppShell({
 	userName,
 	headerExtra,
 	maxWidth = "1100px",
+	innerMaxWidth,
 	mainClassName,
 	bottomBar,
 }: {
@@ -24,6 +25,11 @@ function AppShell({
 	userName?: string;
 	headerExtra?: React.ReactNode;
 	maxWidth?: string;
+	/**
+	 * 바깥 컨테이너(maxWidth)는 헤더 폭에 맞추되, 본문(폼 등)만 더 좁게 제한할 때 사용.
+	 * 좁아진 본문은 컨테이너 안에서 가운데 정렬한다.
+	 */
+	innerMaxWidth?: string;
 	mainClassName?: string;
 	/** 하단 고정 액션 바 (StickyActionBar 등) */
 	bottomBar?: React.ReactNode;
@@ -41,7 +47,16 @@ function AppShell({
 					className="mx-auto w-full px-4 py-6 sm:px-6 sm:py-8"
 					style={{ maxWidth }}
 				>
-					{children}
+					{innerMaxWidth ? (
+						<div
+							className="mx-auto w-full"
+							style={{ maxWidth: innerMaxWidth }}
+						>
+							{children}
+						</div>
+					) : (
+						children
+					)}
 				</div>
 			</main>
 			{bottomBar}

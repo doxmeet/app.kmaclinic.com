@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Loader2, Plus, Trash2, X } from "lucide-react";
+import { Check, Loader2, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AuthGuard } from "#/components/auth/auth-guard.tsx";
@@ -17,7 +17,7 @@ import {
 } from "#/components/form/field.tsx";
 import { FieldInput } from "#/components/form/field-input.tsx";
 import { OptionButton, OptionGroup } from "#/components/form/option-group.tsx";
-import { SelectField } from "#/components/form/select-field.tsx";
+import { FieldSelect } from "#/components/form/select-field.tsx";
 import { AppShell } from "#/components/layout/app-shell.tsx";
 import { CommitComplete } from "#/components/onboarding/commit-complete.tsx";
 import { Button } from "#/components/ui/button.tsx";
@@ -34,11 +34,12 @@ import {
 import { toastApiError } from "#/lib/api-error-message.ts";
 import { useSession } from "#/lib/auth/use-session.ts";
 import { uploadFileToStorage } from "#/lib/upload.ts";
+import { cn } from "#/lib/utils.ts";
 
 /**
  * 일괄(직접) 입력 온보딩 — 문서 §8.3 `POST /onboarding/direct`.
  * 대화형 온보딩(`/onboarding`)과 달리, 전체 정보를 한 폼으로 받아 한 요청에 즉시
- * 프로필(+병원)을 생성한다. 성공 결과(무료 완료/Toss 결제)는 대화형과 동일하게
+ * 프로필(+병원)을 생성한다. 성공 결과(무료 완료/toss 결제)는 대화형과 동일하게
  * `CommitComplete` 가 처리한다.
  */
 export const Route = createFileRoute("/onboarding/direct")({
@@ -60,22 +61,159 @@ function DirectOnboardingPage() {
 const LOGIN_ID_HINT = "영문 소문자·숫자 4~20자";
 const LOGIN_ID_RE = /^[a-z0-9]{4,20}$/;
 
-const THEME_COLORS = [
-	{ value: "blue", label: "파랑" },
-	{ value: "green", label: "초록" },
-	{ value: "purple", label: "보라" },
-	{ value: "red", label: "빨강" },
-	{ value: "orange", label: "주황" },
-	{ value: "teal", label: "청록" },
-] as const;
+/**
+ * 디자인 시안(template_key) — wildcard.kmaclinic.com `components/templates` 규약(t1~t5)과 동일.
+ * 키/라벨/설명을 그대로 가져옴(미지정/`default` → 시안1 폴백).
+ */
+const TEMPLATES: { key: string; label: string; desc: string }[] = [
+	{ key: "t1", label: "시안 1", desc: "기본형 · 신뢰감 있는 정통 레이아웃" },
+	{ key: "t2", label: "시안 2", desc: "그린 톤 · 친근한 동네 병원형" },
+	{ key: "t3", label: "시안 3", desc: "와이드 · 종합병원형 풀스크린" },
+	{ key: "t4", label: "시안 4", desc: "모노 · 미니멀 클리닉형" },
+	{ key: "t5", label: "시안 5", desc: "포인트 컬러 · 캠페인/이벤트 강조형" },
+];
+
+// 학위/면허/수련 구분 enum — wildcard.kmadoc.com `entity-configs.ts`(프로필 subentity 스키마) 기준.
+const DEGREE_TYPES = [
+	{ value: "high_school", label: "고등학교" },
+	{ value: "bachelor", label: "학사" },
+	{ value: "master", label: "석사" },
+	{ value: "doctorate", label: "박사" },
+];
+const LICENSE_TYPES = [
+	{ value: "doctor", label: "의사면허" },
+	{ value: "specialist", label: "전문의" },
+	{ value: "subspecialist", label: "분과/세부전문의" },
+];
+const TRAINING_TYPES = [
+	{ value: "intern", label: "인턴" },
+	{ value: "resident", label: "레지던트" },
+	{ value: "fellow", label: "펠로우" },
+];
+
+/** 반복 입력 행의 필드 서술자(generic subentity 에디터용). */
+type RowFieldDef = {
+	name: string;
+	placeholder: string;
+	kind?: "text" | "year" | "select";
+	options?: { value: string; label: string }[];
+};
+
+/**
+ * 프로필 subentity 정의(문서 §8.3 `subentities`). 순서·필드명은
+ * wildcard.kmadoc.com `entity-configs.ts`(저장 스키마)를 따른다.
+ * education/career 는 기존 폼(문서 예시 필드명)을 유지하고 degree_type 만 추가.
+ * schedule 의 주간 그리드(grid)는 별도 편집기 영역이라 여기선 기관/역할만 받는다.
+ */
+const SUBENTITIES: {
+	key: string;
+	title: string;
+	addLabel: string;
+	fields: RowFieldDef[];
+}[] = [
+	{
+		key: "education",
+		title: "학력",
+		addLabel: "학력 추가",
+		fields: [
+			{
+				name: "degree_type",
+				placeholder: "학위",
+				kind: "select",
+				options: DEGREE_TYPES,
+			},
+			{ name: "official_degree", placeholder: "학위명 (예: 의학박사)" },
+			{
+				name: "graduation_year",
+				placeholder: "졸업연도 (예: 2013)",
+				kind: "year",
+			},
+		],
+	},
+	{
+		key: "license",
+		title: "면허·자격",
+		addLabel: "면허/자격 추가",
+		fields: [
+			{
+				name: "license_type",
+				placeholder: "구분",
+				kind: "select",
+				options: LICENSE_TYPES,
+			},
+			{ name: "specialty", placeholder: "진료과/분과" },
+			{ name: "license_number", placeholder: "면허번호" },
+		],
+	},
+	{
+		key: "training",
+		title: "수련",
+		addLabel: "수련 추가",
+		fields: [
+			{
+				name: "training_type",
+				placeholder: "구분",
+				kind: "select",
+				options: TRAINING_TYPES,
+			},
+			{ name: "hospital_name", placeholder: "병원명" },
+			{ name: "department", placeholder: "진료과" },
+		],
+	},
+	{
+		key: "career",
+		title: "경력",
+		addLabel: "경력 추가",
+		fields: [
+			{ name: "institution_name", placeholder: "기관명 (예: 행복내과의원)" },
+			{ name: "role", placeholder: "역할 (예: 원장)" },
+			{ name: "start_year", placeholder: "시작연도 (예: 2018)", kind: "year" },
+		],
+	},
+	{
+		key: "society",
+		title: "학회",
+		addLabel: "학회 추가",
+		fields: [
+			{ name: "name_text", placeholder: "학회명" },
+			{ name: "position", placeholder: "직위 (예: 정회원, 이사)" },
+		],
+	},
+	{
+		key: "paper",
+		title: "논문",
+		addLabel: "논문 추가",
+		fields: [
+			{ name: "title", placeholder: "논문 제목" },
+			{ name: "journal", placeholder: "학술지" },
+			{ name: "pub_year", placeholder: "발행연도", kind: "year" },
+		],
+	},
+	{
+		key: "schedule",
+		title: "진료 일정",
+		addLabel: "근무 기관 추가",
+		fields: [
+			{ name: "institution_name", placeholder: "근무 기관" },
+			{ name: "role", placeholder: "역할 (예: 본원)" },
+		],
+	},
+];
+
+/** 빈 subentity 행 맵(섹션 키 → 빈 배열). */
+function emptySubRows(): Record<string, Record<string, string>[]> {
+	return Object.fromEntries(SUBENTITIES.map((s) => [s.key, []]));
+}
 
 type TreatmentRow = { name: string; price_info: string; description: string };
-type EducationRow = { official_degree: string; graduation_year: string };
-type CareerRow = { institution_name: string; role: string; start_year: string };
 
 function DirectOnboardingForm() {
-	const { user } = useSession();
+	const { user, account } = useSession();
 	const queryClient = useQueryClient();
+
+	// 이미 의사 프로필이 있으면 '의사 프로필만(무료)' 경로는 중복이라 막고,
+	// 병원 홈페이지 생성만 허용한다(account/me.profile 존재 여부로 판단).
+	const hasProfile = account?.profile != null;
 
 	const [result, setResult] = useState<CommitResult | null>(null);
 
@@ -104,13 +242,15 @@ function DirectOnboardingForm() {
 	const [hoursWeekday, setHoursWeekday] = useState("");
 	const [hoursSaturday, setHoursSaturday] = useState("");
 	const [hoursSunday, setHoursSunday] = useState("");
-	const [themeColor, setThemeColor] = useState("blue");
+	const [templateKey, setTemplateKey] = useState("t1");
 	const [logoUrl, setLogoUrl] = useState("");
 	const [logoUploading, setLogoUploading] = useState(false);
 	const [snsInstagram, setSnsInstagram] = useState("");
 	const [snsFacebook, setSnsFacebook] = useState("");
 	const [snsYoutube, setSnsYoutube] = useState("");
 	const [snsBlog, setSnsBlog] = useState("");
+	const [snsKakao, setSnsKakao] = useState("");
+	const [snsX, setSnsX] = useState("");
 
 	// 4. 병원 관리자
 	const [adminLoginId, setAdminLoginId] = useState("");
@@ -124,9 +264,9 @@ function DirectOnboardingForm() {
 	// 6. 비급여 항목
 	const [treatments, setTreatments] = useState<TreatmentRow[]>([]);
 
-	// 7. 경력·학력
-	const [educations, setEducations] = useState<EducationRow[]>([]);
-	const [careers, setCareers] = useState<CareerRow[]>([]);
+	// 7. 경력·학력·이력(프로필 subentity, 선택) — 문서 §8.3 subentities
+	const [subRows, setSubRows] =
+		useState<Record<string, Record<string, string>[]>>(emptySubRows);
 
 	// 8. 병원 사진
 	const [photos, setPhotos] = useState<string[]>([]);
@@ -158,6 +298,8 @@ function DirectOnboardingForm() {
 	const snsFacebookId = useId();
 	const snsYoutubeId = useId();
 	const snsBlogId = useId();
+	const snsKakaoId = useId();
+	const snsXId = useId();
 	const adminLoginIdId = useId();
 	const adminNameId = useId();
 	const adminPwId = useId();
@@ -245,27 +387,23 @@ function DirectOnboardingForm() {
 		});
 		if (Object.keys(profile).length > 0) payload.profile = profile;
 
-		// 경력·학력 — 프로필/병원 공통(선택)
-		const education = educations
-			.map((row) =>
-				omitEmpty({
-					official_degree: row.official_degree.trim(),
-					graduation_year: toYear(row.graduation_year),
-				}),
-			)
-			.filter((row) => Object.keys(row).length > 0);
-		const career = careers
-			.map((row) =>
-				omitEmpty({
-					institution_name: row.institution_name.trim(),
-					role: row.role.trim(),
-					start_year: toYear(row.start_year),
-				}),
-			)
-			.filter((row) => Object.keys(row).length > 0);
+		// 프로필 subentity(학력·면허·수련·경력·학회·논문·일정) — 프로필/병원 공통(선택).
 		const subentities: Record<string, unknown> = {};
-		if (education.length > 0) subentities.education = education;
-		if (career.length > 0) subentities.career = career;
+		for (const section of SUBENTITIES) {
+			const list = (subRows[section.key] ?? [])
+				.map((row) => {
+					const out: Record<string, unknown> = {};
+					for (const field of section.fields) {
+						const raw = (row[field.name] ?? "").trim();
+						if (!raw) continue;
+						const value = field.kind === "year" ? toYear(raw) : raw;
+						if (value !== undefined) out[field.name] = value;
+					}
+					return out;
+				})
+				.filter((row) => Object.keys(row).length > 0);
+			if (list.length > 0) subentities[section.key] = list;
+		}
 		if (Object.keys(subentities).length > 0) payload.subentities = subentities;
 
 		// 병원 미선택이면 병원 관련 필드는 모두 제외
@@ -282,14 +420,16 @@ function DirectOnboardingForm() {
 			facebook: snsFacebook.trim(),
 			youtube: snsYoutube.trim(),
 			blog: snsBlog.trim(),
+			kakao_channel: snsKakao.trim(),
+			x: snsX.trim(),
 		});
 		const hospital: Record<string, unknown> = omitEmpty({
 			name: hospitalName.trim(),
 			road_address: roadAddress.trim(),
 			main_phone: mainPhone.trim(),
 			customer_center_phone: customerCenterPhone.trim(),
-			// 문서 §8.3: 병원 테마/템플릿은 `template_key` 컬럼으로 전달(direct는 컬럼 그대로 저장).
-			template_key: themeColor,
+			// 문서 §8.3: 병원 디자인 시안은 `template_key`(t1~t5) 컬럼으로 전달.
+			template_key: templateKey,
 			logo_url: logoUrl,
 		});
 		if (Object.keys(businessHours).length > 0)
@@ -396,7 +536,7 @@ function DirectOnboardingForm() {
 			setCustomerCenterPhone(asString(hospital.customer_center_phone));
 			// 자동저장 draft도 template_key로 보관되므로 같은 키로 복원(문서 §8.3).
 			if (asString(hospital.template_key)) {
-				setThemeColor(asString(hospital.template_key));
+				setTemplateKey(asString(hospital.template_key));
 			}
 			setLogoUrl(asString(hospital.logo_url));
 			const businessHours = asObject(hospital.business_hours);
@@ -411,6 +551,8 @@ function DirectOnboardingForm() {
 				setSnsFacebook(asString(snsLinks.facebook));
 				setSnsYoutube(asString(snsLinks.youtube));
 				setSnsBlog(asString(snsLinks.blog));
+				setSnsKakao(asString(snsLinks.kakao_channel));
+				setSnsX(asString(snsLinks.x));
 			}
 		}
 
@@ -442,29 +584,23 @@ function DirectOnboardingForm() {
 
 		const subentities = asObject(draft.subentities);
 		if (subentities) {
-			if (Array.isArray(subentities.education)) {
-				setEducations(
-					subentities.education.map((raw) => {
-						const row = asObject(raw) ?? {};
-						return {
-							official_degree: asString(row.official_degree),
-							graduation_year: yearToText(row.graduation_year),
-						};
-					}),
-				);
+			const next = emptySubRows();
+			for (const section of SUBENTITIES) {
+				const arr = subentities[section.key];
+				if (!Array.isArray(arr)) continue;
+				next[section.key] = arr.map((raw) => {
+					const row = asObject(raw) ?? {};
+					const out: Record<string, string> = {};
+					for (const field of section.fields) {
+						out[field.name] =
+							field.kind === "year"
+								? yearToText(row[field.name])
+								: asString(row[field.name]);
+					}
+					return out;
+				});
 			}
-			if (Array.isArray(subentities.career)) {
-				setCareers(
-					subentities.career.map((raw) => {
-						const row = asObject(raw) ?? {};
-						return {
-							institution_name: asString(row.institution_name),
-							role: asString(row.role),
-							start_year: yearToText(row.start_year),
-						};
-					}),
-				);
-			}
+			setSubRows(next);
 		}
 
 		if (Array.isArray(draft.photos)) {
@@ -517,6 +653,13 @@ function DirectOnboardingForm() {
 		};
 	}, []);
 
+	// 의사 프로필이 이미 있으면 '의사 프로필만' 선택지를 숨기므로, 남는 유일한
+	// 경로(병원 홈페이지까지)를 자동 선택해 빈/숨겨진 선택 상태를 막는다.
+	// (복원 draft가 'false'로 채워져도 여기서 'true'로 바로잡는다.)
+	useEffect(() => {
+		if (hasProfile && ownerChoice !== "true") setOwnerChoice("true");
+	}, [hasProfile, ownerChoice]);
+
 	function handleSubmit(e: React.FormEvent) {
 		e.preventDefault();
 		if (!canSubmit || mutation.isPending) return;
@@ -527,7 +670,11 @@ function DirectOnboardingForm() {
 	// 조회가 느려도 막다른 화면이 되지 않도록 "대화형으로 만들기" 링크는 항상 노출.
 	if (restoring) {
 		return (
-			<AppShell userName={user?.name ?? "원장님"} maxWidth="820px">
+			<AppShell
+				userName={user?.name ?? "원장님"}
+				maxWidth="1280px"
+				innerMaxWidth="820px"
+			>
 				<div className="flex flex-col gap-6">
 					<div className="flex items-center justify-between gap-3">
 						<h1 className="text-xl font-bold text-ink sm:text-2xl">
@@ -551,7 +698,11 @@ function DirectOnboardingForm() {
 	// 결제만 남은 병원으로 복귀 — 성공 result와 동일하게 CommitComplete가 처리.
 	if (pendingPayment) {
 		return (
-			<AppShell userName={user?.name ?? "원장님"} maxWidth="820px">
+			<AppShell
+				userName={user?.name ?? "원장님"}
+				maxWidth="1280px"
+				innerMaxWidth="820px"
+			>
 				<CommitComplete
 					result={{ payment: pendingPayment }}
 					onStartOver={async () => {
@@ -564,17 +715,25 @@ function DirectOnboardingForm() {
 		);
 	}
 
-	// 성공 — 대화형 온보딩과 동일 UX(무료 완료 or Toss 결제)
+	// 성공 — 대화형 온보딩과 동일 UX(무료 완료 or toss 결제)
 	if (result) {
 		return (
-			<AppShell userName={user?.name ?? "원장님"} maxWidth="820px">
+			<AppShell
+				userName={user?.name ?? "원장님"}
+				maxWidth="1280px"
+				innerMaxWidth="820px"
+			>
 				<CommitComplete result={result} />
 			</AppShell>
 		);
 	}
 
 	return (
-		<AppShell userName={user?.name ?? "원장님"} maxWidth="820px">
+		<AppShell
+			userName={user?.name ?? "원장님"}
+			maxWidth="1280px"
+			innerMaxWidth="820px"
+		>
 			<form onSubmit={handleSubmit} className="flex flex-col gap-6">
 				{/* 상단 안내 + 대화형 토글(온보딩의 "한 번에 입력하기"와 동일 위치: 우상단) */}
 				<div className="flex flex-col gap-1">
@@ -590,7 +749,8 @@ function DirectOnboardingForm() {
 						</Link>
 					</div>
 					<p className="text-[15px] leading-7 text-body-soft">
-						모든 정보를 한 번에 입력해 프로필(+병원)을 바로 생성합니다.
+						모든 정보를 한 번에 입력해 프로필 또는 병원 홈페이지를 바로
+						생성합니다.
 					</p>
 				</div>
 
@@ -611,20 +771,25 @@ function DirectOnboardingForm() {
 						value={ownerChoice}
 						onValueChange={(v) => setOwnerChoice(v as "false" | "true")}
 					>
-						<OptionButton value="false" fluid>
-							의사 프로필만 (무료)
-						</OptionButton>
+						{/* 이미 의사 프로필이 있으면 '의사 프로필만' 경로는 숨긴다(중복 생성 방지). */}
+						{hasProfile ? null : (
+							<OptionButton value="false" fluid>
+								의사 프로필만 (무료)
+							</OptionButton>
+						)}
 						<OptionButton value="true" fluid>
 							병원 홈페이지까지 (유료)
 						</OptionButton>
 					</OptionGroup>
 					<InfoCallout tone="info">
 						<p className="text-sm">
-							{isClinicOwner
-								? "병원 홈페이지는 정기 결제(카드 등록) 후 공개됩니다. 생성 직후 결제 단계로 이어집니다."
-								: ownerChoice === "false"
-									? "의사 프로필은 무료로 생성됩니다."
-									: "프로필만 만들지, 병원 홈페이지까지 만들지 선택해 주세요."}
+							{hasProfile
+								? "이미 의사 프로필이 있어 병원 홈페이지만 추가로 만들 수 있어요. 병원 홈페이지는 정기 결제(카드 등록) 후 공개됩니다."
+								: isClinicOwner
+									? "병원 홈페이지는 정기 결제(카드 등록) 후 공개됩니다. 생성 직후 결제 단계로 이어집니다."
+									: ownerChoice === "false"
+										? "의사 프로필은 무료로 생성됩니다."
+										: "프로필만 만들지, 병원 홈페이지까지 만들지 선택해 주세요."}
 						</p>
 					</InfoCallout>
 				</SectionCard>
@@ -743,13 +908,7 @@ function DirectOnboardingForm() {
 								</div>
 							</Field>
 
-							<SelectField
-								label="테마 색상"
-								options={THEME_COLORS}
-								value={themeColor}
-								onChange={setThemeColor}
-								placeholder="테마 색상을 선택해 주세요"
-							/>
+							<TemplatePicker value={templateKey} onChange={setTemplateKey} />
 
 							{/* 로고 업로드 */}
 							<Field>
@@ -822,6 +981,18 @@ function DirectOnboardingForm() {
 										value={snsBlog}
 										onChange={(e) => setSnsBlog(e.target.value)}
 										placeholder="블로그 URL"
+									/>
+									<FieldInput
+										id={snsKakaoId}
+										value={snsKakao}
+										onChange={(e) => setSnsKakao(e.target.value)}
+										placeholder="카카오톡 채널 URL"
+									/>
+									<FieldInput
+										id={snsXId}
+										value={snsX}
+										onChange={(e) => setSnsX(e.target.value)}
+										placeholder="X(트위터) URL"
 									/>
 								</div>
 							</Field>
@@ -1024,167 +1195,22 @@ function DirectOnboardingForm() {
 					</>
 				) : null}
 
-				{/* 7. 경력·학력 (프로필/병원 공통, 선택) */}
+				{/* 7. 경력·학력·이력 (프로필/병원 공통, 선택) — 문서 §8.3 subentities */}
 				{ownerChoice !== "" ? (
 					<SectionCard className="flex flex-col gap-6">
-						<SectionTitle>경력·학력 (선택)</SectionTitle>
-
-						{/* 학력 */}
-						<div className="flex flex-col gap-4">
-							<p className="text-sm font-semibold text-ink">학력</p>
-							<div className="flex flex-col gap-4">
-								{educations.map((row, i) => (
-									<div
-										// biome-ignore lint/suspicious/noArrayIndexKey: 행 순서 자체가 정체성(추가/삭제만 하는 입력 폼)
-										key={`education-${i}`}
-										className="flex flex-col gap-3 rounded-xl border border-line p-4 sm:flex-row"
-									>
-										<FieldInput
-											value={row.official_degree}
-											onChange={(e) =>
-												setEducations((prev) =>
-													prev.map((r, idx) =>
-														idx === i
-															? { ...r, official_degree: e.target.value }
-															: r,
-													),
-												)
-											}
-											placeholder="학위 (예: 의학박사)"
-										/>
-										<FieldInput
-											value={row.graduation_year}
-											onChange={(e) =>
-												setEducations((prev) =>
-													prev.map((r, idx) =>
-														idx === i
-															? { ...r, graduation_year: e.target.value }
-															: r,
-													),
-												)
-											}
-											placeholder="졸업연도 (예: 2013)"
-											inputMode="numeric"
-											className="sm:w-44"
-										/>
-										<Button
-											type="button"
-											variant="ghost"
-											size="icon"
-											aria-label="학력 삭제"
-											className="shrink-0 self-center"
-											onClick={() =>
-												setEducations((prev) =>
-													prev.filter((_, idx) => idx !== i),
-												)
-											}
-										>
-											<Trash2 className="size-4 text-danger-strong" />
-										</Button>
-									</div>
-								))}
-							</div>
-							<Button
-								type="button"
-								variant="neutral-outline"
-								size="xl"
-								className="self-start"
-								onClick={() =>
-									setEducations((prev) => [
-										...prev,
-										{ official_degree: "", graduation_year: "" },
-									])
+						<SectionTitle>경력·학력·이력 (선택)</SectionTitle>
+						{SUBENTITIES.map((section) => (
+							<SubentityEditor
+								key={section.key}
+								title={section.title}
+								addLabel={section.addLabel}
+								fields={section.fields}
+								rows={subRows[section.key] ?? []}
+								onChange={(next) =>
+									setSubRows((prev) => ({ ...prev, [section.key]: next }))
 								}
-							>
-								<Plus className="size-4" />
-								학력 추가
-							</Button>
-						</div>
-
-						{/* 경력 */}
-						<div className="flex flex-col gap-4">
-							<p className="text-sm font-semibold text-ink">경력</p>
-							<div className="flex flex-col gap-4">
-								{careers.map((row, i) => (
-									<div
-										// biome-ignore lint/suspicious/noArrayIndexKey: 행 순서 자체가 정체성(추가/삭제만 하는 입력 폼)
-										key={`career-${i}`}
-										className="flex flex-col gap-3 rounded-xl border border-line p-4"
-									>
-										<FieldInput
-											value={row.institution_name}
-											onChange={(e) =>
-												setCareers((prev) =>
-													prev.map((r, idx) =>
-														idx === i
-															? { ...r, institution_name: e.target.value }
-															: r,
-													),
-												)
-											}
-											placeholder="기관명 (예: 행복내과의원)"
-										/>
-										<div className="flex flex-col gap-3 sm:flex-row">
-											<FieldInput
-												value={row.role}
-												onChange={(e) =>
-													setCareers((prev) =>
-														prev.map((r, idx) =>
-															idx === i ? { ...r, role: e.target.value } : r,
-														),
-													)
-												}
-												placeholder="역할 (예: 원장)"
-											/>
-											<FieldInput
-												value={row.start_year}
-												onChange={(e) =>
-													setCareers((prev) =>
-														prev.map((r, idx) =>
-															idx === i
-																? { ...r, start_year: e.target.value }
-																: r,
-														),
-													)
-												}
-												placeholder="시작연도 (예: 2018)"
-												inputMode="numeric"
-												className="sm:w-44"
-											/>
-											<Button
-												type="button"
-												variant="ghost"
-												size="icon"
-												aria-label="경력 삭제"
-												className="shrink-0 self-center"
-												onClick={() =>
-													setCareers((prev) =>
-														prev.filter((_, idx) => idx !== i),
-													)
-												}
-											>
-												<Trash2 className="size-4 text-danger-strong" />
-											</Button>
-										</div>
-									</div>
-								))}
-							</div>
-							<Button
-								type="button"
-								variant="neutral-outline"
-								size="xl"
-								className="self-start"
-								onClick={() =>
-									setCareers((prev) => [
-										...prev,
-										{ institution_name: "", role: "", start_year: "" },
-									])
-								}
-							>
-								<Plus className="size-4" />
-								경력 추가
-							</Button>
-						</div>
+							/>
+						))}
 					</SectionCard>
 				) : null}
 
@@ -1276,6 +1302,147 @@ function DirectOnboardingForm() {
 				</div>
 			</form>
 		</AppShell>
+	);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// 하위 컴포넌트
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * 디자인 시안(template_key) 카드 선택기 — wildcard 어드민 TemplatePicker 와 동일 UX.
+ * `default`/미지정은 시안1(t1)로 표시.
+ */
+function TemplatePicker({
+	value,
+	onChange,
+}: {
+	value: string;
+	onChange: (key: string) => void;
+}) {
+	const current = (value || "t1").toLowerCase();
+	return (
+		<Field>
+			<FieldLabel>디자인 시안</FieldLabel>
+			<div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+				{TEMPLATES.map((t) => {
+					const selected =
+						current === t.key || (current === "default" && t.key === "t1");
+					return (
+						<button
+							key={t.key}
+							type="button"
+							onClick={() => onChange(t.key)}
+							className={cn(
+								"flex flex-col gap-1.5 rounded-xl border p-5 text-left transition-colors",
+								selected
+									? "border-brand bg-brand-50 ring-1 ring-brand"
+									: "border-line hover:border-line-strong",
+							)}
+						>
+							<div className="flex items-center justify-between gap-2">
+								<span className="text-base font-semibold text-ink">
+									{t.label}
+								</span>
+								{selected ? (
+									<span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-brand text-brand-foreground">
+										<Check className="size-4" />
+									</span>
+								) : null}
+							</div>
+							<span className="text-sm text-body-soft">{t.desc}</span>
+						</button>
+					);
+				})}
+			</div>
+		</Field>
+	);
+}
+
+/**
+ * 반복 입력(subentity) 에디터 — 행 추가/삭제, 필드 서술자(RowFieldDef) 기반 렌더.
+ * 학력·면허·수련·경력·학회·논문·일정에서 공통으로 쓰인다.
+ */
+function SubentityEditor({
+	title,
+	addLabel,
+	fields,
+	rows,
+	onChange,
+}: {
+	title: string;
+	addLabel: string;
+	fields: RowFieldDef[];
+	rows: Record<string, string>[];
+	onChange: (next: Record<string, string>[]) => void;
+}) {
+	function update(index: number, name: string, value: string) {
+		onChange(rows.map((r, i) => (i === index ? { ...r, [name]: value } : r)));
+	}
+	return (
+		<div className="flex flex-col gap-4">
+			<p className="text-sm font-semibold text-ink">{title}</p>
+			{rows.length > 0 ? (
+				<div className="flex flex-col gap-4">
+					{rows.map((row, index) => (
+						<div
+							// biome-ignore lint/suspicious/noArrayIndexKey: 행 순서 자체가 정체성(추가/삭제만 하는 입력 폼)
+							key={`${title}-${index}`}
+							className="flex flex-col gap-3 rounded-xl border border-line p-4 sm:flex-row sm:flex-wrap sm:items-start"
+						>
+							{fields.map((field) =>
+								field.kind === "select" ? (
+									<div key={field.name} className="min-w-40 flex-1">
+										<FieldSelect
+											value={row[field.name] ?? ""}
+											onValueChange={(v) => update(index, field.name, v)}
+											options={field.options ?? []}
+											placeholder={field.placeholder}
+										/>
+									</div>
+								) : (
+									<FieldInput
+										key={field.name}
+										value={row[field.name] ?? ""}
+										onChange={(e) => update(index, field.name, e.target.value)}
+										placeholder={field.placeholder}
+										inputMode={field.kind === "year" ? "numeric" : undefined}
+										className={
+											field.kind === "year" ? "sm:w-40" : "min-w-40 flex-1"
+										}
+									/>
+								),
+							)}
+							<Button
+								type="button"
+								variant="ghost"
+								size="icon"
+								aria-label={`${title} 삭제`}
+								className="shrink-0 self-center"
+								onClick={() => onChange(rows.filter((_, i) => i !== index))}
+							>
+								<Trash2 className="size-4 text-danger-strong" />
+							</Button>
+						</div>
+					))}
+				</div>
+			) : null}
+			<Button
+				type="button"
+				variant="neutral-outline"
+				size="xl"
+				className="self-start"
+				onClick={() =>
+					onChange([
+						...rows,
+						Object.fromEntries(fields.map((f) => [f.name, ""])),
+					])
+				}
+			>
+				<Plus className="size-4" />
+				{addLabel}
+			</Button>
+		</div>
 	);
 }
 

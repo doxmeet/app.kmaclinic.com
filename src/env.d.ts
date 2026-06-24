@@ -11,7 +11,7 @@ interface ImportMetaEnv {
 	readonly VITE_DOXMEET_SCOPE?: string;
 	/** OAuth redirect URI (미설정 시 `${origin}/oauth/doxmeet/callback`) */
 	readonly VITE_OAUTH_REDIRECT_URI?: string;
-	/** Toss 결제위젯 client key 폴백(보통 API 응답값 사용) */
+	/** toss 결제위젯 client key 폴백(보통 API 응답값 사용) */
 	readonly VITE_TOSS_CLIENT_KEY?: string;
 }
 

@@ -221,6 +221,13 @@ body,
   min-height: 100%;
 }
 
+/* 페이지 내 앵커/해시 이동을 부드럽게 (모션 최소화 선호 시 즉시 이동) */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
 body {
   margin: 0;
   color: var(--body);

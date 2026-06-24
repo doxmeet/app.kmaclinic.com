@@ -1,6 +1,6 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Loader2, PartyPopper } from "lucide-react";
+import { CheckCircle2, CreditCard, Loader2, PartyPopper } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { InfoCallout } from "#/components/common/info-callout.tsx";
@@ -11,31 +11,49 @@ import {
 import { isSlugValid, SlugField } from "#/components/onboarding/slug-field.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Checkbox } from "#/components/ui/checkbox.tsx";
-import { setProfileSlug } from "#/lib/api/billing.ts";
+import { ApiError } from "#/lib/api";
+import {
+	type BillingKey,
+	createSubscription,
+	listBilling,
+	setProfileSlug,
+} from "#/lib/api/billing.ts";
 import type { CommitResult } from "#/lib/api/onboarding.ts";
 import { toastApiError } from "#/lib/api-error-message.ts";
 import { useSession } from "#/lib/auth/use-session.ts";
+import { startCardBillingAuth } from "#/lib/toss.ts";
 
 /**
  * 온보딩/직접입력 commit 결과 화면.
- * - 병원(payment.required) → Toss 카드 등록 결제 단계
+ * - 병원(payment.required) → toss 카드 등록 결제 단계
  * - 프로필만 → 무료 완료 축하
  * 대화형 온보딩(`/onboarding`)과 일괄 입력(`/onboarding/direct`)이 공유한다.
  */
 export function CommitComplete({
 	result,
 	onStartOver,
+	onComplete,
 }: {
 	result: CommitResult;
 	/** 결제 화면에서 "병원 지우고 새로 시작" — 제공 시 결제 단계에 버튼 노출. */
 	onStartOver?: () => Promise<void>;
+	/**
+	 * 저장된 카드로 즉시 결제가 완료됐을 때(toss 리다이렉트 없는 경로) 대시보드로 돌아갈 핸들러.
+	 * 미제공 시 결제 완료 화면은 `/onboarding`으로 링크 이동한다.
+	 */
+	onComplete?: () => void;
 }) {
 	const payment = result.payment;
 	const slug = extractSlug(result);
 
 	if (payment?.required === true) {
 		return (
-			<PaymentStep payment={payment} slug={slug} onStartOver={onStartOver} />
+			<PaymentStep
+				payment={payment}
+				slug={slug}
+				onStartOver={onStartOver}
+				onComplete={onComplete}
+			/>
 		);
 	}
 
@@ -179,74 +197,70 @@ function FreeProfileComplete({ commitSlug }: { commitSlug: string | null }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// 결제(Toss) 단계 — commit 후 병원이면 카드(빌링키) 등록으로 유도
+// 결제(toss) 단계 — commit 후 병원이면 카드(빌링키) 등록으로 유도
 // ─────────────────────────────────────────────────────────────────────
-
-/** Toss SDK v2 standard 의 최소 인터페이스(좁은 타입). */
-type TossPaymentsInstance = {
-	payment: (options: { customerKey: string }) => {
-		requestBillingAuth: (options: {
-			method: "CARD";
-			successUrl: string;
-			failUrl: string;
-		}) => Promise<void>;
-	};
-};
-type TossPaymentsFactory = (clientKey: string) => TossPaymentsInstance;
-
-declare global {
-	interface Window {
-		TossPayments?: TossPaymentsFactory;
-	}
-}
-
-const TOSS_SDK_URL = "https://js.tosspayments.com/v2/standard";
-
-/** Toss SDK 동적 로드(CDN script). 새 의존성 추가 없이 window.TossPayments 사용. */
-function loadTossSdk(): Promise<TossPaymentsFactory> {
-	return new Promise((resolve, reject) => {
-		if (window.TossPayments) {
-			resolve(window.TossPayments);
-			return;
-		}
-		const existing = document.querySelector<HTMLScriptElement>(
-			`script[src="${TOSS_SDK_URL}"]`,
-		);
-		if (existing) {
-			existing.addEventListener("load", () => {
-				window.TossPayments
-					? resolve(window.TossPayments)
-					: reject(new Error("Toss SDK 로드 실패"));
-			});
-			existing.addEventListener("error", () =>
-				reject(new Error("Toss SDK 로드 실패")),
-			);
-			return;
-		}
-		const script = document.createElement("script");
-		script.src = TOSS_SDK_URL;
-		script.async = true;
-		script.onload = () =>
-			window.TossPayments
-				? resolve(window.TossPayments)
-				: reject(new Error("Toss SDK 로드 실패"));
-		script.onerror = () => reject(new Error("Toss SDK 로드 실패"));
-		document.head.appendChild(script);
-	});
-}
 
 function PaymentStep({
 	payment,
 	slug,
 	onStartOver,
+	onComplete,
 }: {
 	payment: NonNullable<CommitResult["payment"]>;
 	slug: string | null;
 	onStartOver?: () => Promise<void>;
+	onComplete?: () => void;
 }) {
 	const [loading, setLoading] = useState(false);
 	const [marketingConsent, setMarketingConsent] = useState(false);
 	const [startingOver, setStartingOver] = useState(false);
+	// 저장된 카드가 있어도 "다른 카드로 변경"을 누르면 toss 위젯으로 새 카드를 등록한다.
+	const [useNewCard, setUseNewCard] = useState(false);
+	// 저장된 카드로 즉시 결제(toss 리다이렉트 없음)가 끝나면 성공 화면을 보여준다.
+	const [done, setDone] = useState(false);
+
+	const clientKey = payment.toss_client_key;
+	const customerKey = payment.customer_key;
+	const hospitalNo = payment.hospital_no;
+	const amount = payment.amount;
+
+	// 결제화면 진입 시 먼저 저장된 카드(active 빌링키)를 확인한다(가이드: GET /billing).
+	const billingQuery = useQuery({
+		queryKey: ["billing", "list"],
+		queryFn: () => listBilling(),
+	});
+	const savedCard: BillingKey | null =
+		billingQuery.data?.items?.find((b) => b.status === "active") ?? null;
+	// 저장된 카드가 있고 사용자가 "다른 카드로 변경"을 누르지 않았다면 toss 없이 바로 결제.
+	const showSavedCard =
+		billingQuery.isSuccess &&
+		savedCard != null &&
+		!useNewCard &&
+		hospitalNo != null;
+
+	// 저장된 빌링키로 즉시 청구 — authKey 없이 POST /subscription(가이드 2-A, 권장 경로).
+	const chargeMutation = useMutation({
+		mutationFn: () =>
+			createSubscription(hospitalNo as number, {
+				marketing_consent: marketingConsent,
+			}),
+		onSuccess: () => setDone(true),
+		onError: (err) => {
+			const code = err instanceof ApiError ? err.errorCode : null;
+			// 이미 활성 구독이면 결제는 끝난 상태 → 성공으로 간주(게시 단계로).
+			if (code === "ERROR_409_SUBSCRIPTION_ALREADY_ACTIVE") {
+				setDone(true);
+				return;
+			}
+			// 저장된 카드가 사라졌으면(레이스) 새 카드 등록(toss)으로 폴백.
+			if (code === "ERROR_400_BILLING_KEY_REQUIRED") {
+				setUseNewCard(true);
+				toast.message("저장된 카드를 찾을 수 없어 카드를 다시 등록해 주세요.");
+				return;
+			}
+			toastApiError(err);
+		},
+	});
 
 	async function handleStartOver() {
 		if (!onStartOver) return;
@@ -262,28 +276,24 @@ function PaymentStep({
 			setStartingOver(false);
 		}
 	}
-	const clientKey = payment.toss_client_key;
-	const customerKey = payment.customer_key;
-	const hospitalNo = payment.hospital_no;
-	const amount = payment.amount;
 
+	// 새 카드 등록(toss) 경로는 클라이언트 키·고객 키·병원 번호가 모두 있어야 시작할 수 있다.
 	const ready = Boolean(clientKey && customerKey && hospitalNo != null);
 
 	async function handlePay() {
 		if (!ready || !clientKey || !customerKey || hospitalNo == null) return;
 		setLoading(true);
 		try {
-			const factory = await loadTossSdk();
-			const toss = factory(clientKey);
 			const origin = window.location.origin;
-			// ⚠ Toss는 successUrl의 예약 파라미터(customerKey 등)를 떼어내고 자기 값(authKey)만 다시 붙인다.
+			// ⚠ toss는 successUrl의 예약 파라미터(customerKey 등)를 떼어내고 자기 값(authKey)만 다시 붙인다.
 			// 그래서 customerKey를 그대로 넣으면 콜백에서 사라진다 → 예약 안 된 이름(ck)으로 전달한다.
 			const successUrl = `${origin}/billing/callback?hospital_no=${hospitalNo}&ck=${encodeURIComponent(
 				customerKey,
 			)}${marketingConsent ? "&marketing_consent=1" : ""}`;
 			const failUrl = `${origin}/billing/callback?fail=1`;
-			await toss.payment({ customerKey }).requestBillingAuth({
-				method: "CARD",
+			await startCardBillingAuth({
+				clientKey,
+				customerKey,
 				successUrl,
 				failUrl,
 			});
@@ -298,13 +308,16 @@ function PaymentStep({
 		}
 	}
 
+	if (done) return <PaidComplete slug={slug} onComplete={onComplete} />;
+
 	return (
 		<SectionCard className="flex flex-col gap-6">
 			<div className="flex flex-col gap-2">
 				<SectionTitle>병원 홈페이지 결제</SectionTitle>
 				<p className="text-[15px] leading-7 text-body-soft">
-					프로필과 병원이 생성됐어요. 병원 홈페이지를 공개하려면 정기 결제용
-					카드를 등록해 주세요.
+					{showSavedCard
+						? "프로필과 병원이 생성됐어요. 저장된 카드로 바로 결제하면 병원 홈페이지를 공개할 수 있어요."
+						: "프로필과 병원이 생성됐어요. 병원 홈페이지를 공개하려면 정기 결제용 카드를 등록해 주세요."}
 				</p>
 			</div>
 
@@ -318,6 +331,28 @@ function PaymentStep({
 					</span>
 				</div>
 			</div>
+
+			{/* 저장된 카드 — 카드 재입력 없이 바로 결제(가이드 2-A). */}
+			{showSavedCard && savedCard ? (
+				<div className="flex items-center justify-between gap-3 rounded-xl border border-line bg-surface px-4 py-3.5">
+					<div className="flex min-w-0 items-center gap-3">
+						<CreditCard className="size-5 shrink-0 text-brand" />
+						<div className="flex min-w-0 flex-col">
+							<span className="truncate text-[15px] font-semibold text-ink">
+								{cardLabel(savedCard)}
+							</span>
+							<span className="text-xs text-body-soft">저장된 결제 카드</span>
+						</div>
+					</div>
+					<button
+						type="button"
+						onClick={() => setUseNewCard(true)}
+						className="shrink-0 text-sm font-medium text-brand underline-offset-4 transition-colors hover:underline"
+					>
+						다른 카드로 변경
+					</button>
+				</div>
+			) : null}
 
 			<div className="flex items-start gap-2.5 rounded-xl border border-line bg-app-bg px-4 py-3">
 				<Checkbox
@@ -335,17 +370,46 @@ function PaymentStep({
 				</label>
 			</div>
 
-			{ready ? (
+			{billingQuery.isPending ? (
+				<div className="flex items-center justify-center py-3">
+					<Loader2 className="size-5 animate-spin text-brand" />
+				</div>
+			) : showSavedCard ? (
 				<Button
 					variant="brand"
 					size="cta"
 					className="w-full"
-					disabled={loading}
-					onClick={handlePay}
+					disabled={chargeMutation.isPending}
+					onClick={() => chargeMutation.mutate()}
 				>
-					{loading ? <Loader2 className="size-5 animate-spin" /> : null}
-					카드 등록하고 결제하기
+					{chargeMutation.isPending ? (
+						<Loader2 className="size-5 animate-spin" />
+					) : null}
+					이 카드로 결제하기
 				</Button>
+			) : ready ? (
+				<div className="flex flex-col gap-3">
+					<Button
+						variant="brand"
+						size="cta"
+						className="w-full"
+						disabled={loading}
+						onClick={handlePay}
+					>
+						{loading ? <Loader2 className="size-5 animate-spin" /> : null}
+						카드 등록하고 결제하기
+					</Button>
+					{/* "다른 카드로 변경"으로 들어왔다면 저장된 카드로 되돌아갈 수 있게 한다. */}
+					{savedCard != null && useNewCard ? (
+						<button
+							type="button"
+							onClick={() => setUseNewCard(false)}
+							className="text-center text-sm font-medium text-body-soft underline-offset-4 transition-colors hover:text-brand hover:underline"
+						>
+							저장된 카드로 결제하기
+						</button>
+					) : null}
+				</div>
 			) : (
 				<InfoCallout tone="warning">
 					<p className="text-sm">
@@ -377,6 +441,75 @@ function PaymentStep({
 			) : null}
 		</SectionCard>
 	);
+}
+
+/**
+ * 저장된 카드로 즉시 결제가 끝난 뒤 성공 화면(toss 콜백의 BillingSuccess(subscribe)와 동형).
+ * onComplete가 있으면(대시보드 오케스트레이터) 그 핸들러로, 없으면 `/onboarding`으로 이동한다.
+ */
+function PaidComplete({
+	slug,
+	onComplete,
+}: {
+	slug: string | null;
+	onComplete?: () => void;
+}) {
+	return (
+		<SectionCard className="flex flex-col items-center gap-6 text-center">
+			<div className="flex size-16 items-center justify-center rounded-full bg-success-bg">
+				<CheckCircle2 className="size-8 text-success" />
+			</div>
+			<div className="flex flex-col gap-2">
+				<h1 className="text-2xl font-bold text-ink">결제가 완료됐어요!</h1>
+				<p className="text-[15px] leading-7 text-body-soft">
+					저장된 카드로 정기 결제가 시작됐어요.
+					<br />
+					이제 <span className="font-semibold text-ink">게시</span>하면 병원
+					홈페이지가 공개됩니다
+					{slug ? ` (${slug}.kmaclinic.com)` : ""}.
+				</p>
+			</div>
+			<InfoCallout tone="info" className="w-full text-left">
+				<p className="text-sm">
+					대시보드에서 이 병원의{" "}
+					<span className="font-semibold text-ink">게시하기</span> 버튼으로 공개
+					주소를 정하고 공개할 수 있어요.
+				</p>
+			</InfoCallout>
+			{onComplete ? (
+				<Button
+					variant="brand"
+					size="cta"
+					className="w-full"
+					onClick={onComplete}
+				>
+					대시보드로 가서 게시하기
+				</Button>
+			) : (
+				<Button
+					nativeButton={false}
+					render={<Link to="/onboarding" />}
+					variant="brand"
+					size="cta"
+					className="w-full"
+				>
+					대시보드로 가서 게시하기
+				</Button>
+			)}
+		</SectionCard>
+	);
+}
+
+/**
+ * 결제화면 표시용 카드 라벨 — 백엔드 `card_label`을 우선 사용하고,
+ * 없으면 카드사명 + 마스킹 번호 뒷자리로 보강한다.
+ */
+function cardLabel(card: BillingKey): string {
+	const label = card.card_label?.trim();
+	if (label) return label;
+	const company = card.card_company_name?.trim() || "등록된 카드";
+	const tail = card.card_number_masked?.trim().replace(/[\s-]/g, "").slice(-4);
+	return tail ? `${company} ${tail}` : company;
 }
 
 /** commit 결과에서 공개 slug 후보 추출(병원 우선, 없으면 프로필). */

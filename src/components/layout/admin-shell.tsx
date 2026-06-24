@@ -1,7 +1,9 @@
 import { Link } from "@tanstack/react-router";
 import {
 	BadgeCheck,
+	Bell,
 	Building2,
+	CreditCard,
 	EllipsisVertical,
 	Home,
 	Users,
@@ -15,7 +17,13 @@ import { cn } from "#/lib/utils.ts";
  * 관리자 화면(요양기관 현황/상세)에서 사용.
  */
 
-type NavKey = "home" | "institutions" | "users" | "licenses";
+type NavKey =
+	| "home"
+	| "institutions"
+	| "users"
+	| "payments"
+	| "licenses"
+	| "notifications";
 
 const NAV_ITEMS: {
 	key: NavKey;
@@ -37,10 +45,22 @@ const NAV_ITEMS: {
 		to: "/admin/users",
 	},
 	{
+		key: "payments",
+		label: "결제 관리",
+		icon: CreditCard,
+		to: "/admin/payments",
+	},
+	{
 		key: "licenses",
 		label: "면허 검증",
 		icon: BadgeCheck,
 		to: "/admin/licenses",
+	},
+	{
+		key: "notifications",
+		label: "알림 로그",
+		icon: Bell,
+		to: "/admin/notifications",
 	},
 ];
 

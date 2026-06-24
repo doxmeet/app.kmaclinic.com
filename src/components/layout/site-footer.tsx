@@ -1,26 +1,30 @@
 import { cn } from "#/lib/utils.ts";
+import { BrandLogo } from "./brand-logo.tsx";
 
-const FOOTER_LINKS = ["서비스 이용약관", "개인정보처리방침", "고객센터"];
+// 모듈 로드 시 1회 평가(JSX 안 new Date()는 SSR 하이드레이션 불일치 경고를 유발).
+const COPYRIGHT_YEAR = new Date().getFullYear();
 
 /**
- * SiteFooter — 앱 하단 공통 푸터.
+ * SiteFooter — 사이트 공통 푸터(홈 페이지 기준 통일).
+ * 브랜드 로고 + 한 줄 소개 + 카피라이트. 모든 페이지(홈/앱/인증)에서 동일하게 사용한다.
  */
 function SiteFooter({ className }: { className?: string }) {
 	return (
 		<footer className={cn("border-t border-line bg-surface", className)}>
-			<div className="mx-auto flex max-w-[1280px] flex-col gap-3 px-4 py-6 text-sm text-muted-fg sm:flex-row sm:items-center sm:justify-between sm:px-6">
-				<p>© 2026. All rights reserved.</p>
-				<nav className="flex flex-wrap items-center gap-x-5 gap-y-1">
-					{FOOTER_LINKS.map((link) => (
-						<button
-							key={link}
-							type="button"
-							className="transition-colors hover:text-body"
-						>
-							{link}
-						</button>
-					))}
-				</nav>
+			<div className="mx-auto flex w-full max-w-[1120px] flex-col gap-6 px-4 py-10 sm:px-6 md:flex-row md:items-start md:justify-between">
+				<div className="flex flex-col gap-3">
+					<BrandLogo label="K CLINIC" to="/" />
+					<p className="max-w-[320px] text-sm leading-relaxed text-muted-fg">
+						의료진을 위한 프로필·병원 홈페이지 자동 생성 서비스.
+						<br />
+						닥스밋 계정으로 간편하게 시작하세요.
+					</p>
+				</div>
+			</div>
+			<div className="border-t border-line">
+				<p className="mx-auto w-full max-w-[1120px] px-4 py-4 text-sm text-muted-fg sm:px-6">
+					COPYRIGHT {COPYRIGHT_YEAR} ALL RIGHTS RESERVED BY 닥스밋
+				</p>
 			</div>
 		</footer>
 	);

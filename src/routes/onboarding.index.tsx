@@ -88,7 +88,7 @@ function OnboardingOrchestrator() {
 	// ── conversation 모드 ───────────────────────────────────────────
 	if (mode === "conversation") {
 		return (
-			<AppShell userName={userName} maxWidth="720px">
+			<AppShell userName={userName} maxWidth="1280px" innerMaxWidth="720px">
 				<OnboardingConversation onBackToDashboard={backToDashboard} />
 			</AppShell>
 		);
@@ -97,11 +97,12 @@ function OnboardingOrchestrator() {
 	// ── payment 모드 ────────────────────────────────────────────────
 	if (mode === "payment" && paymentTarget) {
 		return (
-			<AppShell userName={userName} maxWidth="720px">
+			<AppShell userName={userName} maxWidth="1280px" innerMaxWidth="720px">
 				<div className="flex flex-col gap-4">
 					<BackToDashboardLink onClick={backToDashboard} />
 					<CommitComplete
 						result={{ payment: paymentTarget }}
+						onComplete={backToDashboard}
 						onStartOver={async () => {
 							if (paymentTarget.hospital_no != null) {
 								await deleteHospital(paymentTarget.hospital_no);
@@ -117,7 +118,7 @@ function OnboardingOrchestrator() {
 	// ── publish 모드 ────────────────────────────────────────────────
 	if (mode === "publish" && publishTarget) {
 		return (
-			<AppShell userName={userName} maxWidth="720px">
+			<AppShell userName={userName} maxWidth="1280px" innerMaxWidth="720px">
 				<div className="flex flex-col gap-4">
 					<BackToDashboardLink onClick={backToDashboard} />
 					<PublishPanel
@@ -131,7 +132,7 @@ function OnboardingOrchestrator() {
 
 	// ── dashboard 모드(기본) ────────────────────────────────────────
 	return (
-		<AppShell userName={userName} maxWidth="720px">
+		<AppShell userName={userName} maxWidth="1280px" innerMaxWidth="720px">
 			{overviewQuery.isLoading ? (
 				<div className="flex flex-col items-center gap-4 py-24 text-center">
 					<Loader2 className="size-7 animate-spin text-brand" />

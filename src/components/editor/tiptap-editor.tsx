@@ -87,6 +87,7 @@ import { Button } from "#/components/ui/button.tsx";
 import { Checkbox } from "#/components/ui/checkbox.tsx";
 import {
 	Dialog,
+	DialogBody,
 	DialogContent,
 	DialogFooter,
 	DialogHeader,
@@ -2128,7 +2129,7 @@ export default function TiptapEditor({
 						<DialogTitle>이미지 크기 조절</DialogTitle>
 					</DialogHeader>
 					{editDialog && (
-						<div className="flex flex-col gap-4">
+						<DialogBody>
 							<div className="flex gap-2">
 								<Button
 									type="button"
@@ -2229,17 +2230,18 @@ export default function TiptapEditor({
 									처리됩니다.
 								</p>
 							)}
-						</div>
+						</DialogBody>
 					)}
 					<DialogFooter>
 						<Button
 							type="button"
 							variant="outline"
+							size="xl"
 							onClick={() => setEditDialog(null)}
 						>
 							취소
 						</Button>
-						<Button type="button" onClick={applyImageSize}>
+						<Button type="button" size="xl" onClick={applyImageSize}>
 							적용
 						</Button>
 					</DialogFooter>

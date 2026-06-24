@@ -543,7 +543,6 @@ function InstitutionsPage() {
 									items.map((row, idx) => {
 										const subscriptionNo = getField(row, ["no"]);
 										const name = str(getField(row, ["hospital_name"]));
-										const region = str(getField(row, ["hospital_region"]));
 										const owner = str(getField(row, ["owner_name"]));
 										const statusValue = str(getField(row, ["status"]));
 										const method = str(getField(row, ["last_payment_method"]));
@@ -559,14 +558,7 @@ function InstitutionsPage() {
 												className="border-b-line-strong/50"
 											>
 												<TableCell>
-													<div className="flex flex-col gap-0.5">
-														<span className="text-[15px] text-ink">{name}</span>
-														{region !== "-" ? (
-															<span className="text-[13px] text-muted-fg">
-																{region}
-															</span>
-														) : null}
-													</div>
+													<span className="text-[15px] text-ink">{name}</span>
 												</TableCell>
 												<TableCell className="text-[15px] text-ink">
 													{owner}

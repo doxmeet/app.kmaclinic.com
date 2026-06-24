@@ -93,11 +93,23 @@ export const SessionViewSchema = z.looseObject({
 });
 export type SessionView = z.infer<typeof SessionViewSchema>;
 
+/**
+ * 데이터 검수(review) — commit/direct 후 백그라운드로 항목 AI 검증이 enqueue됨(문서 §8.3).
+ * 표시용. `GET /onboarding/review[/:no]`로 진행 상태를 폴링할 수 있다(필수 아님).
+ */
+export const ReviewSchema = z.looseObject({
+	no: numeric,
+	status: z.string().nullish(),
+});
+export type Review = z.infer<typeof ReviewSchema>;
+
 export const CommitResultSchema = z.looseObject({
 	profile: z.looseObject({}).nullish(),
 	hospital: z.looseObject({}).nullish(),
 	seeded: z.record(z.string(), z.number()).optional(),
 	payment: PaymentIntentSchema.optional(),
+	// commit/direct 응답에 함께 오는 데이터 검수 작업(표시용, 게이트 아님).
+	review: ReviewSchema.nullish(),
 });
 export type CommitResult = z.infer<typeof CommitResultSchema>;
 
@@ -253,8 +265,24 @@ export const OverviewHospitalSchema = z.looseObject({
 });
 export type OverviewHospital = z.infer<typeof OverviewHospitalSchema>;
 
+/** 의사 프로필 카드(문서 overview.profile) — 상태: editing → published. */
+export const OverviewProfileSchema = z.looseObject({
+	kind: z.string().optional(),
+	// 게시 가능 여부 판단은 completion_percent가 아니라 이 status로 한다.
+	status: z.string().optional(),
+	no: numeric,
+	slug: z.string().nullish(),
+	display_name: z.string().nullish(),
+	is_published: z.boolean().nullish(),
+	// 완성도(%)는 보통 draft에만 옴 — 프로필 카드에서는 표시하지 않는다(게시 게이트도 아님).
+	completion_percent: numeric,
+	published_at: z.string().nullish(),
+});
+export type OverviewProfile = z.infer<typeof OverviewProfileSchema>;
+
 export const OverviewSchema = z.looseObject({
 	draft: OverviewDraftSchema.nullish(),
+	profile: OverviewProfileSchema.nullish(),
 	hospitals: z.array(OverviewHospitalSchema).nullish(),
 	can_start_new_draft: z.boolean().optional(),
 	counts: z
@@ -285,4 +313,26 @@ export async function deleteHospital(
 	no: number,
 ): Promise<{ ok: boolean; discarded_hospital_no?: number | string | null }> {
 	return http.del(`onboarding/hospital/${no}`);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// 데이터 검수(review) 조회 — 문서 §8.3.
+//  commit/direct 응답의 `review.no` 로 진행 상태를 폴링할 수 있다(필수 아님 — 표시용).
+// ─────────────────────────────────────────────────────────────────────
+
+const ReviewEnvelopeSchema = z.looseObject({ review: ReviewSchema.nullish() });
+
+/** 내 가장 최근 데이터 검수 작업(상태/플래그). 없으면 null. */
+export async function getReview(): Promise<Review | null> {
+	const env = parse(await http.get("onboarding/review"), ReviewEnvelopeSchema);
+	return env.review ?? null;
+}
+
+/** 특정 검수 작업 조회(commit/direct 응답의 review.no 로 폴링). 없으면 null. */
+export async function getReviewByNo(no: number): Promise<Review | null> {
+	const env = parse(
+		await http.get(`onboarding/review/${no}`),
+		ReviewEnvelopeSchema,
+	);
+	return env.review ?? null;
 }

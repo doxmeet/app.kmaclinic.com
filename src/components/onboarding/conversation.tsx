@@ -17,8 +17,10 @@ import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import {
 	Dialog,
+	DialogBody,
 	DialogContent,
 	DialogDescription,
+	DialogFooter,
 	DialogHeader,
 	DialogTitle,
 } from "#/components/ui/dialog.tsx";
@@ -45,7 +47,7 @@ import { cn } from "#/lib/utils.ts";
  *  - resumable "이어하기/새로 시작" 다이얼로그 → 대시보드 draft 카드가 처리
  * 진입 시에는 항상 startSession으로 첫 질문(또는 진행중 draft 이어서)을 받아 시작한다.
  *
- * commit 성공 → CommitComplete(결제/무료 완료). 결제는 Toss → /billing/callback → 대시보드 복귀.
+ * commit 성공 → CommitComplete(결제/무료 완료). 결제는 toss → /billing/callback → 대시보드 복귀.
  */
 
 /** history 항목 타입(view의 history는 looseObject라 좁혀 사용). */
@@ -299,12 +301,12 @@ export function OnboardingConversation({
 		};
 	}, [waiting, pollExpired]);
 
-	// commit 완료 화면(무료 또는 결제 유도). 결제는 Toss → /billing/callback → 대시보드 복귀.
+	// commit 완료 화면(무료 또는 결제 유도). 결제는 toss → /billing/callback → 대시보드 복귀.
 	if (commitResult) {
 		return (
 			<div className="flex flex-col gap-4">
 				<BackToDashboardLink onClick={onBackToDashboard} />
-				<CommitComplete result={commitResult} />
+				<CommitComplete result={commitResult} onComplete={onBackToDashboard} />
 			</div>
 		);
 	}
@@ -316,7 +318,7 @@ export function OnboardingConversation({
 				<BackToDashboardLink onClick={onBackToDashboard} />
 				<SectionCard className="flex flex-col items-center gap-5 text-center">
 					<p className="text-lg font-semibold text-ink">
-						대화형 온보딩을 시작하지 못했습니다.
+						대화형 작성을 시작하지 못했습니다.
 					</p>
 					<p className="text-sm text-body">
 						{startError instanceof ApiError
@@ -349,7 +351,7 @@ export function OnboardingConversation({
 				<div className="flex flex-col items-center gap-4 py-24 text-center">
 					<Loader2 className="size-7 animate-spin text-brand" />
 					<p className="text-base text-body">
-						대화형 온보딩을 준비하고 있어요…
+						대화형 작성을 준비하고 있어요…
 					</p>
 				</div>
 			</div>
@@ -399,7 +401,7 @@ export function OnboardingConversation({
 			{/* 진행바 */}
 			<div className="flex flex-col gap-2">
 				<div className="flex items-center justify-between text-sm">
-					<span className="font-semibold text-ink">대화형 온보딩</span>
+					<span className="font-semibold text-ink">대화로 작성하기</span>
 					<div className="flex items-center gap-3">
 						<span className="text-body-soft">{progress}% 완료</span>
 						<Link
@@ -536,7 +538,7 @@ export function OnboardingConversation({
 				    select가 있으면 [보기…][건너뛰기], 없으면 건너뛰기만 단독으로.
 				    클릭 시 value(또는 "건너뛰기")를 그대로 답변으로 전송(문서 §6.2.2) */}
 				{isSelect || allowSkip ? (
-					<div className="flex flex-wrap gap-2">
+					<div className="flex flex-wrap justify-end gap-2">
 						{selectOptions.map((o) => (
 							<Button
 								key={o.value ?? o.label}
@@ -819,73 +821,82 @@ function AdminCredentialsDialog({
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className="sm:max-w-md">
 				<DialogHeader>
-					<DialogTitle className="text-lg font-bold text-ink">
-						병원 관리자 계정 설정
-					</DialogTitle>
-					<DialogDescription className="text-sm text-body">
+					<DialogTitle>병원 관리자 계정 설정</DialogTitle>
+					<DialogDescription>
 						병원 홈페이지를 관리할 관리자 아이디와 비밀번호를 설정합니다.
 					</DialogDescription>
 				</DialogHeader>
 
-				<form onSubmit={handleSubmit} className="flex flex-col gap-4">
-					<div className="flex flex-col gap-2">
-						<label htmlFor={loginIdId} className="text-sm font-medium text-ink">
-							관리자 아이디
-						</label>
-						<FieldInput
-							id={loginIdId}
-							value={loginId}
-							onChange={(e) => setLoginId(e.target.value)}
-							placeholder="아이디"
-							autoComplete="username"
-							autoCapitalize="off"
-							spellCheck={false}
-							aria-invalid={loginIdInvalid || undefined}
-						/>
-						<p
-							className={
-								loginIdInvalid
-									? "text-sm text-danger-strong"
-									: "text-xs text-body-soft"
-							}
-						>
-							{LOGIN_ID_HINT}
-						</p>
-					</div>
-					<div className="flex flex-col gap-2">
-						<label htmlFor={pwId} className="text-sm font-medium text-ink">
-							관리자 비밀번호
-						</label>
-						<FieldInput
-							id={pwId}
-							type="password"
-							value={password}
-							onChange={(e) => setPassword(e.target.value)}
-							placeholder="비밀번호"
-							autoComplete="new-password"
-						/>
-					</div>
-					<div className="flex flex-col gap-2">
-						<label htmlFor={confirmId} className="text-sm font-medium text-ink">
-							비밀번호 확인
-						</label>
-						<FieldInput
-							id={confirmId}
-							type="password"
-							value={confirm}
-							onChange={(e) => setConfirm(e.target.value)}
-							placeholder="비밀번호 확인"
-							autoComplete="new-password"
-							aria-invalid={mismatch || undefined}
-						/>
-						{mismatch ? (
-							<p className="text-sm text-danger-strong">
-								비밀번호가 일치하지 않습니다.
+				<form onSubmit={handleSubmit} className="contents">
+					<DialogBody>
+						<div className="flex flex-col gap-2">
+							<label
+								htmlFor={loginIdId}
+								className="text-[15px] font-medium text-ink"
+							>
+								관리자 아이디
+							</label>
+							<FieldInput
+								id={loginIdId}
+								value={loginId}
+								onChange={(e) => setLoginId(e.target.value)}
+								placeholder="아이디"
+								autoComplete="username"
+								autoCapitalize="off"
+								spellCheck={false}
+								aria-invalid={loginIdInvalid || undefined}
+							/>
+							<p
+								className={
+									loginIdInvalid
+										? "text-sm text-danger-strong"
+										: "text-xs text-body-soft"
+								}
+							>
+								{LOGIN_ID_HINT}
 							</p>
-						) : null}
-					</div>
+						</div>
+						<div className="flex flex-col gap-2">
+							<label
+								htmlFor={pwId}
+								className="text-[15px] font-medium text-ink"
+							>
+								관리자 비밀번호
+							</label>
+							<FieldInput
+								id={pwId}
+								type="password"
+								value={password}
+								onChange={(e) => setPassword(e.target.value)}
+								placeholder="비밀번호"
+								autoComplete="new-password"
+							/>
+						</div>
+						<div className="flex flex-col gap-2">
+							<label
+								htmlFor={confirmId}
+								className="text-[15px] font-medium text-ink"
+							>
+								비밀번호 확인
+							</label>
+							<FieldInput
+								id={confirmId}
+								type="password"
+								value={confirm}
+								onChange={(e) => setConfirm(e.target.value)}
+								placeholder="비밀번호 확인"
+								autoComplete="new-password"
+								aria-invalid={mismatch || undefined}
+							/>
+							{mismatch ? (
+								<p className="text-sm text-danger-strong">
+									비밀번호가 일치하지 않습니다.
+								</p>
+							) : null}
+						</div>
+					</DialogBody>
 
-					<div className="mt-1 flex flex-col gap-2 sm:flex-row sm:justify-end">
+					<DialogFooter>
 						<Button
 							type="button"
 							variant="neutral-outline"
@@ -904,7 +915,7 @@ function AdminCredentialsDialog({
 							{pending ? <Loader2 className="size-5 animate-spin" /> : null}
 							완료하기
 						</Button>
-					</div>
+					</DialogFooter>
 				</form>
 			</DialogContent>
 		</Dialog>
