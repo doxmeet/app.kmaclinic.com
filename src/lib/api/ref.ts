@@ -50,13 +50,20 @@ export type RefClinic = {
  * - `limit` 기본 20 / 최대 30.
  * - `sido`/`type` 정확일치 필터(예: "서울", "의원"). 짧은 표기 허용.
  */
-export function searchClinics(params: {
-	keyword?: string;
-	limit?: number;
-	sido?: string;
-	type?: string;
-}) {
-	return publicHttp.get<{ items: RefClinic[] }>("ref/clinic", refQuery(params));
+export function searchClinics(
+	params: {
+		keyword?: string;
+		limit?: number;
+		sido?: string;
+		type?: string;
+	},
+	signal?: AbortSignal,
+) {
+	return publicHttp.get<{ items: RefClinic[] }>(
+		"ref/clinic",
+		refQuery(params),
+		{ signal },
+	);
 }
 
 /** 병의원 단건 상세(`GET /ref/clinic/:no`). 자동채움/표시용. 없으면 ERROR_404_CLINIC_NOT_FOUND. */
@@ -75,9 +82,12 @@ export type RefSearchItem = Record<string, unknown>;
 export function searchRef(
 	endpoint: string,
 	params: { keyword?: string; limit?: number },
+	signal?: AbortSignal,
 ) {
 	const path = endpoint.replace(/^\/+/, "");
-	return publicHttp.get<{ items: RefSearchItem[] }>(path, refQuery(params));
+	return publicHttp.get<{ items: RefSearchItem[] }>(path, refQuery(params), {
+		signal,
+	});
 }
 
 // ── 프로필 입력 보조 자동완성 — 문서 §8.11.4 ───────────────────────────

@@ -1,4 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+	keepPreviousData,
+	useMutation,
+	useQuery,
+	useQueryClient,
+} from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
 	ArrowLeft,
@@ -1184,11 +1189,6 @@ function Composer({
 					) : null}
 				</form>
 			) : null}
-
-			<p className="text-xs text-muted-fg">
-				이력서·면허증을 올리면 학력·경력·면허·논문이 자동으로 채워집니다.
-				로고/사진은 그대로 저장됩니다.
-			</p>
 		</>
 	);
 }
@@ -1216,13 +1216,20 @@ function SearchAnswerField({
 	onSubmitText: (raw: string) => void;
 }) {
 	const { endpoint, labelField, valueField } = search;
+	// 입력값 '그대로' 250ms 디바운스(문서 §2-③). trim은 빈 입력 스킵용일 뿐
+	// 조합 중 자모("강ㄴ")·단일 자모("ㄱ")는 가공 없이 그대로 keyword로 보낸다.
 	const keyword = useDebouncedValue(value.trim(), 250);
 	const { data } = useQuery({
 		queryKey: ["onboarding-search", endpoint, keyword],
-		queryFn: () => searchRef(endpoint, { keyword, limit: 20 }),
-		// keyword가 비면 의미 없는 전체 목록이라 입력이 있을 때만 질의.
-		enabled: keyword.length >= 2,
+		// signal: 새 입력이 오면 React Query가 이전 요청을 abort(문서 §2-④).
+		queryFn: ({ signal }) =>
+			searchRef(endpoint, { keyword, limit: 20 }, signal),
+		// 최소 글자수 게이트 없음 — 빈 문자열만 스킵(자모 1자부터 검색, 문서 §2-②).
+		enabled: keyword.length >= 1,
 		staleTime: 60_000,
+		// 새 keyword 응답이 오기 전까지 직전 결과 유지(빈 화면 깜빡임 방지).
+		// queryKey에 keyword가 있어 최신 응답만 반영된다(latest-wins, 문서 §2-④).
+		placeholderData: keepPreviousData,
 	});
 	const items = data?.items ?? [];
 	const options: AutocompleteOption[] = items.map((it) => ({

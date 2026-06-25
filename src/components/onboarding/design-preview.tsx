@@ -12,17 +12,17 @@ import { LivePreview } from "./live-preview.tsx";
  * 상단 바는 항상 보이고(sticky), 아래 영역은 미리보기 iframe이 채운다.
  */
 
-/** 시안 스와치 — Figma 상단 바 색상(1:19108)과 동일 순서/색. */
+/** 시안 스와치 — key별 색 재배정: t1 블루 · t2 그린 · t3 퍼플 · t4 슬레이트 · t5 레드. */
 const TEMPLATE_SWATCHES: {
 	key: string;
 	color: string;
 	label: string;
 }[] = [
 	{ key: "t1", color: "#2a64f6", label: "블루 · 신뢰감 있는 기본형" },
-	{ key: "t2", color: "#8b5cf6", label: "퍼플 · 모던 클리닉" },
-	{ key: "t3", color: "#334155", label: "슬레이트 · 종합병원형" },
-	{ key: "t4", color: "#ef4444", label: "레드 · 캠페인 강조형" },
-	{ key: "t5", color: "#74ef44", label: "그린 · 친근한 동네 병원" },
+	{ key: "t2", color: "#74ef44", label: "그린 · 친근한 동네 병원" },
+	{ key: "t3", color: "#8b5cf6", label: "퍼플 · 모던 클리닉" },
+	{ key: "t4", color: "#334155", label: "슬레이트 · 종합병원형" },
+	{ key: "t5", color: "#ef4444", label: "레드 · 캠페인 강조형" },
 ];
 
 type Device = "desktop" | "mobile";
@@ -124,7 +124,7 @@ export function DesignPreviewScreen({
 							disabled={confirming}
 							className="shrink-0 rounded-md border border-[#4b5563] px-4 py-2 text-[15px] font-medium whitespace-nowrap text-white transition-colors hover:bg-white/5 disabled:opacity-50 sm:px-5"
 						>
-							수정 계속하기
+							수정하기
 						</button>
 						<button
 							type="button"

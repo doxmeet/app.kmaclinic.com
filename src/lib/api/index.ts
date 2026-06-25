@@ -153,8 +153,11 @@ async function run<T>(thunk: () => Promise<unknown>, authed: boolean) {
 
 type Json = Record<string, unknown> | unknown[];
 
-/** per-call 옵션. 느린(AI) 엔드포인트는 `timeout`을 늘리거나 false(무제한)로. */
-type CallOpts = { timeout?: number | false };
+/**
+ * per-call 옵션. 느린(AI) 엔드포인트는 `timeout`을 늘리거나 false(무제한)로.
+ * `signal`은 자동완성처럼 새 입력이 오면 이전 요청을 취소(AbortController)할 때 쓴다.
+ */
+type CallOpts = { timeout?: number | false; signal?: AbortSignal };
 
 /** 인증 클라이언트 helper (data 언랩 + 401 자동 refresh + ApiError). */
 export const http = {

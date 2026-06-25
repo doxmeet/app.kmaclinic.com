@@ -1,12 +1,5 @@
 import { ChevronRight, PencilLine, Search, X } from "lucide-react";
-import {
-	useEffect,
-	useId,
-	useLayoutEffect,
-	useMemo,
-	useRef,
-	useState,
-} from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "#/lib/utils.ts";
 
@@ -15,10 +8,13 @@ const useIsoLayoutEffect =
 	typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
 /**
- * Autocomplete — 입력 + 필터되는 드롭다운 결과 (자동완성 검색).
+ * Autocomplete — 입력 + 서버가 준 결과 드롭다운 (자동완성 검색).
  * Figma "자동완성검색 기능"(1:13163) 기준.
  *
- * - 입력값으로 더미 항목을 필터, 매칭 부분을 brand 색으로 하이라이트
+ * - `options`(서버 검색 결과)를 그대로 렌더 — 클라이언트 재필터는 하지 않는다.
+ *   (백엔드가 한글 자모 검색을 하므로 "강ㄴ"이 "강남병원"을 돌려준다.
+ *    여기서 includes("강ㄴ") 같은 부분일치로 거르면 정답이 전부 탈락한다.)
+ * - 매칭되는 글자가 있으면 brand 색으로 하이라이트(자모 단계엔 매칭이 없어 원문 그대로)
  * - 검색 결과 헤더("'서울' 검색 결과 4건"), 부제(category · region)
  * - 키보드(↑/↓/Enter/Esc) + 클릭 선택, X로 초기화
  * - 결과에 없으면 "'직접 입력' 하기" 행으로 자유 입력 모드 전환
@@ -77,17 +73,10 @@ function Autocomplete({
 		width: number;
 	} | null>(null);
 
-	const filtered = useMemo(() => {
-		const q = value.trim().toLowerCase();
-		if (!q) return options;
-		return options.filter(
-			(o) =>
-				o.label.toLowerCase().includes(q) ||
-				o.description?.toLowerCase().includes(q),
-		);
-	}, [options, value]);
-
-	const showPanel = open && (filtered.length > 0 || !!onManualEntry);
+	// 결과는 서버 검색 결과(options)를 그대로 쓴다 — 클라이언트 재필터 없음(자모 검색 보존).
+	const showPanel = open && (options.length > 0 || !!onManualEntry);
+	// 서버 결과가 매 입력마다 바뀌므로 active 인덱스를 길이에 맞춰 클램프한다.
+	const activeIndex = options.length ? Math.min(active, options.length - 1) : 0;
 
 	// 패널이 열려 있는 동안 anchor 위치를 추적 (스크롤/리사이즈 반영).
 	useIsoLayoutEffect(() => {
@@ -123,14 +112,21 @@ function Autocomplete({
 		}
 		if (e.key === "ArrowDown") {
 			e.preventDefault();
-			setActive((a) => Math.min(a + 1, filtered.length - 1));
+			setActive((a) => Math.min(a + 1, options.length - 1));
 		} else if (e.key === "ArrowUp") {
 			e.preventDefault();
 			setActive((a) => Math.max(a - 1, 0));
 		} else if (e.key === "Enter") {
-			if (filtered[active]) {
-				e.preventDefault();
-				commit(filtered[active]);
+			// 엔터는 모호하지 않을 때만 동작한다(실수 선택 방지):
+			//  - 결과가 정확히 1건  → 그 항목을 선택
+			//  - 결과가 0건이라 "직접 입력"만 떠 있음 → 직접 입력 실행
+			//  - 결과가 여러 건이면 아무 동작도 안 함(명시적 클릭/방향키 선택만 허용)
+			e.preventDefault();
+			if (options.length === 1) {
+				commit(options[0]);
+			} else if (options.length === 0 && onManualEntry) {
+				onManualEntry();
+				setOpen(false);
 			}
 		} else if (e.key === "Escape") {
 			setOpen(false);
@@ -219,7 +215,7 @@ function Autocomplete({
 								{value.trim() ? (
 									<>
 										<span className="text-muted-fg">'{value}' 검색 결과</span>
-										<span className="text-brand">{filtered.length}건</span>
+										<span className="text-brand">{options.length}건</span>
 									</>
 								) : (
 									<span className="text-muted-fg">검색어를 입력해주세요</span>
@@ -227,8 +223,8 @@ function Autocomplete({
 							</div>
 
 							<div className="flex-1 overflow-y-auto">
-								{filtered.map((opt, i) => {
-									const isActive = i === active;
+								{options.map((opt, i) => {
+									const isActive = i === activeIndex;
 									return (
 										<button
 											key={opt.value}

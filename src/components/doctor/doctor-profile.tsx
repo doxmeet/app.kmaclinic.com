@@ -1,4 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+	keepPreviousData,
+	useMutation,
+	useQuery,
+	useQueryClient,
+} from "@tanstack/react-query";
 import {
 	AlertCircle,
 	Camera,
@@ -1757,9 +1762,12 @@ function AffiliationInstitutionField({
 	const keyword = useDebouncedValue(name.trim());
 	const { data } = useQuery({
 		queryKey: ["ref", "clinic", keyword],
-		queryFn: () => searchClinics({ keyword, limit: 20 }),
-		enabled: keyword.length >= 2,
+		// signal로 이전 요청 취소(자모 검색은 매 입력마다 후보가 바뀜).
+		queryFn: ({ signal }) => searchClinics({ keyword, limit: 20 }, signal),
+		// 한글 자모 검색이라 최소 글자수 게이트 없음 — 빈 문자열만 스킵.
+		enabled: keyword.length >= 1,
 		staleTime: 60_000,
+		placeholderData: keepPreviousData,
 	});
 	const items = data?.items ?? [];
 	const options: AutocompleteOption[] = items.map((c) => ({
