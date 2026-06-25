@@ -13,7 +13,6 @@ import {
 import { useEffect, useId, useReducer, useState } from "react";
 import { toast } from "sonner";
 import { AuthGuard } from "#/components/auth/auth-guard.tsx";
-import { BoardSideNav } from "#/components/common/board-side-nav.tsx";
 import {
 	SectionCard,
 	SectionTitle,
@@ -56,12 +55,6 @@ import { cn } from "#/lib/utils.ts";
  *  - 컬렉션 항목: 유지=전체 전송(order/is_public 포함), 삭제=`{id:null}`, 추가=새 id.
  *  - 미설정 컬렉션 필드는 보내지 않으므로(merge-patch) 서버의 다른 필드는 보존된다.
  */
-
-const SIDE_NAV_ITEMS = [
-	{ label: "의원 프로필 관리" },
-	{ label: "병원 정보 관리", to: "/hospital/manage" },
-	{ label: "게시판 관리", to: "/board" },
-];
 
 // ─────────────────────────────────────────────────────────────────────
 // 컬렉션 설정 — 문서 §6.10.3~6.10.9 필드명(ASCII 계약)에 맞춤.
@@ -749,50 +742,46 @@ function ProfileEditor() {
 	const slug = typeof doc?.slug === "string" ? doc.slug : null;
 
 	return (
-		<AppShell userName={userName} maxWidth="1280px">
-			<div className="flex flex-col gap-6 lg:flex-row lg:gap-8">
-				<BoardSideNav items={SIDE_NAV_ITEMS} activeLabel="의원 프로필 관리" />
+		<AppShell userName={userName} maxWidth="960px">
+			<div className="flex flex-col gap-8">
+				<ProfileHeader
+					isPublished={isPublished}
+					slug={slug}
+					completion={completion?.completion_percent}
+					saving={saveMutation.isPending}
+					onSave={() => saveMutation.mutate()}
+				/>
 
-				<div className="flex min-w-0 flex-1 flex-col gap-8">
-					<ProfileHeader
-						isPublished={isPublished}
-						slug={slug}
-						completion={completion?.completion_percent}
-						saving={saveMutation.isPending}
-						onSave={() => saveMutation.mutate()}
+				<PhotoSection state={state} dispatch={dispatch} />
+				<BasicInfoSection state={state} dispatch={dispatch} />
+				<VisibilitySection state={state} dispatch={dispatch} />
+
+				{COLLECTIONS.map((config) => (
+					<CollectionSection
+						key={config.key}
+						config={config}
+						rows={state.colls[config.key]}
+						dispatch={dispatch}
 					/>
+				))}
 
-					<PhotoSection state={state} dispatch={dispatch} />
-					<BasicInfoSection state={state} dispatch={dispatch} />
-					<VisibilitySection state={state} dispatch={dispatch} />
+				<AffiliationsSection rows={state.affiliations} dispatch={dispatch} />
 
-					{COLLECTIONS.map((config) => (
-						<CollectionSection
-							key={config.key}
-							config={config}
-							rows={state.colls[config.key]}
-							dispatch={dispatch}
-						/>
-					))}
-
-					<AffiliationsSection rows={state.affiliations} dispatch={dispatch} />
-
-					<div className="flex justify-center pt-1">
-						<Button
-							variant="brand"
-							size="cta"
-							className="px-12 font-semibold sm:w-80"
-							disabled={saveMutation.isPending}
-							onClick={() => saveMutation.mutate()}
-						>
-							{saveMutation.isPending ? (
-								<Loader2 className="size-5 animate-spin" />
-							) : (
-								<Save className="size-5" />
-							)}
-							프로필 전체 저장하기
-						</Button>
-					</div>
+				<div className="flex justify-center pt-1">
+					<Button
+						variant="brand"
+						size="cta"
+						className="px-12 font-semibold sm:w-80"
+						disabled={saveMutation.isPending}
+						onClick={() => saveMutation.mutate()}
+					>
+						{saveMutation.isPending ? (
+							<Loader2 className="size-5 animate-spin" />
+						) : (
+							<Save className="size-5" />
+						)}
+						프로필 전체 저장하기
+					</Button>
 				</div>
 			</div>
 		</AppShell>

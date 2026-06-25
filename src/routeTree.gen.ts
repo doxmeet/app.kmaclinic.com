@@ -12,7 +12,6 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as FindPasswordRouteImport } from './routes/find-password'
 import { Route as FindIdRouteImport } from './routes/find-id'
-import { Route as DemoRouteImport } from './routes/demo'
 import { Route as ComponentsRouteImport } from './routes/components'
 import { Route as AccountRouteImport } from './routes/account'
 import { Route as IndexRouteImport } from './routes/index'
@@ -57,11 +56,6 @@ const FindPasswordRoute = FindPasswordRouteImport.update({
 const FindIdRoute = FindIdRouteImport.update({
   id: '/find-id',
   path: '/find-id',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DemoRoute = DemoRouteImport.update({
-  id: '/demo',
-  path: '/demo',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ComponentsRoute = ComponentsRouteImport.update({
@@ -219,7 +213,6 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
   '/components': typeof ComponentsRoute
-  '/demo': typeof DemoRoute
   '/find-id': typeof FindIdRoute
   '/find-password': typeof FindPasswordRoute
   '/login': typeof LoginRoute
@@ -255,7 +248,6 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
   '/components': typeof ComponentsRoute
-  '/demo': typeof DemoRoute
   '/find-id': typeof FindIdRoute
   '/find-password': typeof FindPasswordRoute
   '/login': typeof LoginRoute
@@ -292,7 +284,6 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
   '/components': typeof ComponentsRoute
-  '/demo': typeof DemoRoute
   '/find-id': typeof FindIdRoute
   '/find-password': typeof FindPasswordRoute
   '/login': typeof LoginRoute
@@ -330,7 +321,6 @@ export interface FileRouteTypes {
     | '/'
     | '/account'
     | '/components'
-    | '/demo'
     | '/find-id'
     | '/find-password'
     | '/login'
@@ -366,7 +356,6 @@ export interface FileRouteTypes {
     | '/'
     | '/account'
     | '/components'
-    | '/demo'
     | '/find-id'
     | '/find-password'
     | '/login'
@@ -402,7 +391,6 @@ export interface FileRouteTypes {
     | '/'
     | '/account'
     | '/components'
-    | '/demo'
     | '/find-id'
     | '/find-password'
     | '/login'
@@ -439,7 +427,6 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccountRoute: typeof AccountRoute
   ComponentsRoute: typeof ComponentsRoute
-  DemoRoute: typeof DemoRoute
   FindIdRoute: typeof FindIdRoute
   FindPasswordRoute: typeof FindPasswordRoute
   LoginRoute: typeof LoginRoute
@@ -493,13 +480,6 @@ declare module '@tanstack/react-router' {
       path: '/find-id'
       fullPath: '/find-id'
       preLoaderRoute: typeof FindIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/demo': {
-      id: '/demo'
-      path: '/demo'
-      fullPath: '/demo'
-      preLoaderRoute: typeof DemoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/components': {
@@ -719,7 +699,6 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccountRoute: AccountRoute,
   ComponentsRoute: ComponentsRoute,
-  DemoRoute: DemoRoute,
   FindIdRoute: FindIdRoute,
   FindPasswordRoute: FindPasswordRoute,
   LoginRoute: LoginRoute,

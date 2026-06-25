@@ -1,6 +1,12 @@
 import { Menu } from "@base-ui/react/menu";
 import { useNavigate } from "@tanstack/react-router";
-import { ChevronDown, LogOut, ShieldCheck, UserRound } from "lucide-react";
+import {
+	ChevronDown,
+	IdCard,
+	LogOut,
+	ShieldCheck,
+	UserRound,
+} from "lucide-react";
 import { useSession } from "#/lib/auth/use-session.ts";
 import { cn } from "#/lib/utils.ts";
 
@@ -52,6 +58,13 @@ function UserMenu({
 							onClick={() => navigate({ to: "/account" })}
 						>
 							<UserRound className="size-4 text-muted-fg" />내 계정
+						</Menu.Item>
+						<Menu.Item
+							className={MENU_ITEM_CLASS}
+							onClick={() => navigate({ to: "/doctor/profile" })}
+						>
+							<IdCard className="size-4 text-muted-fg" />
+							프로필 관리
 						</Menu.Item>
 						<Menu.Separator className="my-1.5 h-px bg-line" />
 						{isAdmin ? (

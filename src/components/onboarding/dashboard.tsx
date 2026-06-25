@@ -387,12 +387,21 @@ function ProfileCard({
 					<>
 						<InfoCallout tone="success">
 							<p className="text-sm">
-								의사 프로필이 공개 중입니다. 프로필 콘텐츠 관리는 별도 관리자
-								페이지에서 진행해 주세요.
+								의사 프로필이 공개 중입니다. 내용 편집은 "프로필 관리"에서 할 수
+								있어요.
 							</p>
 						</InfoCallout>
-						{kmadocUrl ? (
-							<div className="flex justify-end">
+						<div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+							<Button
+								nativeButton={false}
+								render={<Link to="/doctor/profile" />}
+								variant="neutral-outline"
+								size="xl"
+							>
+								<PenLine className="size-4" />
+								프로필 관리
+							</Button>
+							{kmadocUrl ? (
 								<Button
 									nativeButton={false}
 									render={
@@ -406,23 +415,31 @@ function ProfileCard({
 									}
 									variant="brand-outline"
 									size="xl"
-									className="w-full sm:w-auto"
 								>
 									<ExternalLink className="size-4" />
 									공개 페이지 보기
 								</Button>
-							</div>
-						) : null}
+							) : null}
+						</div>
 					</>
 				) : (
 					<>
 						<InfoCallout tone="info">
 							<p className="text-sm">
-								의사 프로필이 아직 비공개예요. 공개하면 공개 주소로 프로필이
-								공개됩니다.
+								의사 프로필이 아직 비공개예요. "프로필 관리"에서 내용을 채운 뒤
+								공개하면 공개 주소로 게시됩니다.
 							</p>
 						</InfoCallout>
-						<div className="flex justify-end">
+						<div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+							<Button
+								nativeButton={false}
+								render={<Link to="/doctor/profile" />}
+								variant="neutral-outline"
+								size="xl"
+							>
+								<PenLine className="size-4" />
+								프로필 관리
+							</Button>
 							<Button
 								variant="brand"
 								size="xl"
