@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
 	ArrowLeft,
@@ -8,11 +8,16 @@ import {
 	Paperclip,
 	SendHorizontal,
 } from "lucide-react";
-import { useEffect, useId, useReducer, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useReducer, useRef, useState } from "react";
 import { toast } from "sonner";
 import { SectionCard } from "#/components/common/section-card.tsx";
+import {
+	Autocomplete,
+	type AutocompleteOption,
+} from "#/components/form/autocomplete.tsx";
 import { FieldInput } from "#/components/form/field-input.tsx";
 import { CommitComplete } from "#/components/onboarding/commit-complete.tsx";
+import { DesignPreviewScreen } from "#/components/onboarding/design-preview.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import {
@@ -25,17 +30,21 @@ import {
 	DialogTitle,
 } from "#/components/ui/dialog.tsx";
 import { ScrollArea } from "#/components/ui/scroll-area.tsx";
+import { useDebouncedValue } from "#/hooks/use-debounced-value.ts";
 import { ApiError } from "#/lib/api";
 import {
 	type CommitResult,
 	commitSession,
 	getSession,
 	type OnboardingMode,
+	patchDraft,
 	type SessionView,
 	sendMessage,
 	startSession,
 } from "#/lib/api/onboarding.ts";
+import { type RefSearchItem, searchRef } from "#/lib/api/ref.ts";
 import { toastApiError } from "#/lib/api-error-message.ts";
+import { buildPreviewPayloadFromDraft } from "#/lib/preview.ts";
 import { uploadFileToStorage } from "#/lib/upload.ts";
 import { cn } from "#/lib/utils.ts";
 
@@ -196,6 +205,21 @@ export function OnboardingConversation({
 		return <LoadingState onBack={onBackToDashboard} />;
 	}
 
+	// 결제 전 전체화면 디자인 시안 선택(병원 완료하기 → 시안 → 관리자 계정 → commit).
+	if (conv.designOpen) {
+		return (
+			<DesignPreviewScreen
+				payload={conv.previewPayload}
+				templateKey={conv.templateKey}
+				onTemplateChange={conv.setTemplateKey}
+				onBack={conv.closeDesign}
+				onConfirm={conv.confirmDesign}
+				confirming={conv.designConfirming}
+				confirmLabel="이 디자인으로 계속"
+			/>
+		);
+	}
+
 	return (
 		<div className="flex flex-col gap-5">
 			<BackToDashboardLink onClick={onBackToDashboard} />
@@ -229,6 +253,8 @@ export function OnboardingConversation({
 					pickConflicts={conv.pickConflicts}
 					isSelect={conv.isSelect}
 					selectOptions={conv.selectOptions}
+					isSearch={conv.isSearch}
+					search={conv.search}
 					showSkip={conv.showSkip}
 					allowText={conv.allowText}
 					allowFile={conv.allowFile}
@@ -244,6 +270,8 @@ export function OnboardingConversation({
 					onOpenFilePicker={conv.openFilePicker}
 					onSendOption={conv.sendOption}
 					onPickConflict={conv.pickConflict}
+					onPickSearchItem={conv.pickSearchItem}
+					onSubmitSearchText={conv.submitSearchText}
 				/>
 			</SectionCard>
 
@@ -342,6 +370,18 @@ function useOnboardingConversation(mode: OnboardingMode) {
 		onError: (err) => toastApiError(err),
 	});
 
+	// ── 검색형(type="search") 선택: 고른 항목을 selection으로 전송 ───
+	// 백엔드가 레지스트리에서 빈 필드(주소·전화 등)를 자동 채운다(문서 §6.2.2 search).
+	const selectionMutation = useMutation({
+		mutationFn: (selection: RefSearchItem) => sendMessage({ selection }),
+		onSuccess: (view) => {
+			applySession(view);
+			setText("");
+			queryClient.invalidateQueries({ queryKey: OVERVIEW_KEY });
+		},
+		onError: (err) => toastApiError(err),
+	});
+
 	// ── commit ──────────────────────────────────────────────────────
 	// 관리자 계정(아이디·비밀번호)은 이 단계에서만 받는다(문서 2026-06 §2).
 	const commitMutation = useMutation({
@@ -350,6 +390,29 @@ function useOnboardingConversation(mode: OnboardingMode) {
 		onSuccess: (result) => {
 			dispatch({ type: "commitSucceeded", result });
 			queryClient.invalidateQueries({ queryKey: OVERVIEW_KEY });
+		},
+		onError: (err) => toastApiError(err),
+	});
+
+	// ── 결제 전 디자인 시안 선택(전체화면) ──────────────────────────
+	// 병원 commit 직전, 세션 draft로 홈페이지를 미리보며 시안(template_key)을 고른다.
+	// 고른 시안은 draft에 PATCH로 저장돼 commit이 그 값으로 병원을 생성한다(생성 후 변경 API 없음).
+	const [designOpen, setDesignOpen] = useState(false);
+	const [templateKey, setTemplateKey] = useState("t1");
+	const draft = (session?.draft as Record<string, unknown> | null) ?? null;
+	// 미리보기 payload — draft + 현재 선택 시안(스와치 실시간 반영).
+	const previewPayload = useMemo(
+		() => buildPreviewPayloadFromDraft(draft, templateKey),
+		[draft, templateKey],
+	);
+
+	const patchDraftMutation = useMutation({
+		mutationFn: (tk: string) => patchDraft({ hospital: { template_key: tk } }),
+		onSuccess: () => {
+			setDesignOpen(false);
+			queryClient.invalidateQueries({ queryKey: OVERVIEW_KEY });
+			// 시안 확정 후 관리자 계정 설정 다이얼로그로 이어간다.
+			dispatch({ type: "setAdminDialogOpen", open: true });
 		},
 		onError: (err) => toastApiError(err),
 	});
@@ -382,22 +445,38 @@ function useOnboardingConversation(mode: OnboardingMode) {
 		(c) => c.current != null && c.from_file != null && c.asked !== true,
 	);
 	const isCommitting = commitMutation.isPending;
-	const isSending = textMutation.isPending || conflictMutation.isPending;
+	const isSending =
+		textMutation.isPending ||
+		conflictMutation.isPending ||
+		selectionMutation.isPending;
 	const isUploading = fileMutation.isPending;
 	// 대기 구간(폴링 트리거): 답할 게 없고 백엔드가 마지막 답변/파일을 처리 중.
 	const waiting = session?.waiting === true;
 	// 분석 표시등(폴링과 무관): 진행중 답변/파일 추출이 있으면 "분석 중" 안내만.
 	const isAnalyzing = processingText > 0 || processingFile > 0;
+
+	// 입력 UI 메타(문서 §6.2.2). question이 없으면(구버전 호환) 텍스트+파일 항상 허용.
+	// type="search"면 자동완성(search 메타)로 입력하고, 고른 항목은 selection으로 보낸다.
+	const {
+		selectOptions,
+		isSelect,
+		isSearch,
+		search,
+		allowText,
+		allowFile,
+		allowSkip,
+	} = deriveQuestionMeta(session?.question);
+
 	// 전송 중일 때 낙관적으로 보여줄, 유저가 방금 보낸 메시지(React Query variables).
+	// 검색 선택은 객체라 label_field(없으면 name)로 표시 텍스트를 뽑는다.
 	const pendingMessage = textMutation.isPending
 		? textMutation.variables
 		: conflictMutation.isPending
 			? conflictMutation.variables
-			: null;
-
-	// 입력 UI 메타(문서 §6.2.2). question이 없으면(구버전 호환) 텍스트+파일 항상 허용.
-	const { selectOptions, isSelect, allowText, allowFile, allowSkip } =
-		deriveQuestionMeta(session?.question);
+			: selectionMutation.isPending
+				? selectionLabel(selectionMutation.variables, search?.labelField) ||
+					"선택한 항목"
+				: null;
 	// 전송/업로드 중에는 건너뛰기를 숨긴다 — 이미 답한 것과 마찬가지라 중복.
 	// 성공하면 다음 질문으로 넘어가고, 실패하면 mutation이 idle로 돌아와 자동 복귀한다.
 	const showSkip = allowSkip && !isSending && !isUploading;
@@ -446,9 +525,16 @@ function useOnboardingConversation(mode: OnboardingMode) {
 	}
 
 	function handleCommit() {
-		// 병원 소유면 관리자 계정(아이디+비번) 모달, 프로필만이면 본문 없이 바로 commit
+		// 병원 소유면: 결제 전 디자인 시안 선택(전체화면) → 관리자 계정 설정 → commit.
+		// 프로필만이면 결제가 없으므로 바로 commit.
 		if (isClinicOwner) {
-			dispatch({ type: "setAdminDialogOpen", open: true });
+			const draftHospital = draft?.hospital as
+				| { template_key?: string | null }
+				| undefined;
+			setTemplateKey(
+				(draftHospital?.template_key?.trim() || "t1").toLowerCase(),
+			);
+			setDesignOpen(true);
 		} else {
 			commitMutation.mutate(undefined);
 		}
@@ -494,6 +580,8 @@ function useOnboardingConversation(mode: OnboardingMode) {
 		waiting,
 		selectOptions,
 		isSelect,
+		isSearch,
+		search,
 		allowText,
 		allowFile,
 		showSkip,
@@ -501,6 +589,14 @@ function useOnboardingConversation(mode: OnboardingMode) {
 		draftLoginId,
 		readyToCommit,
 		uploadingFileName: fileMutation.variables?.name,
+		// 결제 전 디자인 시안 선택(전체화면)
+		designOpen,
+		previewPayload,
+		templateKey,
+		setTemplateKey,
+		closeDesign: () => setDesignOpen(false),
+		confirmDesign: () => patchDraftMutation.mutate(templateKey),
+		designConfirming: patchDraftMutation.isPending,
 		handleSubmit,
 		handlePickFile,
 		handleCommit,
@@ -509,6 +605,15 @@ function useOnboardingConversation(mode: OnboardingMode) {
 		openFilePicker: () => fileInputRef.current?.click(),
 		sendOption: (value: string) => textMutation.mutate(value),
 		pickConflict: (value: string) => conflictMutation.mutate(value),
+		// 검색형: 목록에서 고른 항목은 selection으로, 직접 입력은 text로 전송.
+		// 이미 전송 중이면 무시(중복 전송 방지).
+		pickSearchItem: (item: RefSearchItem) => {
+			if (!isSending) selectionMutation.mutate(item);
+		},
+		submitSearchText: (raw: string) => {
+			const value = raw.trim();
+			if (value && !isSending) textMutation.mutate(value);
+		},
 		setAdminDialogOpen: (open: boolean) =>
 			dispatch({ type: "setAdminDialogOpen", open }),
 		submitAdminCredentials: (login_id: string, password: string) =>
@@ -791,7 +896,7 @@ function CommitButton({
 			) : (
 				<CheckCircle2 className="size-5" />
 			)}
-			{isClinicOwner ? "관리자 계정 설정 후 완료하기" : "프로필 생성 완료하기"}
+			{isClinicOwner ? "디자인 선택하고 완료하기" : "프로필 생성 완료하기"}
 		</Button>
 	);
 }
@@ -921,6 +1026,8 @@ function Composer({
 	pickConflicts,
 	isSelect,
 	selectOptions,
+	isSearch,
+	search,
 	showSkip,
 	allowText,
 	allowFile,
@@ -932,12 +1039,18 @@ function Composer({
 	onOpenFilePicker,
 	onSendOption,
 	onPickConflict,
+	onPickSearchItem,
+	onSubmitSearchText,
 }: {
 	inputRef: React.RefObject<HTMLInputElement | null>;
 	fileInputRef: React.RefObject<HTMLInputElement | null>;
 	pickConflicts: Conflict[];
 	isSelect: boolean;
 	selectOptions: Array<{ label?: string | null; value?: string | null }>;
+	/** type="search"면 직접입력 대신 자동완성(SearchAnswerField)을 띄운다. */
+	isSearch: boolean;
+	/** 자동완성 메타(endpoint·labelField·valueField). isSearch일 때만 존재. */
+	search: SearchMeta | null;
 	showSkip: boolean;
 	allowText: boolean;
 	allowFile: boolean;
@@ -950,6 +1063,10 @@ function Composer({
 	onOpenFilePicker: () => void;
 	onSendOption: (value: string) => void;
 	onPickConflict: (value: string) => void;
+	/** 자동완성에서 항목 선택 → message { selection: item }. */
+	onPickSearchItem: (item: RefSearchItem) => void;
+	/** 자동완성에서 직접 입력 → message { text }. */
+	onSubmitSearchText: (raw: string) => void;
 }) {
 	return (
 		<>
@@ -1005,8 +1122,18 @@ function Composer({
 				</div>
 			) : null}
 
-			{/* 입력창(직접입력/파일) — question.allow_* 에 따라 노출 */}
-			{allowText || allowFile ? (
+			{/* 검색형(type="search")이면 직접입력 대신 자동완성을 띄운다.
+			    항목 선택 → selection, 직접 입력 → text(allow_text일 때). */}
+			{isSearch && search ? (
+				<SearchAnswerField
+					search={search}
+					allowText={allowText}
+					value={text}
+					onChange={onTextChange}
+					onPick={onPickSearchItem}
+					onSubmitText={onSubmitSearchText}
+				/>
+			) : allowText || allowFile ? (
 				<form onSubmit={onSubmit} className="flex items-end gap-2">
 					<input
 						ref={fileInputRef}
@@ -1063,6 +1190,68 @@ function Composer({
 				로고/사진은 그대로 저장됩니다.
 			</p>
 		</>
+	);
+}
+
+/**
+ * 검색형(type="search") 답변 입력 — 자동완성 드롭다운.
+ * search.endpoint(공개 GET, 예: /ref/clinic)로 250ms 디바운스 질의하고,
+ *  - 항목 선택 → onPick(item) → message { selection: item }(백엔드가 빈 필드 자동채움)
+ *  - 목록에 없으면 "직접 입력" → onSubmitText(raw) → message { text }(allow_text일 때만)
+ * 표시는 label_field, 식별은 value_field 기준(문서 §6.2.2 search).
+ */
+function SearchAnswerField({
+	search,
+	allowText,
+	value,
+	onChange,
+	onPick,
+	onSubmitText,
+}: {
+	search: SearchMeta;
+	allowText: boolean;
+	value: string;
+	onChange: (value: string) => void;
+	onPick: (item: RefSearchItem) => void;
+	onSubmitText: (raw: string) => void;
+}) {
+	const { endpoint, labelField, valueField } = search;
+	const keyword = useDebouncedValue(value.trim(), 250);
+	const { data } = useQuery({
+		queryKey: ["onboarding-search", endpoint, keyword],
+		queryFn: () => searchRef(endpoint, { keyword, limit: 20 }),
+		// keyword가 비면 의미 없는 전체 목록이라 입력이 있을 때만 질의.
+		enabled: keyword.length >= 2,
+		staleTime: 60_000,
+	});
+	const items = data?.items ?? [];
+	const options: AutocompleteOption[] = items.map((it) => ({
+		value: searchItemValue(it, labelField, valueField),
+		label: String(it[labelField] ?? ""),
+		description: searchItemDescription(it),
+	}));
+	return (
+		<Autocomplete
+			options={options}
+			value={value}
+			onChange={onChange}
+			onSelect={(opt) => {
+				const picked = items.find(
+					(it) => searchItemValue(it, labelField, valueField) === opt.value,
+				);
+				if (picked) onPick(picked);
+			}}
+			// 직접 입력은 allow_text일 때만 — 목록에 없으면 타이핑한 값을 그대로 전송.
+			onManualEntry={
+				allowText
+					? () => {
+							const raw = value.trim();
+							if (raw) onSubmitText(raw);
+						}
+					: undefined
+			}
+			placeholder="이름을 입력해 검색하세요"
+		/>
 	);
 }
 
@@ -1322,17 +1511,33 @@ type QuestionMeta = {
 	allow_text?: boolean | null;
 	allow_skip?: boolean | null;
 	allow_file?: boolean | null;
+	// type="search"일 때만: 자동완성 메타(공개 GET endpoint + 표시/식별 필드).
+	search?: {
+		endpoint?: string | null;
+		label_field?: string | null;
+		value_field?: string | null;
+	} | null;
+};
+
+/** 자동완성에 필요한 값만 추린 search 메타(필수값 보장). */
+type SearchMeta = {
+	endpoint: string;
+	labelField: string;
+	valueField: string;
 };
 
 /**
  * 입력 UI 메타 계산(문서 §6.2.2). question이 없으면(구버전 호환) 텍스트+파일 항상 허용.
  * - 보기(select)는 value가 비지 않은 옵션만.
- * - 직접 입력은 type="text" 또는 allow_text일 때만(보기로도 답할 수 있어도 별개).
+ * - 검색(search)은 endpoint가 있을 때만 — 자동완성으로 입력하고 고른 항목은 selection으로 전송.
+ * - 직접 입력은 type="text" 또는 allow_text일 때만(보기/검색으로도 답할 수 있어도 별개).
  * - 파일 업로드는 백엔드가 요청한 질문(allow_file)에서만.
  */
 function deriveQuestionMeta(raw: unknown): {
 	selectOptions: Array<{ label?: string | null; value?: string | null }>;
 	isSelect: boolean;
+	isSearch: boolean;
+	search: SearchMeta | null;
 	allowText: boolean;
 	allowFile: boolean;
 	allowSkip: boolean;
@@ -1342,15 +1547,62 @@ function deriveQuestionMeta(raw: unknown): {
 		question?.type === "select" && Array.isArray(question.options)
 			? question.options.filter((o) => (o?.value ?? "").trim().length > 0)
 			: [];
+	const endpoint = question?.search?.endpoint?.trim();
+	// endpoint가 있어야 자동완성을 띄울 수 있다. label/value 필드는 기본값(name/no)으로 보강.
+	const search: SearchMeta | null =
+		question?.type === "search" && endpoint
+			? {
+					endpoint,
+					labelField: question.search?.label_field?.trim() || "name",
+					valueField: question.search?.value_field?.trim() || "no",
+				}
+			: null;
 	return {
 		selectOptions,
 		isSelect: selectOptions.length > 0,
+		isSearch: search != null,
+		search,
 		allowText: question
 			? question.type === "text" || question.allow_text === true
 			: true,
 		allowFile: question ? question.allow_file === true : true,
 		allowSkip: question?.allow_skip === true,
 	};
+}
+
+/** 자동완성 항목의 식별값 — value_field 우선, 없으면 label_field. */
+function searchItemValue(
+	item: RefSearchItem,
+	labelField: string,
+	valueField: string,
+): string {
+	return String(item[valueField] ?? item[labelField] ?? "");
+}
+
+/**
+ * 자동완성 항목의 보조 표시(부제). 병의원 레지스트리 기준 종별·지역(시도/시군구)·주소.
+ * 다른 endpoint에서 해당 필드가 없으면 자연히 빈 값이 되어 표시되지 않는다.
+ */
+function searchItemDescription(item: RefSearchItem): string | undefined {
+	const str = (v: unknown) =>
+		typeof v === "string" && v.trim().length > 0 ? v.trim() : undefined;
+	const region = [str(item.sido_name), str(item.sigungu_name)]
+		.filter(Boolean)
+		.join(" ");
+	const parts = [str(item.type_name), region || str(item.address)].filter(
+		Boolean,
+	);
+	return parts.length ? parts.join(" · ") : undefined;
+}
+
+/** 검색 선택(객체)의 낙관적 표시 텍스트 — label_field(없으면 name) 값. */
+function selectionLabel(
+	selection: RefSearchItem | undefined,
+	labelField: string | undefined,
+): string {
+	if (!selection) return "";
+	const value = selection[labelField ?? "name"] ?? selection.name;
+	return typeof value === "string" ? value : "";
 }
 
 /**

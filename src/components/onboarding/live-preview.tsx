@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useEffect, useEffectEvent, useRef } from "react";
 import {
 	isReadyMessage,
 	PREVIEW_ORIGIN,
@@ -32,8 +32,9 @@ export function LivePreview({
 	const payloadRef = useRef(payload);
 	payloadRef.current = payload;
 
-	// iframe으로 현재 payload 전체 스냅샷 전송. iframeRef/상수만 참조 → 안정 콜백.
-	const post = useCallback((next: PreviewPayload) => {
+	// iframe으로 현재 payload 전체 스냅샷 전송. Effect Event라 deps에 안 들어가
+	// (콜백이 매 렌더 바뀌어도 effect가 재구독/재실행되지 않음).
+	const post = useEffectEvent((next: PreviewPayload) => {
 		iframeRef.current?.contentWindow?.postMessage(
 			{
 				source: PREVIEW_SOURCE,
@@ -43,7 +44,7 @@ export function LivePreview({
 			},
 			PREVIEW_ORIGIN,
 		);
-	}, []);
+	});
 
 	// ready 핸드셰이크 — 수신 후부터 전송 시작(ready 전 전송은 유실될 수 있음).
 	useEffect(() => {
@@ -55,20 +56,23 @@ export function LivePreview({
 		}
 		window.addEventListener("message", onMessage);
 		return () => window.removeEventListener("message", onMessage);
-	}, [post]);
+	}, []);
 
 	// 입력이 바뀔 때마다(ready 이후) 디바운스 전송.
 	useEffect(() => {
 		if (!readyRef.current) return;
 		const id = setTimeout(() => post(payload), 200);
 		return () => clearTimeout(id);
-	}, [payload, post]);
+	}, [payload]);
 
 	return (
 		<iframe
 			ref={iframeRef}
 			src={PREVIEW_SRC}
 			title={title}
+			// 1st-party 미리보기 앱이지만 iframe 권한은 명시 제한:
+			// 앱 구동(스크립트)·자기 origin(에셋/스토리지/SPA 라우팅)·새창 링크·폼만 허용.
+			sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
 			className={cn("h-full w-full border-0 bg-white", className)}
 		/>
 	);

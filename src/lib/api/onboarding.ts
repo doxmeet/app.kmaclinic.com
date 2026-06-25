@@ -72,6 +72,15 @@ const SessionViewSchema = z.looseObject({
 			allow_text: z.boolean().nullish(),
 			allow_skip: z.boolean().nullish(),
 			allow_file: z.boolean().nullish(),
+			// type="search"일 때만: 자동완성 메타. endpoint(공개 GET)로 keyword 질의 →
+			// label_field로 표시, value_field로 식별. 고른 항목은 message의 selection으로 전송.
+			search: z
+				.looseObject({
+					endpoint: z.string().nullish(),
+					label_field: z.string().nullish(),
+					value_field: z.string().nullish(),
+				})
+				.nullish(),
 		})
 		.nullish(),
 	// true면 next_question이 백그라운드 분석의 이상점/충돌 확인 질문(가로채기). message 응답에서만 true.
@@ -120,6 +129,12 @@ export type SendMessageInput = {
 	text?: string;
 	file_urls?: string[];
 	purpose?: "logo" | "photo";
+	/**
+	 * type="search" 질문에서 자동완성 목록의 항목을 고른 경우 그 항목 객체를 그대로 보낸다.
+	 * 백엔드는 selection.<value_field>(예: no)만 보고 레지스트리에서 빈 필드를 자동 채운다
+	 * (나머지 필드는 있어도 무시). 직접 타이핑은 selection 대신 text로 보낸다.
+	 */
+	selection?: Record<string, unknown>;
 };
 
 /** AI 추출/질문 생성은 수십 초가 걸릴 수 있어 넉넉히(2분). */

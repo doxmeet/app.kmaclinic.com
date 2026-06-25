@@ -64,6 +64,22 @@ export function getClinic(no: number | string) {
 	return publicHttp.get<{ clinic: RefClinic }>(`ref/clinic/${no}`);
 }
 
+/** 온보딩 search 질문이 돌려주는 자동완성 항목(필드는 endpoint마다 다름). */
+export type RefSearchItem = Record<string, unknown>;
+
+/**
+ * 온보딩 search 질문용 제네릭 자동완성 — `GET <question.search.endpoint>`(예: `/ref/clinic`).
+ * 공개 GET, `keyword` 부분일치. 응답은 다른 ref 자동완성과 동일한 `{ items }` 규약.
+ * 앞 슬래시는 제거한다(ky prefixUrl은 절대경로를 허용하지 않음).
+ */
+export function searchRef(
+	endpoint: string,
+	params: { keyword?: string; limit?: number },
+) {
+	const path = endpoint.replace(/^\/+/, "");
+	return publicHttp.get<{ items: RefSearchItem[] }>(path, refQuery(params));
+}
+
 // ── 프로필 입력 보조 자동완성 — 문서 §8.11.4 ───────────────────────────
 
 export type RefMedicalSchool = {

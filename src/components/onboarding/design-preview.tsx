@@ -13,7 +13,7 @@ import { LivePreview } from "./live-preview.tsx";
  */
 
 /** 시안 스와치 — Figma 상단 바 색상(1:19108)과 동일 순서/색. */
-export const TEMPLATE_SWATCHES: {
+const TEMPLATE_SWATCHES: {
 	key: string;
 	color: string;
 	label: string;

@@ -215,6 +215,82 @@ export function buildHospitalPreviewPayload(
 }
 
 /**
+ * 대화형 온보딩 **세션 draft** → `PreviewPayload`. 직접 입력 폼과 달리 draft.hospital은
+ * 이미 PublicHospitalData에 가까운 구조(business_hours v2·sns_links 객체)라 거의 그대로 통과시킨다.
+ * 모든 필드는 방어적으로 파싱한다(타입 미보장). `templateKeyOverride`로 스와치 실시간 선택을 반영.
+ */
+export function buildPreviewPayloadFromDraft(
+	draft: Record<string, unknown> | null | undefined,
+	templateKeyOverride?: string,
+): PreviewPayload {
+	const hospitalRaw = asObject(draft?.hospital);
+	const hospital: PreviewHospital = {};
+	if (hospitalRaw) {
+		assignStr(hospital, "name", hospitalRaw.name);
+		assignStr(hospital, "road_address", hospitalRaw.road_address);
+		assignStr(hospital, "detail_address", hospitalRaw.detail_address);
+		assignStr(hospital, "main_phone", hospitalRaw.main_phone);
+		assignStr(hospital, "email", hospitalRaw.email);
+		assignStr(hospital, "logo_url", hospitalRaw.logo_url);
+		assignStr(hospital, "hero_headline", hospitalRaw.hero_headline);
+		assignStr(hospital, "hero_sub", hospitalRaw.hero_sub);
+		assignStr(hospital, "description", hospitalRaw.description);
+		const sns = asObject(hospitalRaw.sns_links);
+		if (sns) {
+			const compact = onlyStringValues(sns);
+			if (Object.keys(compact).length > 0) hospital.sns_links = compact;
+		}
+		// business_hours는 백엔드가 v2로 정규화 → 객체면 그대로 통과(미리보기 앱이 방어).
+		const businessHours = asObject(hospitalRaw.business_hours);
+		if (businessHours)
+			hospital.business_hours = businessHours as PreviewBusinessHours;
+	}
+	hospital.template_key = (
+		templateKeyOverride ||
+		strOrEmpty(hospitalRaw?.template_key) ||
+		"t1"
+	).toLowerCase();
+
+	const payload: PreviewPayload = { hospital };
+
+	const departments = nameList(draft?.departments).map((name, i) => ({
+		no: i + 1,
+		name,
+		sort: i,
+	}));
+	if (departments.length > 0) payload.departments = departments;
+
+	const treatments: PreviewTreatment[] = [];
+	if (Array.isArray(draft?.treatments)) {
+		draft.treatments.forEach((raw, i) => {
+			const row = asObject(raw);
+			const name = strOrEmpty(row?.name);
+			if (!name) return;
+			const treatment: PreviewTreatment = {
+				no: i + 1,
+				name,
+				sort: treatments.length,
+			};
+			const price = strOrEmpty(row?.price_info);
+			if (price) treatment.price_info = price;
+			const desc = strOrEmpty(row?.description);
+			if (desc) treatment.description = desc;
+			treatments.push(treatment);
+		});
+	}
+	if (treatments.length > 0) payload.treatments = treatments;
+
+	const photos = urlList(draft?.photos).map((url, i) => ({
+		no: i + 1,
+		url,
+		sort: i,
+	}));
+	if (photos.length > 0) payload.photos = photos;
+
+	return payload;
+}
+
+/**
  * 자유 텍스트 진료시간(평일/토/일) → `BusinessHours` v2(§4.6).
  * "09:00-18:00"/"09:00~18:00" → {open,close}, "휴진"/"휴무"/빈 값 → 미반영(주말은 closed).
  */
@@ -266,4 +342,60 @@ function compactRecord(
 		if (trimmed) out[key] = trimmed;
 	}
 	return Object.keys(out).length > 0 ? out : undefined;
+}
+
+// ── draft 방어 파싱 헬퍼(buildPreviewPayloadFromDraft 전용) ──────────────
+
+/** unknown → 객체(아니면 null). */
+function asObject(value: unknown): Record<string, unknown> | null {
+	return value && typeof value === "object" && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: null;
+}
+
+/** unknown → trim된 문자열(비었으면 ""). */
+function strOrEmpty(value: unknown): string {
+	return typeof value === "string" ? value.trim() : "";
+}
+
+/** target[key]에 trim된 문자열 값을 채운다(빈 값은 건너뜀). 문자열 필드 전용. */
+function assignStr<T, K extends keyof T>(
+	target: T,
+	key: K,
+	value: unknown,
+): void {
+	const trimmed = strOrEmpty(value);
+	if (trimmed) target[key] = trimmed as T[K];
+}
+
+/** 레코드에서 문자열 값만 추려 trim(비문자/빈값 제외). */
+function onlyStringValues(
+	obj: Record<string, unknown>,
+): Record<string, string> {
+	const out: Record<string, string> = {};
+	for (const [key, value] of Object.entries(obj)) {
+		const trimmed = strOrEmpty(value);
+		if (trimmed) out[key] = trimmed;
+	}
+	return out;
+}
+
+/** string[] 또는 {name}[] → 이름 문자열 배열(빈값/중복 제거 없이 순서 유지). */
+function nameList(value: unknown): string[] {
+	if (!Array.isArray(value)) return [];
+	return value
+		.map((item) =>
+			typeof item === "string" ? item.trim() : strOrEmpty(asObject(item)?.name),
+		)
+		.filter(Boolean);
+}
+
+/** string[] 또는 {url}[] → URL 문자열 배열(빈값 제외, 순서 유지). */
+function urlList(value: unknown): string[] {
+	if (!Array.isArray(value)) return [];
+	return value
+		.map((item) =>
+			typeof item === "string" ? item.trim() : strOrEmpty(asObject(item)?.url),
+		)
+		.filter(Boolean);
 }
