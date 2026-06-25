@@ -267,13 +267,12 @@ const COLLECTIONS: CollConfig[] = [
 	},
 ];
 
+// 프로필 공개 템플릿(template_key) — green/purple/mono/blue 4종.
 const TEMPLATE_OPTIONS = [
-	{ value: "default", label: "기본" },
-	{ value: "t1", label: "시안 1" },
-	{ value: "t2", label: "시안 2" },
-	{ value: "t3", label: "시안 3" },
-	{ value: "t4", label: "시안 4" },
-	{ value: "t5", label: "시안 5" },
+	{ value: "blue", label: "블루" },
+	{ value: "green", label: "그린" },
+	{ value: "purple", label: "퍼플" },
+	{ value: "mono", label: "모노" },
 ];
 
 const GENDER_OPTIONS = [
@@ -1170,7 +1169,7 @@ function BasicInfoSection({
 				<Field>
 					<FieldLabel>공개 프로필 시안</FieldLabel>
 					<FieldSelect
-						value={state.core.template_key || "default"}
+						value={state.core.template_key || "blue"}
 						onValueChange={set("template_key")}
 						options={TEMPLATE_OPTIONS}
 					/>

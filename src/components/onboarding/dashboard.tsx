@@ -4,6 +4,7 @@ import {
 	ArrowRight,
 	CreditCard,
 	ExternalLink,
+	IdCard,
 	Loader2,
 	MessageSquareText,
 	PenLine,
@@ -129,6 +130,9 @@ export function OnboardingDashboard({
 									onClick={() => setMenuOpen(false)}
 								/>
 								<div className="absolute right-0 z-20 mt-2 w-full overflow-hidden rounded-xl border border-line bg-surface p-1.5 shadow-[0_16px_40px_-12px_rgba(0,0,0,0.25)] sm:w-64">
+									<p className="px-3 pt-1.5 pb-1 text-xs font-medium text-muted-fg">
+										병원 홈페이지
+									</p>
 									<button
 										type="button"
 										onClick={() => {
@@ -158,10 +162,32 @@ export function OnboardingDashboard({
 										<PenLine className="mt-0.5 size-5 shrink-0 text-brand" />
 										<span className="flex flex-col">
 											<span className="text-sm font-semibold text-ink">
-												직접 입력하기
+												병원 직접 입력
 											</span>
 											<span className="text-xs text-body-soft">
-												한 폼에 전체 정보를 한 번에 입력
+												병원 정보를 한 폼에 입력
+											</span>
+										</span>
+									</button>
+									<div className="my-1.5 h-px bg-line" />
+									<p className="px-3 pt-0.5 pb-1 text-xs font-medium text-muted-fg">
+										의사 프로필
+									</p>
+									<button
+										type="button"
+										onClick={() => {
+											setMenuOpen(false);
+											navigate({ to: "/doctor/profile" });
+										}}
+										className="flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-brand-50"
+									>
+										<IdCard className="mt-0.5 size-5 shrink-0 text-brand" />
+										<span className="flex flex-col">
+											<span className="text-sm font-semibold text-ink">
+												프로필 작성·관리
+											</span>
+											<span className="text-xs text-body-soft">
+												의사 프로필을 직접 작성·수정
 											</span>
 										</span>
 									</button>
@@ -188,14 +214,14 @@ export function OnboardingDashboard({
 							아직 만든 항목이 없어요
 						</p>
 						<p className="text-sm text-body-soft">
-							대화형 또는 직접 입력으로 병원 홈페이지·의사 프로필을 만들어
-							보세요.
+							병원 홈페이지는 대화형·직접 입력으로, 의사 프로필은 프로필
+							관리에서 따로 만들 수 있어요.
 						</p>
 					</div>
-					<div className="flex flex-col gap-2 sm:flex-row">
+					<div className="flex flex-col flex-wrap justify-center gap-2 sm:flex-row">
 						<Button variant="brand" size="2xl" onClick={onStartConversation}>
 							<MessageSquareText className="size-5" />
-							대화형으로 만들기
+							대화형으로 병원 만들기
 						</Button>
 						<Button
 							variant="neutral-outline"
@@ -203,7 +229,15 @@ export function OnboardingDashboard({
 							onClick={() => navigate({ to: "/onboarding/direct" })}
 						>
 							<PenLine className="size-5" />
-							직접 입력하기
+							병원 직접 입력
+						</Button>
+						<Button
+							variant="neutral-outline"
+							size="2xl"
+							onClick={() => navigate({ to: "/doctor/profile" })}
+						>
+							<IdCard className="size-5" />
+							의사 프로필 작성
 						</Button>
 					</div>
 				</SectionCard>

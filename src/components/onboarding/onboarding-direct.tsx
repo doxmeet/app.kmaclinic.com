@@ -27,8 +27,6 @@ import {
 	FieldLabel,
 } from "#/components/form/field.tsx";
 import { FieldInput } from "#/components/form/field-input.tsx";
-import { OptionButton, OptionGroup } from "#/components/form/option-group.tsx";
-import { FieldSelect } from "#/components/form/select-field.tsx";
 import { AppShell } from "#/components/layout/app-shell.tsx";
 import { CommitComplete } from "#/components/onboarding/commit-complete.tsx";
 import { Button } from "#/components/ui/button.tsx";
@@ -38,9 +36,7 @@ import {
 	type HospitalOnboardingInput,
 	hospitalOnboarding,
 	type PaymentIntent,
-	type ProfileOnboardingInput,
 	patchDraft,
-	profileOnboarding,
 	startSession,
 } from "#/lib/api/onboarding.ts";
 import { type RefClinic, searchClinics } from "#/lib/api/ref.ts";
@@ -50,13 +46,12 @@ import { uploadFileToStorage } from "#/lib/upload.ts";
 import { cn } from "#/lib/utils.ts";
 
 /**
- * 일괄(직접) 입력 온보딩 — 문서 §8.3.
- * 대화형 온보딩(`/onboarding`)과 달리, 전체 정보를 한 폼으로 받아 한 요청에 즉시 생성한다.
+ * 병원 홈페이지 직접 입력 — 문서 §8.3 `POST /onboarding/hospital`.
+ * 대화형 온보딩(`/onboarding`)과 달리 전체 정보를 한 폼으로 받아 한 요청에 병원을 생성한다.
  *
- * ⚠ 병원/프로필 생성은 **완전히 분리**되어 선택(입력 유형)에 따라 다른 엔드포인트로 보낸다:
- *  - 병원 홈페이지(유료) → `POST /onboarding/hospital` (프로필 만들지 않음, 결제로 이어짐)
- *  - 의사 프로필(무료)   → `POST /onboarding/profile`  (병원 만들지 않음)
- * 성공 결과(무료 완료/toss 결제)는 대화형과 동일하게 `CommitComplete` 가 처리한다.
+ * ⚠ **병원 전용**이다. 의사 프로필 생성·수정은 완전히 분리되어 프로필 관리 페이지
+ * (`/doctor/profile`)에서만 한다 — 이 폼에는 프로필 입력이 없다.
+ * 성공 결과(결제 유도)는 대화형과 동일하게 `CommitComplete` 가 처리한다.
  */
 export function DirectOnboardingPage() {
 	return (
@@ -84,138 +79,6 @@ const TEMPLATES: { key: string; label: string; desc: string }[] = [
 	{ key: "t4", label: "시안 4", desc: "모노 · 미니멀 클리닉형" },
 	{ key: "t5", label: "시안 5", desc: "포인트 컬러 · 캠페인/이벤트 강조형" },
 ];
-
-// 학위/면허/수련 구분 enum — wildcard.kmadoc.com `entity-configs.ts`(프로필 subentity 스키마) 기준.
-const DEGREE_TYPES = [
-	{ value: "high_school", label: "고등학교" },
-	{ value: "bachelor", label: "학사" },
-	{ value: "master", label: "석사" },
-	{ value: "doctorate", label: "박사" },
-];
-const LICENSE_TYPES = [
-	{ value: "doctor", label: "의사면허" },
-	{ value: "specialist", label: "전문의" },
-	{ value: "subspecialist", label: "분과/세부전문의" },
-];
-const TRAINING_TYPES = [
-	{ value: "intern", label: "인턴" },
-	{ value: "resident", label: "레지던트" },
-	{ value: "fellow", label: "펠로우" },
-];
-
-/** 반복 입력 행의 필드 서술자(generic subentity 에디터용). */
-type RowFieldDef = {
-	name: string;
-	placeholder: string;
-	kind?: "text" | "year" | "select";
-	options?: { value: string; label: string }[];
-};
-
-/**
- * 프로필 subentity 정의(문서 §8.3 `subentities`). 순서·필드명은
- * wildcard.kmadoc.com `entity-configs.ts`(저장 스키마)를 따른다.
- * education/career 는 기존 폼(문서 예시 필드명)을 유지하고 degree_type 만 추가.
- * schedule 의 주간 그리드(grid)는 별도 편집기 영역이라 여기선 기관/역할만 받는다.
- */
-const SUBENTITIES: {
-	key: string;
-	title: string;
-	addLabel: string;
-	fields: RowFieldDef[];
-}[] = [
-	{
-		key: "education",
-		title: "학력",
-		addLabel: "학력 추가",
-		fields: [
-			{
-				name: "degree_type",
-				placeholder: "학위",
-				kind: "select",
-				options: DEGREE_TYPES,
-			},
-			{ name: "official_degree", placeholder: "학위명 (예: 의학박사)" },
-			{
-				name: "graduation_year",
-				placeholder: "졸업연도 (예: 2013)",
-				kind: "year",
-			},
-		],
-	},
-	{
-		key: "license",
-		title: "면허·자격",
-		addLabel: "면허/자격 추가",
-		fields: [
-			{
-				name: "license_type",
-				placeholder: "구분",
-				kind: "select",
-				options: LICENSE_TYPES,
-			},
-			{ name: "specialty", placeholder: "진료과/분과" },
-			{ name: "license_number", placeholder: "면허번호" },
-		],
-	},
-	{
-		key: "training",
-		title: "수련",
-		addLabel: "수련 추가",
-		fields: [
-			{
-				name: "training_type",
-				placeholder: "구분",
-				kind: "select",
-				options: TRAINING_TYPES,
-			},
-			{ name: "hospital_name", placeholder: "병원명" },
-			{ name: "department", placeholder: "진료과" },
-		],
-	},
-	{
-		key: "career",
-		title: "경력",
-		addLabel: "경력 추가",
-		fields: [
-			{ name: "institution_name", placeholder: "기관명 (예: 행복내과의원)" },
-			{ name: "role", placeholder: "역할 (예: 원장)" },
-			{ name: "start_year", placeholder: "시작연도 (예: 2018)", kind: "year" },
-		],
-	},
-	{
-		key: "society",
-		title: "학회",
-		addLabel: "학회 추가",
-		fields: [
-			{ name: "name_text", placeholder: "학회명" },
-			{ name: "position", placeholder: "직위 (예: 정회원, 이사)" },
-		],
-	},
-	{
-		key: "paper",
-		title: "논문",
-		addLabel: "논문 추가",
-		fields: [
-			{ name: "title", placeholder: "논문 제목" },
-			{ name: "journal", placeholder: "학술지" },
-			{ name: "pub_year", placeholder: "발행연도", kind: "year" },
-		],
-	},
-	{
-		key: "schedule",
-		title: "진료 일정",
-		addLabel: "근무 기관 추가",
-		fields: [
-			{ name: "institution_name", placeholder: "근무 기관" },
-			{ name: "role", placeholder: "역할 (예: 본원)" },
-		],
-	},
-];
-
-/** 빈 subentity 행 맵(섹션 키 → 빈 배열). */
-function emptySubRows(): Record<string, Record<string, string>[]> {
-	return Object.fromEntries(SUBENTITIES.map((s) => [s.key, []]));
-}
 
 type TreatmentRow = {
 	id: string;
@@ -319,15 +182,10 @@ function uploadsReducer(
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// 텍스트 입력 필드 묶음 — 개별 useState 다발을 하나의 reducer로 통합.
-// (프로필/병원/관리자의 단순 문자열 필드만 포함. 파일/배열/세션 상태는 별도 useState.)
+// 텍스트 입력 필드 묶음 — 병원/관리자의 단순 문자열 필드만(파일/배열/세션은 별도).
 // ─────────────────────────────────────────────────────────────────────
 
 type FieldsState = {
-	displayName: string;
-	headline: string;
-	primaryDepartment: string;
-	specialty: string;
 	hospitalName: string;
 	/** ref_clinic 레지스트리에서 선택한 병원 no(문자열, ""=직접입력/미선택). */
 	refClinicNo: string;
@@ -351,10 +209,6 @@ type FieldsState = {
 };
 
 const INITIAL_FIELDS: FieldsState = {
-	displayName: "",
-	headline: "",
-	primaryDepartment: "",
-	specialty: "",
 	hospitalName: "",
 	refClinicNo: "",
 	roadAddress: "",
@@ -393,12 +247,10 @@ function fieldsReducer(state: FieldsState, action: FieldsAction): FieldsState {
 
 // ─────────────────────────────────────────────────────────────────────
 // 파생 검증 — 입력값에서 제출 가능/에러 플래그를 계산(render 중 호출, 순수).
+// 병원 모드: 병원명 + 관리자 아이디·비밀번호 모두 필수(문서 §8.3).
 // ─────────────────────────────────────────────────────────────────────
 
 function deriveValidation(input: {
-	effectiveOwnerChoice: "" | "false" | "true";
-	isClinicOwner: boolean;
-	displayName: string;
 	hospitalName: string;
 	adminLoginId: string;
 	adminPassword: string;
@@ -407,9 +259,6 @@ function deriveValidation(input: {
 	photosUploading: boolean;
 }) {
 	const {
-		effectiveOwnerChoice,
-		isClinicOwner,
-		displayName,
 		hospitalName,
 		adminLoginId,
 		adminPassword,
@@ -419,30 +268,21 @@ function deriveValidation(input: {
 	} = input;
 	const loginIdInvalid =
 		adminLoginId.length > 0 && !LOGIN_ID_RE.test(adminLoginId);
-	// 병원 모드에서는 관리자 아이디·비밀번호 모두 필수(문서 §8.3
-	// ERROR_400_ADMIN_LOGIN_ID_REQUIRED / ERROR_400_ADMIN_PASSWORD_REQUIRED).
-	const loginIdMissing = isClinicOwner && adminLoginId.trim().length === 0;
-	const passwordRequired = isClinicOwner;
+	const loginIdMissing = adminLoginId.trim().length === 0;
 	const passwordMismatch =
 		adminPasswordConfirm.length > 0 && adminPassword !== adminPasswordConfirm;
-	const passwordMissing = passwordRequired && adminPassword.length === 0;
-	// 병원 모드: 병원명 + 관리자 계정. 프로필 모드: 공개용 이름만.
-	const requiredOk = isClinicOwner
-		? hospitalName.trim().length > 0 &&
-			!loginIdMissing &&
-			!loginIdInvalid &&
-			!passwordMissing &&
-			!passwordMismatch
-		: displayName.trim().length > 0;
+	const passwordMissing = adminPassword.length === 0;
 	const canSubmit =
-		effectiveOwnerChoice !== "" &&
-		requiredOk &&
+		hospitalName.trim().length > 0 &&
+		!loginIdMissing &&
+		!loginIdInvalid &&
+		!passwordMissing &&
+		!passwordMismatch &&
 		!logoUploading &&
 		!photosUploading;
 	return {
 		loginIdInvalid,
 		loginIdMissing,
-		passwordRequired,
 		passwordMismatch,
 		passwordMissing,
 		canSubmit,
@@ -451,71 +291,19 @@ function deriveValidation(input: {
 
 // ─────────────────────────────────────────────────────────────────────
 // 페이로드/드래프트 빌더 — 폼 입력 스냅샷에서 §8.3 요청 본문을 만드는 순수 함수.
-// 컴포넌트 본문에서 분리해 module scope에 둔다(상태 의존 없이 입력만 받음).
 // ─────────────────────────────────────────────────────────────────────
 
 type FormInput = {
-	isClinicOwner: boolean;
 	fields: FieldsState;
-	subRows: Record<string, Record<string, string>[]>;
 	departments: string[];
 	treatments: TreatmentRow[];
 	logoUrl: string;
 	photos: string[];
 };
 
-/** 제출 variables — 모드별로 한쪽 본문만 담는다(병원/프로필 생성 완전 분리). */
-type SubmitVars =
-	| { mode: "hospital"; hospital: HospitalOnboardingInput; profile?: undefined }
-	| { mode: "profile"; profile: ProfileOnboardingInput; hospital?: undefined };
-
-/** 프로필 subentity(학력·면허·수련·경력·학회·논문·일정) 직렬화 — 빈 행 제거. */
-function buildSubentities(
-	subRows: Record<string, Record<string, string>[]>,
-): Record<string, unknown> {
-	const subentities: Record<string, unknown> = {};
-	for (const section of SUBENTITIES) {
-		const list: Record<string, unknown>[] = [];
-		for (const row of subRows[section.key] ?? []) {
-			const out: Record<string, unknown> = {};
-			for (const field of section.fields) {
-				const raw = (row[field.name] ?? "").trim();
-				if (!raw) continue;
-				const value = field.kind === "year" ? toYear(raw) : raw;
-				if (value !== undefined) out[field.name] = value;
-			}
-			if (Object.keys(out).length > 0) list.push(out);
-		}
-		if (list.length > 0) subentities[section.key] = list;
-	}
-	return subentities;
-}
-
 /**
- * 프로필만 생성 본문(`POST /onboarding/profile`) — 채워진 값만.
- * 병원 관련 필드는 일절 담지 않는다(병원/프로필 생성 완전 분리, 문서 §8.3).
- */
-function buildProfilePayload(input: FormInput): ProfileOnboardingInput {
-	const { fields, subRows } = input;
-	const payload: ProfileOnboardingInput = {};
-
-	const profile = omitEmpty({
-		display_name: fields.displayName.trim(),
-		headline: fields.headline.trim(),
-		primary_department_text: fields.primaryDepartment.trim(),
-		specialty_text: fields.specialty.trim(),
-	});
-	if (Object.keys(profile).length > 0) payload.profile = profile;
-
-	const subentities = buildSubentities(subRows);
-	if (Object.keys(subentities).length > 0) payload.subentities = subentities;
-
-	return payload;
-}
-
-/**
- * 병원만 생성 본문(`POST /onboarding/hospital`) — 채워진 값만.
- * 의사 프로필/subentity는 담지 않는다. ref_clinic_no가 있으면 빈 칸은 서버가 자동채움한다.
+ * 병원 생성 본문(`POST /onboarding/hospital`) — 채워진 값만.
+ * ref_clinic_no가 있으면 빈 칸은 서버가 자동채움한다.
  */
 function buildHospitalPayload(input: FormInput): HospitalOnboardingInput {
 	const { fields, departments, treatments, logoUrl, photos } = input;
@@ -588,24 +376,14 @@ function buildHospitalPayload(input: FormInput): HospitalOnboardingInput {
 }
 
 /**
- * 자동저장용 draft 직렬화 — 모드에 해당하는 키만 + `mode`(문서 §8.3), **비밀번호 제외**.
+ * 자동저장용 draft 직렬화 — `mode:"hospital"` + 병원 키만, **비밀번호 제외**.
  * PATCH /onboarding/session/draft 는 부분 머지이므로 채워진 값만 보낸다.
  */
-function buildDraft(
-	input: FormInput,
-	mode: "" | "hospital" | "profile",
-): Record<string, unknown> {
-	if (mode === "hospital") {
-		const draft = buildHospitalPayload(input) as Record<string, unknown>;
-		// 안전장치: 비밀번호는 어떤 경우에도 draft에 포함하지 않는다.
-		delete draft.hospital_admin_password;
-		return { mode, ...draft };
-	}
-	if (mode === "profile") {
-		return { mode, ...(buildProfilePayload(input) as Record<string, unknown>) };
-	}
-	// 입력 유형 미선택 — 빈 draft(자동저장 스킵).
-	return {};
+function buildDraft(input: FormInput): Record<string, unknown> {
+	const draft = buildHospitalPayload(input) as Record<string, unknown>;
+	// 안전장치: 비밀번호는 어떤 경우에도 draft에 포함하지 않는다.
+	delete draft.hospital_admin_password;
+	return { mode: "hospital", ...draft };
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -613,50 +391,20 @@ function buildDraft(
 // ─────────────────────────────────────────────────────────────────────
 
 type PrefillHandlers = {
-	setOwnerChoice: React.Dispatch<React.SetStateAction<"" | "false" | "true">>;
 	dispatchFields: React.Dispatch<FieldsAction>;
 	dispatchUploads: React.Dispatch<UploadsAction>;
 	setDepartmentsText: React.Dispatch<React.SetStateAction<string>>;
 	setTreatments: React.Dispatch<React.SetStateAction<TreatmentRow[]>>;
-	setSubRows: React.Dispatch<
-		React.SetStateAction<Record<string, Record<string, string>[]>>
-	>;
 };
 
 function prefillFromDraft(
 	draft: Record<string, unknown>,
 	handlers: PrefillHandlers,
 ) {
-	const {
-		setOwnerChoice,
-		dispatchFields,
-		dispatchUploads,
-		setDepartmentsText,
-		setTreatments,
-		setSubRows,
-	} = handlers;
-
-	// 세션 모드 복원: mode('hospital'|'profile') 우선, 구 is_clinic_owner는 하위호환.
-	const mode =
-		typeof draft.mode === "string"
-			? draft.mode
-			: typeof draft.is_clinic_owner === "boolean"
-				? draft.is_clinic_owner
-					? "hospital"
-					: "profile"
-				: null;
-	if (mode === "hospital") setOwnerChoice("true");
-	else if (mode === "profile") setOwnerChoice("false");
+	const { dispatchFields, dispatchUploads, setDepartmentsText, setTreatments } =
+		handlers;
 
 	const merge: Partial<FieldsState> = {};
-
-	const profile = asObject(draft.profile);
-	if (profile) {
-		merge.displayName = asString(profile.display_name);
-		merge.headline = asString(profile.headline);
-		merge.primaryDepartment = asString(profile.primary_department_text);
-		merge.specialty = asString(profile.specialty_text);
-	}
 
 	const hospital = asObject(draft.hospital);
 	if (hospital) {
@@ -665,14 +413,10 @@ function prefillFromDraft(
 		merge.roadAddress = asString(hospital.road_address);
 		merge.mainPhone = asString(hospital.main_phone);
 		merge.customerCenterPhone = asString(hospital.customer_center_phone);
-		// 자동저장 draft도 template_key로 보관되므로 같은 키로 복원(문서 §8.3).
 		if (asString(hospital.template_key)) {
 			merge.templateKey = asString(hospital.template_key);
 		}
-		dispatchUploads({
-			type: "setLogoUrl",
-			value: asString(hospital.logo_url),
-		});
+		dispatchUploads({ type: "setLogoUrl", value: asString(hospital.logo_url) });
 		const businessHours = asObject(hospital.business_hours);
 		if (businessHours) {
 			merge.hoursWeekday = asString(businessHours.weekday);
@@ -719,27 +463,6 @@ function prefillFromDraft(
 				};
 			}),
 		);
-	}
-
-	const subentities = asObject(draft.subentities);
-	if (subentities) {
-		const next = emptySubRows();
-		for (const section of SUBENTITIES) {
-			const arr = subentities[section.key];
-			if (!Array.isArray(arr)) continue;
-			next[section.key] = arr.map((raw) => {
-				const row = asObject(raw) ?? {};
-				const out: Record<string, string> = {};
-				for (const field of section.fields) {
-					out[field.name] =
-						field.kind === "year"
-							? yearToText(row[field.name])
-							: asString(row[field.name]);
-				}
-				return out;
-			});
-		}
-		setSubRows(next);
 	}
 
 	if (Array.isArray(draft.photos)) {
@@ -794,7 +517,6 @@ async function handlePhotosUpload(
 
 // ─────────────────────────────────────────────────────────────────────
 // 자동저장 훅 — draft 스냅샷을 debounce PATCH하고 언마운트 시 1회 flush.
-// 컴포넌트와 공유하는 ref(submitted/debounceTimer/justRestored)는 인자로 받는다.
 // ─────────────────────────────────────────────────────────────────────
 
 function useDraftAutosave({
@@ -810,38 +532,29 @@ function useDraftAutosave({
 	debounceTimerRef: React.RefObject<ReturnType<typeof setTimeout> | null>;
 	justRestoredRef: React.RefObject<boolean>;
 }) {
-	const lastSnapshotRef = useRef<string | null>(null); // 마지막으로 저장(예약)한 직렬화 스냅샷
-	const latestDraftJsonRef = useRef<string | null>(null); // 언마운트 flush용 최신 draft
-	// 언마운트 flush에서 최신값을 읽기 위한 ref(렌더마다 갱신).
+	const lastSnapshotRef = useRef<string | null>(null);
+	const latestDraftJsonRef = useRef<string | null>(null);
 	latestDraftJsonRef.current = draftSnapshot;
 
 	useEffect(() => {
-		// 복원 진행 중이거나, 제출 완료/결제 복귀 화면이면 자동저장하지 않는다.
 		if (paused || submittedRef.current) return;
 		const draft = JSON.parse(draftSnapshot) as Record<string, unknown>;
-		// 빈 폼이면 호출하지 않음(불필요한 빈 세션 생성 방지).
 		if (isDraftEmptyJson(draft)) return;
-		// 복원 직후 첫 스냅샷은 baseline으로만 채택(즉시 재PATCH 방지).
 		if (justRestoredRef.current) {
 			justRestoredRef.current = false;
 			lastSnapshotRef.current = draftSnapshot;
 			return;
 		}
-		// 직전에 저장(예약)한 스냅샷과 동일하면 재호출하지 않는다.
 		if (lastSnapshotRef.current === draftSnapshot) return;
 
 		const timer = setTimeout(() => {
 			lastSnapshotRef.current = draftSnapshot;
-			patchDraft(draft).catch(() => {
-				// 자동저장 실패는 조용히 무시(폼 사용을 막지 않음).
-			});
+			patchDraft(draft).catch(() => {});
 		}, 1200);
 		debounceTimerRef.current = timer;
 		return () => clearTimeout(timer);
 	}, [draftSnapshot, paused, submittedRef, debounceTimerRef, justRestoredRef]);
 
-	// 언마운트 flush 로직 — 항상 최신 값을 읽도록 effect event로 분리.
-	// (ref들을 cleanup에서 직접 읽지 않으므로 stale-ref 경고/누락 deps가 없다.)
 	const flushOnUnmount = useEffectEvent(() => {
 		if (submittedRef.current) return;
 		if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
@@ -853,18 +566,14 @@ function useDraftAutosave({
 		patchDraft(draft).catch(() => {});
 	});
 
-	// 언마운트 시 마지막 변경분 1회 flush(최신 값은 effect event가 읽는다).
 	useEffect(() => {
 		return () => flushOnUnmount();
 	}, []);
 }
 
 function DirectOnboardingForm() {
-	const { user, account } = useSession();
+	const { user } = useSession();
 	const queryClient = useQueryClient();
-
-	// 의사 프로필이 이미 있으면 '의사 프로필만(무료)' 경로는 중복이라 막는다.
-	const hasProfile = account?.profile != null;
 
 	// 진입/세션 상태(성공 결과 · 복원 가드 · 결제 복귀 · 이어하기 안내) — 단일 reducer.
 	const [session, dispatchSession] = useReducer(
@@ -873,23 +582,10 @@ function DirectOnboardingForm() {
 	);
 	const { result, restoring, pendingPayment, restoredNotice } = session;
 
-	// 1. 입력 유형 — "" 미선택 / "false" 프로필만 / "true" 병원까지.
-	// 프로필이 이미 있으면 남는 유일 경로(병원까지)를 렌더 시점에 강제한다.
-	const [ownerChoice, setOwnerChoice] = useState<"" | "false" | "true">("");
-	const effectiveOwnerChoice: "" | "false" | "true" = hasProfile
-		? "true"
-		: ownerChoice;
-	const isClinicOwner = effectiveOwnerChoice === "true";
-
-	// 2~4. 프로필/병원/관리자 텍스트 필드(단일 reducer). 부모는 검증용 값만 분해.
+	// 병원/관리자 텍스트 필드(단일 reducer).
 	const [fields, dispatchFields] = useReducer(fieldsReducer, INITIAL_FIELDS);
-	const {
-		displayName,
-		hospitalName,
-		adminLoginId,
-		adminPassword,
-		adminPasswordConfirm,
-	} = fields;
+	const { hospitalName, adminLoginId, adminPassword, adminPasswordConfirm } =
+		fields;
 	const setField = (field: keyof FieldsState, value: string) =>
 		dispatchFields({ type: "set", field, value });
 
@@ -900,34 +596,27 @@ function DirectOnboardingForm() {
 	);
 	const { logoUrl, logoUploading, photos, photosUploading } = uploads;
 
-	// 5~7. 진료과목 / 비급여 항목 / 경력·학력·이력(subentity, 선택).
+	// 진료과목 / 비급여 항목.
 	const [departmentsText, setDepartmentsText] = useState("");
 	const [treatments, setTreatments] = useState<TreatmentRow[]>([]);
-	const [subRows, setSubRows] =
-		useState<Record<string, Record<string, string>[]>>(emptySubRows);
 
 	const logoInputRef = useRef<HTMLInputElement>(null);
 	const photosInputRef = useRef<HTMLInputElement>(null);
 
-	// 자동저장/복원용 ref(자동저장 내부 ref는 useDraftAutosave가 보유).
-	const restoreStartedRef = useRef(false); // startSession 1회 가드
-	const submittedRef = useRef(false); // 제출 성공 후 자동저장 중단
+	// 자동저장/복원용 ref.
+	const restoreStartedRef = useRef(false);
+	const submittedRef = useRef(false);
 	const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-	const justRestoredRef = useRef(false); // 복원 직후 첫 스냅샷을 baseline으로만 채택
+	const justRestoredRef = useRef(false);
 
-	// ── 파생 검증 상태(render 중 계산, module-scope 순수 함수) ────────
 	const departments = parseLines(departmentsText);
 	const {
 		loginIdInvalid,
 		loginIdMissing,
-		passwordRequired,
 		passwordMismatch,
 		passwordMissing,
 		canSubmit,
 	} = deriveValidation({
-		effectiveOwnerChoice,
-		isClinicOwner,
-		displayName,
 		hospitalName,
 		adminLoginId,
 		adminPassword,
@@ -937,14 +626,10 @@ function DirectOnboardingForm() {
 	});
 
 	// ── 제출 ────────────────────────────────────────────────────────
-	// 입력 유형에 따라 전용 엔드포인트로 보낸다(병원/프로필 생성 완전 분리, 문서 §8.3).
 	const mutation = useMutation({
-		mutationFn: (vars: SubmitVars) =>
-			vars.mode === "hospital"
-				? hospitalOnboarding(vars.hospital)
-				: profileOnboarding(vars.profile),
+		mutationFn: (payload: HospitalOnboardingInput) =>
+			hospitalOnboarding(payload),
 		onSuccess: (data) => {
-			// 제출 성공 이후로는 자동저장(언마운트 flush 포함)이 일어나지 않게 한다.
 			submittedRef.current = true;
 			if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
 			dispatchSession({ type: "setResult", value: data });
@@ -953,17 +638,13 @@ function DirectOnboardingForm() {
 		onError: (err) => toastApiError(err),
 	});
 
-	// 로고/사진 업로드 핸들러 — 로직은 module scope. dispatchUploads만 바인딩.
 	const handleLogoPick = (e: React.ChangeEvent<HTMLInputElement>) =>
 		handleLogoUpload(e, dispatchUploads);
 	const handlePhotosPick = (e: React.ChangeEvent<HTMLInputElement>) =>
 		handlePhotosUpload(e, dispatchUploads);
 
-	// 현재 폼 입력을 한 객체로 묶어 module-scope의 순수 builder에 넘긴다.
 	const formInput: FormInput = {
-		isClinicOwner,
 		fields,
-		subRows,
 		departments,
 		treatments,
 		logoUrl,
@@ -971,8 +652,6 @@ function DirectOnboardingForm() {
 	};
 
 	// ── 진입 복원 (mount 1회) ────────────────────────────────────────
-	// 복원 본문은 effect event로 분리 — 최신 디스패처/세터를 읽으므로 mount effect의
-	// 의존성이 진짜로 없다(StrictMode 이중 mount는 restoreStartedRef로 가드).
 	const restore = useEffectEvent(async () => {
 		if (restoreStartedRef.current) return;
 		restoreStartedRef.current = true;
@@ -986,17 +665,21 @@ function DirectOnboardingForm() {
 				});
 				return;
 			}
-			// 이어하기 가능 → 저장된 draft로 폼 프리필.
-			if (view.resumable === true && view.draft) {
-				prefillFromDraft(view.draft as Record<string, unknown>, {
-					setOwnerChoice,
+			// 이어하기 가능 + 병원 모드 draft → 폼 프리필(프로필 draft는 무시).
+			const draft = view.draft as Record<string, unknown> | null | undefined;
+			const isHospitalDraft =
+				draft != null &&
+				(draft.mode === "hospital" ||
+					draft.mode == null ||
+					draft.is_clinic_owner === true ||
+					draft.hospital != null);
+			if (view.resumable === true && draft && isHospitalDraft) {
+				prefillFromDraft(draft, {
 					dispatchFields,
 					dispatchUploads,
 					setDepartmentsText,
 					setTreatments,
-					setSubRows,
 				});
-				// 복원 직후 첫 스냅샷은 baseline으로만 채택(즉시 재PATCH 방지).
 				justRestoredRef.current = true;
 				dispatchSession({ type: "setRestoredNotice", value: true });
 			}
@@ -1011,11 +694,7 @@ function DirectOnboardingForm() {
 	}, []);
 
 	// ── 자동저장 (debounce ~1200ms) + 언마운트 flush ─────────────────
-	// 세션 모드 — 입력 유형 선택 결과(미선택 ""은 자동저장 스킵).
-	const mode: "" | "hospital" | "profile" =
-		effectiveOwnerChoice === "" ? "" : isClinicOwner ? "hospital" : "profile";
-	// 현재 폼 상태를 매 렌더 직렬화(비번 제외). 문자열이라 deps로 안전하게 비교 가능.
-	const draftSnapshot = JSON.stringify(buildDraft(formInput, mode));
+	const draftSnapshot = JSON.stringify(buildDraft(formInput));
 	useDraftAutosave({
 		draftSnapshot,
 		paused: restoring || Boolean(result) || Boolean(pendingPayment),
@@ -1027,17 +706,11 @@ function DirectOnboardingForm() {
 	function handleSubmit(e: React.FormEvent) {
 		e.preventDefault();
 		if (!canSubmit || mutation.isPending) return;
-		mutation.mutate(
-			isClinicOwner
-				? { mode: "hospital", hospital: buildHospitalPayload(formInput) }
-				: { mode: "profile", profile: buildProfilePayload(formInput) },
-		);
+		mutation.mutate(buildHospitalPayload(formInput));
 	}
 
 	const shellUserName = user?.name ?? "원장님";
 
-	// 진입 복원 조회 중 — 깜빡임 방지용 짧은 스피너(폼 노출 전).
-	// 조회가 느려도 막다른 화면이 되지 않도록 "대화형으로 만들기" 링크는 항상 노출.
 	if (restoring) {
 		return (
 			<Shell userName={shellUserName}>
@@ -1066,100 +739,63 @@ function DirectOnboardingForm() {
 	return (
 		<Shell userName={shellUserName}>
 			<form onSubmit={handleSubmit} className="flex flex-col gap-6">
-				{/* 상단 안내 + 대화형 토글(온보딩의 "한 번에 입력하기"와 동일 위치: 우상단) */}
 				<div className="flex flex-col gap-1">
 					<PageHeader />
 					<p className="text-[15px] leading-7 text-body-soft">
-						모든 정보를 한 번에 입력해 프로필 또는 병원 홈페이지를 바로
-						생성합니다.
+						병원 정보를 한 번에 입력해 병원 홈페이지를 바로 생성합니다.
 					</p>
 				</div>
 
-				{/* 이어하기 안내 — 저장된 이전 입력을 불러온 경우 */}
 				{restoredNotice ? (
 					<InfoCallout tone="info">
 						<p className="text-sm">
 							이전에 입력하던 내용을 불러왔습니다. 이어서 작성해 주세요.
-							{isClinicOwner ? " (비밀번호는 다시 입력해 주세요.)" : ""}
+							(비밀번호는 다시 입력해 주세요.)
 						</p>
 					</InfoCallout>
 				) : null}
 
-				{/* 1. 입력 유형 */}
-				<OwnerChoiceSection
-					hasProfile={hasProfile}
-					isClinicOwner={isClinicOwner}
-					effectiveOwnerChoice={effectiveOwnerChoice}
-					setOwnerChoice={setOwnerChoice}
+				<HospitalInfoSection
+					fields={fields}
+					setField={setField}
+					logoUrl={logoUrl}
+					logoUploading={logoUploading}
+					logoInputRef={logoInputRef}
+					onLogoPick={handleLogoPick}
+					dispatchUploads={dispatchUploads}
 				/>
 
-				{/* 프로필 모드: 의사 프로필 + 경력·학력·이력만(병원은 만들지 않음) */}
-				{effectiveOwnerChoice === "false" ? (
-					<>
-						{/* 2. 의사 프로필 */}
-						<DoctorProfileSection fields={fields} setField={setField} />
+				<HospitalAdminSection
+					fields={fields}
+					setField={setField}
+					loginIdInvalid={loginIdInvalid}
+					loginIdMissing={loginIdMissing}
+					passwordMissing={passwordMissing}
+					passwordMismatch={passwordMismatch}
+				/>
 
-						{/* 3. 경력·학력·이력 (선택) — 문서 §8.3 subentities */}
-						<SubentitiesSection subRows={subRows} setSubRows={setSubRows} />
-					</>
-				) : null}
+				<DepartmentsSection
+					departmentsText={departmentsText}
+					setDepartmentsText={setDepartmentsText}
+					departments={departments}
+				/>
 
-				{/* 병원 모드: 병원 정보·관리자·진료과목·비급여·사진만(프로필은 만들지 않음) */}
-				{isClinicOwner ? (
-					<>
-						{/* 2. 병원 정보 */}
-						<HospitalInfoSection
-							fields={fields}
-							setField={setField}
-							logoUrl={logoUrl}
-							logoUploading={logoUploading}
-							logoInputRef={logoInputRef}
-							onLogoPick={handleLogoPick}
-							dispatchUploads={dispatchUploads}
-						/>
+				<TreatmentsSection
+					treatments={treatments}
+					setTreatments={setTreatments}
+				/>
 
-						{/* 3. 병원 관리자 */}
-						<HospitalAdminSection
-							fields={fields}
-							setField={setField}
-							loginIdInvalid={loginIdInvalid}
-							loginIdMissing={loginIdMissing}
-							passwordRequired={passwordRequired}
-							passwordMissing={passwordMissing}
-							passwordMismatch={passwordMismatch}
-						/>
+				<PhotosSection
+					photos={photos}
+					photosUploading={photosUploading}
+					photosInputRef={photosInputRef}
+					onPick={handlePhotosPick}
+					dispatchUploads={dispatchUploads}
+				/>
 
-						{/* 4. 진료과목 */}
-						<DepartmentsSection
-							departmentsText={departmentsText}
-							setDepartmentsText={setDepartmentsText}
-							departments={departments}
-						/>
-
-						{/* 5. 비급여 항목 */}
-						<TreatmentsSection
-							treatments={treatments}
-							setTreatments={setTreatments}
-						/>
-
-						{/* 6. 병원 사진 */}
-						<PhotosSection
-							photos={photos}
-							photosUploading={photosUploading}
-							photosInputRef={photosInputRef}
-							onPick={handlePhotosPick}
-							dispatchUploads={dispatchUploads}
-						/>
-					</>
-				) : null}
-
-				{/* 제출 */}
 				<SubmitSection
 					canSubmit={canSubmit}
 					isPending={mutation.isPending}
-					effectiveOwnerChoice={effectiveOwnerChoice}
-					isClinicOwner={isClinicOwner}
-					displayName={displayName}
 					hospitalName={hospitalName}
 					loginIdInvalid={loginIdInvalid}
 					loginIdMissing={loginIdMissing}
@@ -1173,13 +809,11 @@ function DirectOnboardingForm() {
 
 // ─────────────────────────────────────────────────────────────────────
 // 하위 컴포넌트 — 섹션 단위 폼(부모 본문을 작게 유지).
-// 각 섹션은 자체 useId로 라벨/입력을 연결한다(부모에서 id를 내려주지 않음).
 // ─────────────────────────────────────────────────────────────────────
 
 type SetField = (field: keyof FieldsState, value: string) => void;
-type OwnerChoice = "" | "false" | "true";
 
-/** 공통 AppShell 래퍼(4개 렌더 분기에서 동일 props 사용). */
+/** 공통 AppShell 래퍼(렌더 분기에서 동일 props 사용). */
 function Shell({
 	userName,
 	children,
@@ -1199,7 +833,7 @@ function PageHeader() {
 	return (
 		<div className="flex items-center justify-between gap-3">
 			<h1 className="text-xl font-bold text-ink sm:text-2xl">
-				직접 입력으로 만들기
+				병원 홈페이지 직접 입력
 			</h1>
 			<Link
 				to="/onboarding"
@@ -1211,86 +845,10 @@ function PageHeader() {
 	);
 }
 
-/** 1. 입력 유형 섹션(프로필만/병원까지 선택 + 안내). */
-function OwnerChoiceSection({
-	hasProfile,
-	isClinicOwner,
-	effectiveOwnerChoice,
-	setOwnerChoice,
-}: {
-	hasProfile: boolean;
-	isClinicOwner: boolean;
-	effectiveOwnerChoice: OwnerChoice;
-	setOwnerChoice: React.Dispatch<React.SetStateAction<OwnerChoice>>;
-}) {
-	return (
-		<SectionCard className="flex flex-col gap-5">
-			<SectionTitle>입력 유형</SectionTitle>
-			<OptionGroup
-				value={effectiveOwnerChoice}
-				onValueChange={(v) => setOwnerChoice(v as "false" | "true")}
-			>
-				{/* 이미 의사 프로필이 있으면 '의사 프로필' 경로는 숨긴다(중복 생성 방지). */}
-				{hasProfile ? null : (
-					<OptionButton value="false" fluid>
-						의사 프로필 (무료)
-					</OptionButton>
-				)}
-				<OptionButton value="true" fluid>
-					병원 홈페이지 (유료)
-				</OptionButton>
-			</OptionGroup>
-			<InfoCallout tone="info">
-				<p className="text-sm">
-					{hasProfile
-						? "이미 의사 프로필이 있어 병원 홈페이지를 만들 수 있어요. 병원 홈페이지는 정기 결제(카드 등록) 후 공개됩니다."
-						: isClinicOwner
-							? "병원 홈페이지만 생성합니다(프로필은 만들지 않아요). 정기 결제(카드 등록) 후 공개되며, 생성 직후 결제 단계로 이어집니다."
-							: effectiveOwnerChoice === "false"
-								? "의사 프로필만 무료로 생성합니다(병원 홈페이지는 만들지 않아요)."
-								: "의사 프로필을 만들지, 병원 홈페이지를 만들지 선택해 주세요."}
-				</p>
-			</InfoCallout>
-		</SectionCard>
-	);
-}
-
-/** 7. 경력·학력·이력(프로필/병원 공통, 선택) 섹션. */
-function SubentitiesSection({
-	subRows,
-	setSubRows,
-}: {
-	subRows: Record<string, Record<string, string>[]>;
-	setSubRows: React.Dispatch<
-		React.SetStateAction<Record<string, Record<string, string>[]>>
-	>;
-}) {
-	return (
-		<SectionCard className="flex flex-col gap-6">
-			<SectionTitle>경력·학력·이력 (선택)</SectionTitle>
-			{SUBENTITIES.map((section) => (
-				<SubentityEditor
-					key={section.key}
-					title={section.title}
-					addLabel={section.addLabel}
-					fields={section.fields}
-					rows={subRows[section.key] ?? []}
-					onChange={(next) =>
-						setSubRows((prev) => ({ ...prev, [section.key]: next }))
-					}
-				/>
-			))}
-		</SectionCard>
-	);
-}
-
 /** 제출 버튼 + 미충족 안내문. */
 function SubmitSection({
 	canSubmit,
 	isPending,
-	effectiveOwnerChoice,
-	isClinicOwner,
-	displayName,
 	hospitalName,
 	loginIdInvalid,
 	loginIdMissing,
@@ -1299,9 +857,6 @@ function SubmitSection({
 }: {
 	canSubmit: boolean;
 	isPending: boolean;
-	effectiveOwnerChoice: OwnerChoice;
-	isClinicOwner: boolean;
-	displayName: string;
 	hospitalName: string;
 	loginIdInvalid: boolean;
 	loginIdMissing: boolean;
@@ -1310,23 +865,19 @@ function SubmitSection({
 }) {
 	return (
 		<div className="flex flex-col gap-3">
-			{!canSubmit && effectiveOwnerChoice !== "" ? (
+			{!canSubmit ? (
 				<p className="text-sm text-body-soft">
-					{isClinicOwner
-						? hospitalName.trim().length === 0
-							? "병원명을 입력해 주세요."
-							: loginIdMissing
-								? "관리자 아이디를 입력해 주세요."
-								: loginIdInvalid
-									? `관리자 아이디는 ${LOGIN_ID_HINT}만 사용할 수 있습니다.`
-									: passwordMissing
-										? "관리자 비밀번호를 입력해 주세요."
-										: passwordMismatch
-											? "비밀번호가 일치하지 않습니다."
-											: "파일 업로드가 끝나면 제출할 수 있어요."
-						: displayName.trim().length === 0
-							? "공개용 이름을 입력해 주세요."
-							: "파일 업로드가 끝나면 제출할 수 있어요."}
+					{hospitalName.trim().length === 0
+						? "병원명을 입력해 주세요."
+						: loginIdMissing
+							? "관리자 아이디를 입력해 주세요."
+							: loginIdInvalid
+								? `관리자 아이디는 ${LOGIN_ID_HINT}만 사용할 수 있습니다.`
+								: passwordMissing
+									? "관리자 비밀번호를 입력해 주세요."
+									: passwordMismatch
+										? "비밀번호가 일치하지 않습니다."
+										: "파일 업로드가 끝나면 제출할 수 있어요."}
 				</p>
 			) : null}
 			<Button
@@ -1337,66 +888,9 @@ function SubmitSection({
 				disabled={!canSubmit || isPending}
 			>
 				{isPending ? <Loader2 className="size-5 animate-spin" /> : null}
-				{isClinicOwner ? "병원 홈페이지 생성하기" : "프로필 생성하기"}
+				병원 홈페이지 생성하기
 			</Button>
 		</div>
-	);
-}
-
-/** 2. 의사 프로필 섹션. */
-function DoctorProfileSection({
-	fields,
-	setField,
-}: {
-	fields: FieldsState;
-	setField: SetField;
-}) {
-	const displayNameId = useId();
-	const headlineId = useId();
-	const primaryDeptId = useId();
-	const specialtyId = useId();
-	return (
-		<SectionCard className="flex flex-col gap-6">
-			<SectionTitle>의사 프로필</SectionTitle>
-			<Field>
-				<FieldLabel htmlFor={displayNameId} required>
-					이름 (공개용)
-				</FieldLabel>
-				<FieldInput
-					id={displayNameId}
-					value={fields.displayName}
-					onChange={(e) => setField("displayName", e.target.value)}
-					placeholder="예: 김민준"
-				/>
-			</Field>
-			<Field>
-				<FieldLabel htmlFor={headlineId}>한 줄 소개</FieldLabel>
-				<FieldInput
-					id={headlineId}
-					value={fields.headline}
-					onChange={(e) => setField("headline", e.target.value)}
-					placeholder="예: 소화기내과 전문의"
-				/>
-			</Field>
-			<Field>
-				<FieldLabel htmlFor={primaryDeptId}>대표 진료과</FieldLabel>
-				<FieldInput
-					id={primaryDeptId}
-					value={fields.primaryDepartment}
-					onChange={(e) => setField("primaryDepartment", e.target.value)}
-					placeholder="예: 소화기내과"
-				/>
-			</Field>
-			<Field>
-				<FieldLabel htmlFor={specialtyId}>전문 분야</FieldLabel>
-				<FieldInput
-					id={specialtyId}
-					value={fields.specialty}
-					onChange={(e) => setField("specialty", e.target.value)}
-					placeholder="예: 내시경, 위·대장 질환"
-				/>
-			</Field>
-		</SectionCard>
 	);
 }
 
@@ -1450,7 +944,7 @@ function ClinicSearchField({
 	);
 }
 
-/** 3. 병원 정보 섹션(기본 정보·진료시간·시안·로고·SNS). */
+/** 1. 병원 정보 섹션(기본 정보·진료시간·시안·로고·SNS). */
 function HospitalInfoSection({
 	fields,
 	setField,
@@ -1654,13 +1148,12 @@ function HospitalInfoSection({
 	);
 }
 
-/** 4. 병원 관리자 계정 섹션. */
+/** 2. 병원 관리자 계정 섹션. */
 function HospitalAdminSection({
 	fields,
 	setField,
 	loginIdInvalid,
 	loginIdMissing,
-	passwordRequired,
 	passwordMissing,
 	passwordMismatch,
 }: {
@@ -1668,7 +1161,6 @@ function HospitalAdminSection({
 	setField: SetField;
 	loginIdInvalid: boolean;
 	loginIdMissing: boolean;
-	passwordRequired: boolean;
 	passwordMissing: boolean;
 	passwordMismatch: boolean;
 }) {
@@ -1716,7 +1208,7 @@ function HospitalAdminSection({
 				/>
 			</Field>
 			<Field>
-				<FieldLabel htmlFor={adminPwId} required={passwordRequired}>
+				<FieldLabel htmlFor={adminPwId} required>
 					관리자 비밀번호
 				</FieldLabel>
 				<FieldInput
@@ -1728,14 +1220,9 @@ function HospitalAdminSection({
 					autoComplete="new-password"
 					aria-invalid={passwordMissing || undefined}
 				/>
-				{passwordMissing ? (
-					<FieldError>
-						관리자 아이디를 입력하면 비밀번호가 필요합니다.
-					</FieldError>
-				) : null}
 			</Field>
 			<Field>
-				<FieldLabel htmlFor={adminPwConfirmId} required={passwordRequired}>
+				<FieldLabel htmlFor={adminPwConfirmId} required>
 					비밀번호 확인
 				</FieldLabel>
 				<FieldInput
@@ -1755,7 +1242,7 @@ function HospitalAdminSection({
 	);
 }
 
-/** 5. 진료과목 섹션(줄 단위 입력 → 칩 미리보기). */
+/** 3. 진료과목 섹션(줄 단위 입력 → 칩 미리보기). */
 function DepartmentsSection({
 	departmentsText,
 	setDepartmentsText,
@@ -1797,7 +1284,7 @@ function DepartmentsSection({
 	);
 }
 
-/** 6. 비급여 항목 섹션(행 추가/삭제). */
+/** 4. 비급여 항목 섹션(행 추가/삭제). */
 function TreatmentsSection({
 	treatments,
 	setTreatments,
@@ -1879,12 +1366,7 @@ function TreatmentsSection({
 				onClick={() =>
 					setTreatments((prev) => [
 						...prev,
-						{
-							id: nextRowId(),
-							name: "",
-							price_info: "",
-							description: "",
-						},
+						{ id: nextRowId(), name: "", price_info: "", description: "" },
 					])
 				}
 			>
@@ -1895,7 +1377,7 @@ function TreatmentsSection({
 	);
 }
 
-/** 8. 병원 사진 섹션(다중 업로드/삭제). */
+/** 5. 병원 사진 섹션(다중 업로드/삭제). */
 function PhotosSection({
 	photos,
 	photosUploading,
@@ -1965,7 +1447,7 @@ function PhotosSection({
 }
 
 /**
- * 디자인 시안(template_key) 카드 선택기 — wildcard 어드민 TemplatePicker 와 동일 UX.
+ * 디자인 시안(template_key) 카드 선택기.
  * `default`/미지정은 시안1(t1)로 표시.
  */
 function TemplatePicker({
@@ -2011,96 +1493,6 @@ function TemplatePicker({
 				})}
 			</div>
 		</Field>
-	);
-}
-
-/**
- * 반복 입력(subentity) 에디터 — 행 추가/삭제, 필드 서술자(RowFieldDef) 기반 렌더.
- * 학력·면허·수련·경력·학회·논문·일정에서 공통으로 쓰인다.
- */
-function SubentityEditor({
-	title,
-	addLabel,
-	fields,
-	rows,
-	onChange,
-}: {
-	title: string;
-	addLabel: string;
-	fields: RowFieldDef[];
-	rows: Record<string, string>[];
-	onChange: (next: Record<string, string>[]) => void;
-}) {
-	// 행마다 안정 key를 부여(__rid). 추가/삭제 시에도 입력 포커스가 유지된다.
-	function update(index: number, name: string, value: string) {
-		onChange(rows.map((r, i) => (i === index ? { ...r, [name]: value } : r)));
-	}
-	return (
-		<div className="flex flex-col gap-4">
-			<p className="text-sm font-semibold text-ink">{title}</p>
-			{rows.length > 0 ? (
-				<div className="flex flex-col gap-4">
-					{rows.map((row, index) => (
-						<div
-							key={row.__rid ?? `${title}-${index}`}
-							className="flex flex-col gap-3 rounded-xl border border-line p-4 sm:flex-row sm:flex-wrap sm:items-start"
-						>
-							{fields.map((field) =>
-								field.kind === "select" ? (
-									<div key={field.name} className="min-w-40 flex-1">
-										<FieldSelect
-											value={row[field.name] ?? ""}
-											onValueChange={(v) => update(index, field.name, v)}
-											options={field.options ?? []}
-											placeholder={field.placeholder}
-										/>
-									</div>
-								) : (
-									<FieldInput
-										key={field.name}
-										value={row[field.name] ?? ""}
-										onChange={(e) => update(index, field.name, e.target.value)}
-										placeholder={field.placeholder}
-										inputMode={field.kind === "year" ? "numeric" : undefined}
-										className={
-											field.kind === "year" ? "sm:w-40" : "min-w-40 flex-1"
-										}
-									/>
-								),
-							)}
-							<Button
-								type="button"
-								variant="ghost"
-								size="icon"
-								aria-label={`${title} 삭제`}
-								className="shrink-0 self-center"
-								onClick={() => onChange(rows.filter((_, i) => i !== index))}
-							>
-								<Trash2 className="size-4 text-danger-strong" />
-							</Button>
-						</div>
-					))}
-				</div>
-			) : null}
-			<Button
-				type="button"
-				variant="neutral-outline"
-				size="xl"
-				className="self-start"
-				onClick={() =>
-					onChange([
-						...rows,
-						{
-							__rid: nextRowId(),
-							...Object.fromEntries(fields.map((f) => [f.name, ""])),
-						},
-					])
-				}
-			>
-				<Plus className="size-4" />
-				{addLabel}
-			</Button>
-		</div>
 	);
 }
 
@@ -2170,7 +1562,7 @@ function asString(value: unknown): string {
 	return typeof value === "string" ? value : "";
 }
 
-/** 연도(숫자/문자열) → 입력 필드용 텍스트("" 포함). draft 프리필 매핑용. */
+/** 연도/숫자(숫자/문자열) → 입력 필드용 텍스트("" 포함). draft 프리필 매핑용. */
 function yearToText(value: unknown): string {
 	if (typeof value === "number" && Number.isFinite(value)) return String(value);
 	if (typeof value === "string") return value;
