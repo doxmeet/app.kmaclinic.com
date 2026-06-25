@@ -961,9 +961,6 @@ function PhotoSection({
 					)}
 				</div>
 				<div className="flex flex-wrap items-center gap-2">
-					<span className="text-sm text-body-soft">
-						JPG, PNG · 잘리지 않게 원본 그대로 보입니다
-					</span>
 					<div className="flex flex-wrap gap-2 sm:ml-auto">
 						<PhotoUploadButton
 							label={photoUrl ? "사진 변경" : "사진 업로드"}
@@ -1001,9 +998,6 @@ function PhotoSection({
 					)}
 				</div>
 				<div className="flex flex-wrap items-center gap-2">
-					<span className="text-sm text-body-soft">
-						가로형 이미지 권장(예: 1600×500)
-					</span>
 					<div className="flex flex-wrap gap-2 sm:ml-auto">
 						<PhotoUploadButton
 							label={coverUrl ? "배너 변경" : "배너 업로드"}
