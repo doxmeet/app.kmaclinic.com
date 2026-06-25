@@ -211,17 +211,28 @@ export function OnboardingConversation({
 	}
 
 	// 결제 전 전체화면 디자인 시안 선택(병원 완료하기 → 시안 → 관리자 계정 → commit).
+	// "이 디자인으로 계속" → 미리보기 화면을 닫지 않고 그 위로 관리자 계정 다이얼로그를 띄운다.
+	// 입력 완료(commit) 시 commitResult가 채워져 위의 결제 화면으로 전환된다.
 	if (conv.designOpen) {
 		return (
-			<DesignPreviewScreen
-				payload={conv.previewPayload}
-				templateKey={conv.templateKey}
-				onTemplateChange={conv.setTemplateKey}
-				onBack={conv.closeDesign}
-				onConfirm={conv.confirmDesign}
-				confirming={conv.designConfirming}
-				confirmLabel="이 디자인으로 계속"
-			/>
+			<>
+				<DesignPreviewScreen
+					payload={conv.previewPayload}
+					templateKey={conv.templateKey}
+					onTemplateChange={conv.setTemplateKey}
+					onBack={conv.closeDesign}
+					onConfirm={conv.confirmDesign}
+					confirming={conv.designConfirming}
+					confirmLabel="이 디자인으로 계속"
+				/>
+				<AdminCredentialsDialog
+					open={adminDialogOpen}
+					onOpenChange={conv.setAdminDialogOpen}
+					pending={conv.isCommitting}
+					defaultLoginId={conv.draftLoginId}
+					onSubmit={conv.submitAdminCredentials}
+				/>
+			</>
 		);
 	}
 
@@ -414,9 +425,9 @@ function useOnboardingConversation(mode: OnboardingMode) {
 	const patchDraftMutation = useMutation({
 		mutationFn: (tk: string) => patchDraft({ hospital: { template_key: tk } }),
 		onSuccess: () => {
-			setDesignOpen(false);
 			queryClient.invalidateQueries({ queryKey: OVERVIEW_KEY });
-			// 시안 확정 후 관리자 계정 설정 다이얼로그로 이어간다.
+			// 시안 화면은 그대로 둔 채 그 위로 관리자 계정 다이얼로그를 띄운다.
+			// (닫지 않으므로 입력 완료 → commit → 결제까지 미리보기 위에서 이어진다.)
 			dispatch({ type: "setAdminDialogOpen", open: true });
 		},
 		onError: (err) => toastApiError(err),
