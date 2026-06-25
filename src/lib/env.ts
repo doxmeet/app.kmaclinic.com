@@ -17,6 +17,11 @@ const schema = z.object({
 	VITE_OAUTH_REDIRECT_URI: z.string().optional(),
 	// 결제 위젯(toss) — payment.toss_client_key가 응답으로 오므로 보통 불필요(선택 폴백)
 	VITE_TOSS_CLIENT_KEY: z.string().optional(),
+	// 병원 홈페이지 실시간 미리보기 앱(wildcard.kmaclinic.com)의 origin.
+	//   - app: https://preview.kmaclinic.com / dev: https://preview-dev.kmaclinic.com
+	// iframe src(`${origin}/preview`) + postMessage targetOrigin 으로 쓴다(preview-integration.md §2).
+	// 미설정 시 prod origin으로 폴백.
+	VITE_PREVIEW_ORIGIN: z.url().optional(),
 });
 
 const parsed = schema.safeParse(import.meta.env);

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Check, Loader2, Plus, Trash2, X } from "lucide-react";
+import { Loader2, Plus, Trash2, X } from "lucide-react";
 import {
 	useEffect,
 	useEffectEvent,
@@ -29,6 +29,7 @@ import {
 import { FieldInput } from "#/components/form/field-input.tsx";
 import { AppShell } from "#/components/layout/app-shell.tsx";
 import { CommitComplete } from "#/components/onboarding/commit-complete.tsx";
+import { DesignPreviewScreen } from "#/components/onboarding/design-preview.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Textarea } from "#/components/ui/textarea.tsx";
 import { useDebouncedValue } from "#/hooks/use-debounced-value.ts";
@@ -43,8 +44,11 @@ import {
 import { type RefClinic, searchClinics } from "#/lib/api/ref.ts";
 import { toastApiError } from "#/lib/api-error-message.ts";
 import { useSession } from "#/lib/auth/use-session.ts";
+import {
+	buildHospitalPreviewPayload,
+	type HospitalPreviewInput,
+} from "#/lib/preview.ts";
 import { uploadFileToStorage } from "#/lib/upload.ts";
-import { cn } from "#/lib/utils.ts";
 
 /**
  * 병원 홈페이지 직접 입력 — 문서 §8.3 `POST /onboarding/hospital`.
@@ -68,18 +72,6 @@ export function DirectOnboardingPage() {
 
 const LOGIN_ID_HINT = "영문 소문자·숫자 4~20자";
 const LOGIN_ID_RE = /^[a-z0-9]{4,20}$/;
-
-/**
- * 디자인 시안(template_key) — wildcard.kmaclinic.com `components/templates` 규약(t1~t5)과 동일.
- * 키/라벨/설명을 그대로 가져옴(미지정/`default` → 시안1 폴백).
- */
-const TEMPLATES: { key: string; label: string; desc: string }[] = [
-	{ key: "t1", label: "시안 1", desc: "기본형 · 신뢰감 있는 정통 레이아웃" },
-	{ key: "t2", label: "시안 2", desc: "그린 톤 · 친근한 동네 병원형" },
-	{ key: "t3", label: "시안 3", desc: "와이드 · 종합병원형 풀스크린" },
-	{ key: "t4", label: "시안 4", desc: "모노 · 미니멀 클리닉형" },
-	{ key: "t5", label: "시안 5", desc: "포인트 컬러 · 캠페인/이벤트 강조형" },
-];
 
 type TreatmentRow = {
 	id: string;
@@ -384,6 +376,36 @@ function buildDraft(input: FormInput): Record<string, unknown> {
 	return { mode: "hospital", ...draft };
 }
 
+/** 폼 입력 → 미리보기 입력(`HospitalPreviewInput`). 실시간 미리보기 payload 빌드용. */
+function toPreviewInput(input: FormInput): HospitalPreviewInput {
+	const { fields, departments, treatments, logoUrl, photos } = input;
+	return {
+		name: fields.hospitalName,
+		roadAddress: fields.roadAddress,
+		mainPhone: fields.mainPhone,
+		logoUrl,
+		templateKey: fields.templateKey,
+		hoursWeekday: fields.hoursWeekday,
+		hoursSaturday: fields.hoursSaturday,
+		hoursSunday: fields.hoursSunday,
+		sns: {
+			instagram: fields.snsInstagram,
+			facebook: fields.snsFacebook,
+			youtube: fields.snsYoutube,
+			blog: fields.snsBlog,
+			kakao: fields.snsKakao,
+			x: fields.snsX,
+		},
+		departments,
+		treatments: treatments.map((t) => ({
+			name: t.name,
+			price_info: t.price_info,
+			description: t.description,
+		})),
+		photos,
+	};
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // 저장된 draft 프리필 — buildDraft의 역방향. 디스패처/세터만 받아 module scope에서 수행.
 // ─────────────────────────────────────────────────────────────────────
@@ -597,6 +619,9 @@ function DirectOnboardingForm() {
 	const [departmentsText, setDepartmentsText] = useState("");
 	const [treatments, setTreatments] = useState<TreatmentRow[]>([]);
 
+	// 입력 단계. "form"=정보 입력 → "design"=전체화면 시안 미리보기·선택(결제 직전).
+	const [step, setStep] = useState<"form" | "design">("form");
+
 	const logoInputRef = useRef<HTMLInputElement>(null);
 	const photosInputRef = useRef<HTMLInputElement>(null);
 
@@ -701,8 +726,15 @@ function DirectOnboardingForm() {
 		justRestoredRef,
 	});
 
+	// 폼 제출 → 바로 생성하지 않고 전체화면 시안 선택(미리보기)으로 진입.
 	function handleSubmit(e: React.FormEvent) {
 		e.preventDefault();
+		if (!canSubmit || mutation.isPending) return;
+		setStep("design");
+	}
+
+	// 시안 화면에서 "이 디자인으로 결제하기" → 선택한 template_key로 병원 생성 → 결제 단계.
+	function handleCreate() {
 		if (!canSubmit || mutation.isPending) return;
 		mutation.mutate(buildHospitalPayload(formInput));
 	}
@@ -734,13 +766,28 @@ function DirectOnboardingForm() {
 		);
 	}
 
+	// 전체화면 시안 미리보기·선택 — 입력값으로 실시간 렌더되는 홈페이지를 보며 시안 선택(결제 직전).
+	if (step === "design") {
+		return (
+			<DesignPreviewScreen
+				payload={buildHospitalPreviewPayload(toPreviewInput(formInput))}
+				templateKey={fields.templateKey}
+				onTemplateChange={(key) => setField("templateKey", key)}
+				onBack={() => setStep("form")}
+				onConfirm={handleCreate}
+				confirming={mutation.isPending}
+			/>
+		);
+	}
+
 	return (
 		<Shell userName={shellUserName}>
 			<form onSubmit={handleSubmit} className="flex flex-col gap-6">
 				<div className="flex flex-col gap-1">
 					<PageHeader />
 					<p className="text-[15px] leading-7 text-body-soft">
-						병원 정보를 한 번에 입력해 병원 홈페이지를 바로 생성합니다.
+						병원 정보를 입력하고, 다음 화면에서 디자인 시안을 미리 보고 고른 뒤
+						결제하면 병원 홈페이지가 만들어집니다.
 					</p>
 				</div>
 
@@ -886,7 +933,7 @@ function SubmitSection({
 				disabled={!canSubmit || isPending}
 			>
 				{isPending ? <Loader2 className="size-5 animate-spin" /> : null}
-				병원 홈페이지 생성하기
+				디자인 선택하고 결제하기
 			</Button>
 		</div>
 	);
@@ -1039,11 +1086,6 @@ function HospitalInfoSection({
 					/>
 				</div>
 			</Field>
-
-			<TemplatePicker
-				value={fields.templateKey}
-				onChange={(key) => setField("templateKey", key)}
-			/>
 
 			{/* 로고 업로드 */}
 			<Field>
@@ -1431,56 +1473,6 @@ function PhotosSection({
 				</div>
 			) : null}
 		</SectionCard>
-	);
-}
-
-/**
- * 디자인 시안(template_key) 카드 선택기.
- * `default`/미지정은 시안1(t1)로 표시.
- */
-function TemplatePicker({
-	value,
-	onChange,
-}: {
-	value: string;
-	onChange: (key: string) => void;
-}) {
-	const current = (value || "t1").toLowerCase();
-	return (
-		<Field>
-			<FieldLabel>디자인 시안</FieldLabel>
-			<div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-				{TEMPLATES.map((t) => {
-					const selected =
-						current === t.key || (current === "default" && t.key === "t1");
-					return (
-						<button
-							key={t.key}
-							type="button"
-							onClick={() => onChange(t.key)}
-							className={cn(
-								"flex flex-col gap-1.5 rounded-xl border p-5 text-left transition-colors",
-								selected
-									? "border-brand bg-brand-50 ring-1 ring-brand"
-									: "border-line hover:border-line-strong",
-							)}
-						>
-							<div className="flex items-center justify-between gap-2">
-								<span className="text-base font-semibold text-ink">
-									{t.label}
-								</span>
-								{selected ? (
-									<span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-brand text-brand-foreground">
-										<Check className="size-4" />
-									</span>
-								) : null}
-							</div>
-							<span className="text-sm text-body-soft">{t.desc}</span>
-						</button>
-					);
-				})}
-			</div>
-		</Field>
 	);
 }
 
