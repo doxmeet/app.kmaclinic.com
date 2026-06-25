@@ -757,7 +757,7 @@ function ProgressHeader({
 			{showOwnerBadge ? (
 				<div>
 					<Badge variant="soft">
-						{isClinicOwner ? "병원 홈페이지까지" : "프로필만"}
+						{isClinicOwner ? "병원 홈페이지" : "프로필"}
 					</Badge>
 				</div>
 			) : null}

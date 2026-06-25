@@ -8,6 +8,8 @@ const MESSAGES: Record<string, string> = {
 	ERROR_400_INVALID_TOKEN:
 		"로그인 정보가 올바르지 않습니다. 다시 로그인해 주세요.",
 	ERROR_401_AUTHORIZATION_HEADER_NOT_FOUND_IN_REQUEST: "로그인이 필요합니다.",
+	ERROR_400_AUTHORIZATION_HEADER_MALFORMED:
+		"로그인 정보가 올바르지 않습니다. 다시 로그인해 주세요.",
 	ERROR_403_FORBIDDEN: "권한이 없습니다.",
 	ERROR_403_USER_WITHDRAWN: "탈퇴한 계정입니다. 로그인할 수 없습니다.",
 	// 온보딩
@@ -46,7 +48,6 @@ const MESSAGES: Record<string, string> = {
 		"공개 주소는 한 번 정하면 바꿀 수 없어요. 이미 설정되어 있습니다.",
 	// 운영자
 	ERROR_400_CANNOT_DEMOTE_SELF: "본인 권한은 강등할 수 없습니다.",
-	ERROR_404_LICENSE_NOT_FOUND_OR_NOT_PENDING: "대기 중인 면허 신청이 없습니다.",
 	// 외부/인프라
 	ERROR_502_TOSS_UNREACHABLE:
 		"결제 서비스에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.",
@@ -54,6 +55,8 @@ const MESSAGES: Record<string, string> = {
 		"로그인 서비스에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.",
 	ERROR_503_STORAGE_NOT_CONFIGURED:
 		"파일 저장소가 설정되지 않았습니다. 운영팀에 문의해 주세요.",
+	ERROR_500_UNDEFINED_ERROR:
+		"일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
 };
 
 export function apiErrorMessage(err: unknown): string {

@@ -80,7 +80,6 @@ export type PaymentFilters = {
 	page?: number;
 };
 
-export type LicensePending = Record<string, unknown> & { no?: number };
 export type NotificationLog = Record<string, unknown> & { no?: number };
 
 const qs = (o: Record<string, string | number | undefined>) => {
@@ -120,13 +119,6 @@ export const adminApi = {
 
 	listPayments: (p: PaymentFilters = {}) =>
 		http.get<Paginated<AdminPayment>>("admin/payments", qs(p)),
-
-	licensePending: () =>
-		http.get<Paginated<LicensePending>>("admin/profile/license/pending"),
-	approveLicense: (no: number) =>
-		http.post(`admin/profile/license/${no}/approve`),
-	rejectLicense: (no: number, reason: string) =>
-		http.post(`admin/profile/license/${no}/reject`, { reason }),
 
 	addSociety: (input: {
 		name: string;

@@ -268,14 +268,6 @@ export function setProfileSlug(slug: string) {
 	return http.put<{ no?: number; slug?: string }>("profile/me/slug", { slug });
 }
 
-/**
- * 의사 프로필 공개(발행) → `<slug>.kmadoc.com` 게시. slug 선설정 필요(setProfileSlug).
- * 병원 publish(`POST /hospital/:no/publish`)와 대칭. (백엔드 경로 미확인 시 여기 수정.)
- */
-export function publishProfile() {
-	return http.post("profile/me/publish");
-}
-
 /** 병원 공개 URL(slug) 설정 → `<slug>.kmaclinic.com`. publish 전 필요, 1회만(변경 불가). */
 export function setHospitalSlug(hospitalNo: number, slug: string) {
 	return http.put<{ no?: number; slug?: string }>(

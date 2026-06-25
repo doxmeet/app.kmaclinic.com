@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Check, Loader2, Plus, Trash2, X } from "lucide-react";
 import {
@@ -17,6 +17,10 @@ import {
 	SectionTitle,
 } from "#/components/common/section-card.tsx";
 import {
+	Autocomplete,
+	type AutocompleteOption,
+} from "#/components/form/autocomplete.tsx";
+import {
 	Field,
 	FieldDescription,
 	FieldError,
@@ -31,22 +35,28 @@ import { Button } from "#/components/ui/button.tsx";
 import { Textarea } from "#/components/ui/textarea.tsx";
 import {
 	type CommitResult,
-	type DirectOnboardingInput,
-	directOnboarding,
+	type HospitalOnboardingInput,
+	hospitalOnboarding,
 	type PaymentIntent,
+	type ProfileOnboardingInput,
 	patchDraft,
+	profileOnboarding,
 	startSession,
 } from "#/lib/api/onboarding.ts";
+import { type RefClinic, searchClinics } from "#/lib/api/ref.ts";
 import { toastApiError } from "#/lib/api-error-message.ts";
 import { useSession } from "#/lib/auth/use-session.ts";
 import { uploadFileToStorage } from "#/lib/upload.ts";
 import { cn } from "#/lib/utils.ts";
 
 /**
- * 일괄(직접) 입력 온보딩 — 문서 §8.3 `POST /onboarding/direct`.
- * 대화형 온보딩(`/onboarding`)과 달리, 전체 정보를 한 폼으로 받아 한 요청에 즉시
- * 프로필(+병원)을 생성한다. 성공 결과(무료 완료/toss 결제)는 대화형과 동일하게
- * `CommitComplete` 가 처리한다.
+ * 일괄(직접) 입력 온보딩 — 문서 §8.3.
+ * 대화형 온보딩(`/onboarding`)과 달리, 전체 정보를 한 폼으로 받아 한 요청에 즉시 생성한다.
+ *
+ * ⚠ 병원/프로필 생성은 **완전히 분리**되어 선택(입력 유형)에 따라 다른 엔드포인트로 보낸다:
+ *  - 병원 홈페이지(유료) → `POST /onboarding/hospital` (프로필 만들지 않음, 결제로 이어짐)
+ *  - 의사 프로필(무료)   → `POST /onboarding/profile`  (병원 만들지 않음)
+ * 성공 결과(무료 완료/toss 결제)는 대화형과 동일하게 `CommitComplete` 가 처리한다.
  */
 export function DirectOnboardingPage() {
 	return (
@@ -319,6 +329,8 @@ type FieldsState = {
 	primaryDepartment: string;
 	specialty: string;
 	hospitalName: string;
+	/** ref_clinic 레지스트리에서 선택한 병원 no(문자열, ""=직접입력/미선택). */
+	refClinicNo: string;
 	roadAddress: string;
 	mainPhone: string;
 	customerCenterPhone: string;
@@ -344,6 +356,7 @@ const INITIAL_FIELDS: FieldsState = {
 	primaryDepartment: "",
 	specialty: "",
 	hospitalName: "",
+	refClinicNo: "",
 	roadAddress: "",
 	mainPhone: "",
 	customerCenterPhone: "",
@@ -406,22 +419,29 @@ function deriveValidation(input: {
 	} = input;
 	const loginIdInvalid =
 		adminLoginId.length > 0 && !LOGIN_ID_RE.test(adminLoginId);
-	// login_id 입력 시 비밀번호 필수(문서 §8.3 ERROR_400_ADMIN_PASSWORD_REQUIRED).
-	const passwordRequired = adminLoginId.length > 0;
+	// 병원 모드에서는 관리자 아이디·비밀번호 모두 필수(문서 §8.3
+	// ERROR_400_ADMIN_LOGIN_ID_REQUIRED / ERROR_400_ADMIN_PASSWORD_REQUIRED).
+	const loginIdMissing = isClinicOwner && adminLoginId.trim().length === 0;
+	const passwordRequired = isClinicOwner;
 	const passwordMismatch =
 		adminPasswordConfirm.length > 0 && adminPassword !== adminPasswordConfirm;
 	const passwordMissing = passwordRequired && adminPassword.length === 0;
+	// 병원 모드: 병원명 + 관리자 계정. 프로필 모드: 공개용 이름만.
+	const requiredOk = isClinicOwner
+		? hospitalName.trim().length > 0 &&
+			!loginIdMissing &&
+			!loginIdInvalid &&
+			!passwordMissing &&
+			!passwordMismatch
+		: displayName.trim().length > 0;
 	const canSubmit =
 		effectiveOwnerChoice !== "" &&
-		displayName.trim().length > 0 &&
-		(!isClinicOwner || hospitalName.trim().length > 0) &&
-		!loginIdInvalid &&
-		!passwordMismatch &&
-		!passwordMissing &&
+		requiredOk &&
 		!logoUploading &&
 		!photosUploading;
 	return {
 		loginIdInvalid,
+		loginIdMissing,
 		passwordRequired,
 		passwordMismatch,
 		passwordMissing,
@@ -444,33 +464,17 @@ type FormInput = {
 	photos: string[];
 };
 
-function buildPayload(input: FormInput): DirectOnboardingInput {
-	const {
-		isClinicOwner,
-		fields,
-		subRows,
-		departments,
-		treatments,
-		logoUrl,
-		photos,
-	} = input;
-	const payload: DirectOnboardingInput = {
-		is_clinic_owner: isClinicOwner,
-	};
+/** 제출 variables — 모드별로 한쪽 본문만 담는다(병원/프로필 생성 완전 분리). */
+type SubmitVars =
+	| { mode: "hospital"; hospital: HospitalOnboardingInput; profile?: undefined }
+	| { mode: "profile"; profile: ProfileOnboardingInput; hospital?: undefined };
 
-	// 의사 프로필 — 채워진 값만
-	const profile = omitEmpty({
-		display_name: fields.displayName.trim(),
-		headline: fields.headline.trim(),
-		primary_department_text: fields.primaryDepartment.trim(),
-		specialty_text: fields.specialty.trim(),
-	});
-	if (Object.keys(profile).length > 0) payload.profile = profile;
-
-	// 프로필 subentity(학력·면허·수련·경력·학회·논문·일정) — 프로필/병원 공통(선택).
+/** 프로필 subentity(학력·면허·수련·경력·학회·논문·일정) 직렬화 — 빈 행 제거. */
+function buildSubentities(
+	subRows: Record<string, Record<string, string>[]>,
+): Record<string, unknown> {
 	const subentities: Record<string, unknown> = {};
 	for (const section of SUBENTITIES) {
-		// 채워진 필드를 한 번에 추리고(빈 행 제거) 단일 패스로 누적.
 		const list: Record<string, unknown>[] = [];
 		for (const row of subRows[section.key] ?? []) {
 			const out: Record<string, unknown> = {};
@@ -484,12 +488,39 @@ function buildPayload(input: FormInput): DirectOnboardingInput {
 		}
 		if (list.length > 0) subentities[section.key] = list;
 	}
+	return subentities;
+}
+
+/**
+ * 프로필만 생성 본문(`POST /onboarding/profile`) — 채워진 값만.
+ * 병원 관련 필드는 일절 담지 않는다(병원/프로필 생성 완전 분리, 문서 §8.3).
+ */
+function buildProfilePayload(input: FormInput): ProfileOnboardingInput {
+	const { fields, subRows } = input;
+	const payload: ProfileOnboardingInput = {};
+
+	const profile = omitEmpty({
+		display_name: fields.displayName.trim(),
+		headline: fields.headline.trim(),
+		primary_department_text: fields.primaryDepartment.trim(),
+		specialty_text: fields.specialty.trim(),
+	});
+	if (Object.keys(profile).length > 0) payload.profile = profile;
+
+	const subentities = buildSubentities(subRows);
 	if (Object.keys(subentities).length > 0) payload.subentities = subentities;
 
-	// 병원 미선택이면 병원 관련 필드는 모두 제외
-	if (!isClinicOwner) return payload;
+	return payload;
+}
 
-	// 병원 정보
+/**
+ * 병원만 생성 본문(`POST /onboarding/hospital`) — 채워진 값만.
+ * 의사 프로필/subentity는 담지 않는다. ref_clinic_no가 있으면 빈 칸은 서버가 자동채움한다.
+ */
+function buildHospitalPayload(input: FormInput): HospitalOnboardingInput {
+	const { fields, departments, treatments, logoUrl, photos } = input;
+	const payload: HospitalOnboardingInput = {};
+
 	const businessHours = omitEmpty({
 		weekday: fields.hoursWeekday.trim(),
 		saturday: fields.hoursSaturday.trim(),
@@ -512,6 +543,9 @@ function buildPayload(input: FormInput): DirectOnboardingInput {
 		template_key: fields.templateKey,
 		logo_url: logoUrl,
 	});
+	// 레지스트리 선택 시 ref_clinic_no를 병원 본문에 담아 자동채움을 유도(문서 §8.3).
+	const refClinicNo = toYear(fields.refClinicNo);
+	if (refClinicNo !== undefined) hospital.ref_clinic_no = refClinicNo;
 	if (Object.keys(businessHours).length > 0)
 		hospital.business_hours = businessHours;
 	if (Object.keys(snsLinks).length > 0) hospital.sns_links = snsLinks;
@@ -554,15 +588,24 @@ function buildPayload(input: FormInput): DirectOnboardingInput {
 }
 
 /**
- * 자동저장용 draft 직렬화 — buildPayload와 동일하되 **비밀번호 제외**.
- * hospital_admin은 {login_id, name}만 담는다(이미 buildPayload도 동일).
+ * 자동저장용 draft 직렬화 — 모드에 해당하는 키만 + `mode`(문서 §8.3), **비밀번호 제외**.
  * PATCH /onboarding/session/draft 는 부분 머지이므로 채워진 값만 보낸다.
  */
-function buildDraft(input: FormInput): Record<string, unknown> {
-	const draft = buildPayload(input) as Record<string, unknown>;
-	// 안전장치: 비밀번호는 어떤 경우에도 draft에 포함하지 않는다.
-	delete draft.hospital_admin_password;
-	return draft;
+function buildDraft(
+	input: FormInput,
+	mode: "" | "hospital" | "profile",
+): Record<string, unknown> {
+	if (mode === "hospital") {
+		const draft = buildHospitalPayload(input) as Record<string, unknown>;
+		// 안전장치: 비밀번호는 어떤 경우에도 draft에 포함하지 않는다.
+		delete draft.hospital_admin_password;
+		return { mode, ...draft };
+	}
+	if (mode === "profile") {
+		return { mode, ...(buildProfilePayload(input) as Record<string, unknown>) };
+	}
+	// 입력 유형 미선택 — 빈 draft(자동저장 스킵).
+	return {};
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -593,9 +636,17 @@ function prefillFromDraft(
 		setSubRows,
 	} = handlers;
 
-	if (typeof draft.is_clinic_owner === "boolean") {
-		setOwnerChoice(draft.is_clinic_owner ? "true" : "false");
-	}
+	// 세션 모드 복원: mode('hospital'|'profile') 우선, 구 is_clinic_owner는 하위호환.
+	const mode =
+		typeof draft.mode === "string"
+			? draft.mode
+			: typeof draft.is_clinic_owner === "boolean"
+				? draft.is_clinic_owner
+					? "hospital"
+					: "profile"
+				: null;
+	if (mode === "hospital") setOwnerChoice("true");
+	else if (mode === "profile") setOwnerChoice("false");
 
 	const merge: Partial<FieldsState> = {};
 
@@ -610,6 +661,7 @@ function prefillFromDraft(
 	const hospital = asObject(draft.hospital);
 	if (hospital) {
 		merge.hospitalName = asString(hospital.name);
+		merge.refClinicNo = yearToText(hospital.ref_clinic_no);
 		merge.roadAddress = asString(hospital.road_address);
 		merge.mainPhone = asString(hospital.main_phone);
 		merge.customerCenterPhone = asString(hospital.customer_center_phone);
@@ -867,6 +919,7 @@ function DirectOnboardingForm() {
 	const departments = parseLines(departmentsText);
 	const {
 		loginIdInvalid,
+		loginIdMissing,
 		passwordRequired,
 		passwordMismatch,
 		passwordMissing,
@@ -884,8 +937,12 @@ function DirectOnboardingForm() {
 	});
 
 	// ── 제출 ────────────────────────────────────────────────────────
+	// 입력 유형에 따라 전용 엔드포인트로 보낸다(병원/프로필 생성 완전 분리, 문서 §8.3).
 	const mutation = useMutation({
-		mutationFn: (payload: DirectOnboardingInput) => directOnboarding(payload),
+		mutationFn: (vars: SubmitVars) =>
+			vars.mode === "hospital"
+				? hospitalOnboarding(vars.hospital)
+				: profileOnboarding(vars.profile),
 		onSuccess: (data) => {
 			// 제출 성공 이후로는 자동저장(언마운트 flush 포함)이 일어나지 않게 한다.
 			submittedRef.current = true;
@@ -954,8 +1011,11 @@ function DirectOnboardingForm() {
 	}, []);
 
 	// ── 자동저장 (debounce ~1200ms) + 언마운트 flush ─────────────────
+	// 세션 모드 — 입력 유형 선택 결과(미선택 ""은 자동저장 스킵).
+	const mode: "" | "hospital" | "profile" =
+		effectiveOwnerChoice === "" ? "" : isClinicOwner ? "hospital" : "profile";
 	// 현재 폼 상태를 매 렌더 직렬화(비번 제외). 문자열이라 deps로 안전하게 비교 가능.
-	const draftSnapshot = JSON.stringify(buildDraft(formInput));
+	const draftSnapshot = JSON.stringify(buildDraft(formInput, mode));
 	useDraftAutosave({
 		draftSnapshot,
 		paused: restoring || Boolean(result) || Boolean(pendingPayment),
@@ -967,7 +1027,11 @@ function DirectOnboardingForm() {
 	function handleSubmit(e: React.FormEvent) {
 		e.preventDefault();
 		if (!canSubmit || mutation.isPending) return;
-		mutation.mutate(buildPayload(formInput));
+		mutation.mutate(
+			isClinicOwner
+				? { mode: "hospital", hospital: buildHospitalPayload(formInput) }
+				: { mode: "profile", profile: buildProfilePayload(formInput) },
+		);
 	}
 
 	const shellUserName = user?.name ?? "원장님";
@@ -1029,13 +1093,21 @@ function DirectOnboardingForm() {
 					setOwnerChoice={setOwnerChoice}
 				/>
 
-				{/* 2. 의사 프로필 */}
-				<DoctorProfileSection fields={fields} setField={setField} />
+				{/* 프로필 모드: 의사 프로필 + 경력·학력·이력만(병원은 만들지 않음) */}
+				{effectiveOwnerChoice === "false" ? (
+					<>
+						{/* 2. 의사 프로필 */}
+						<DoctorProfileSection fields={fields} setField={setField} />
 
-				{/* 병원일 때만 노출되는 섹션들 */}
+						{/* 3. 경력·학력·이력 (선택) — 문서 §8.3 subentities */}
+						<SubentitiesSection subRows={subRows} setSubRows={setSubRows} />
+					</>
+				) : null}
+
+				{/* 병원 모드: 병원 정보·관리자·진료과목·비급여·사진만(프로필은 만들지 않음) */}
 				{isClinicOwner ? (
 					<>
-						{/* 3. 병원 정보 */}
+						{/* 2. 병원 정보 */}
 						<HospitalInfoSection
 							fields={fields}
 							setField={setField}
@@ -1046,45 +1118,39 @@ function DirectOnboardingForm() {
 							dispatchUploads={dispatchUploads}
 						/>
 
-						{/* 4. 병원 관리자 */}
+						{/* 3. 병원 관리자 */}
 						<HospitalAdminSection
 							fields={fields}
 							setField={setField}
 							loginIdInvalid={loginIdInvalid}
+							loginIdMissing={loginIdMissing}
 							passwordRequired={passwordRequired}
 							passwordMissing={passwordMissing}
 							passwordMismatch={passwordMismatch}
 						/>
 
-						{/* 5. 진료과목 */}
+						{/* 4. 진료과목 */}
 						<DepartmentsSection
 							departmentsText={departmentsText}
 							setDepartmentsText={setDepartmentsText}
 							departments={departments}
 						/>
 
-						{/* 6. 비급여 항목 */}
+						{/* 5. 비급여 항목 */}
 						<TreatmentsSection
 							treatments={treatments}
 							setTreatments={setTreatments}
 						/>
+
+						{/* 6. 병원 사진 */}
+						<PhotosSection
+							photos={photos}
+							photosUploading={photosUploading}
+							photosInputRef={photosInputRef}
+							onPick={handlePhotosPick}
+							dispatchUploads={dispatchUploads}
+						/>
 					</>
-				) : null}
-
-				{/* 7. 경력·학력·이력 (프로필/병원 공통, 선택) — 문서 §8.3 subentities */}
-				{effectiveOwnerChoice !== "" ? (
-					<SubentitiesSection subRows={subRows} setSubRows={setSubRows} />
-				) : null}
-
-				{/* 8. 병원 사진 */}
-				{isClinicOwner ? (
-					<PhotosSection
-						photos={photos}
-						photosUploading={photosUploading}
-						photosInputRef={photosInputRef}
-						onPick={handlePhotosPick}
-						dispatchUploads={dispatchUploads}
-					/>
 				) : null}
 
 				{/* 제출 */}
@@ -1096,6 +1162,7 @@ function DirectOnboardingForm() {
 					displayName={displayName}
 					hospitalName={hospitalName}
 					loginIdInvalid={loginIdInvalid}
+					loginIdMissing={loginIdMissing}
 					passwordMissing={passwordMissing}
 					passwordMismatch={passwordMismatch}
 				/>
@@ -1163,25 +1230,25 @@ function OwnerChoiceSection({
 				value={effectiveOwnerChoice}
 				onValueChange={(v) => setOwnerChoice(v as "false" | "true")}
 			>
-				{/* 이미 의사 프로필이 있으면 '의사 프로필만' 경로는 숨긴다(중복 생성 방지). */}
+				{/* 이미 의사 프로필이 있으면 '의사 프로필' 경로는 숨긴다(중복 생성 방지). */}
 				{hasProfile ? null : (
 					<OptionButton value="false" fluid>
-						의사 프로필만 (무료)
+						의사 프로필 (무료)
 					</OptionButton>
 				)}
 				<OptionButton value="true" fluid>
-					병원 홈페이지까지 (유료)
+					병원 홈페이지 (유료)
 				</OptionButton>
 			</OptionGroup>
 			<InfoCallout tone="info">
 				<p className="text-sm">
 					{hasProfile
-						? "이미 의사 프로필이 있어 병원 홈페이지만 추가로 만들 수 있어요. 병원 홈페이지는 정기 결제(카드 등록) 후 공개됩니다."
+						? "이미 의사 프로필이 있어 병원 홈페이지를 만들 수 있어요. 병원 홈페이지는 정기 결제(카드 등록) 후 공개됩니다."
 						: isClinicOwner
-							? "병원 홈페이지는 정기 결제(카드 등록) 후 공개됩니다. 생성 직후 결제 단계로 이어집니다."
+							? "병원 홈페이지만 생성합니다(프로필은 만들지 않아요). 정기 결제(카드 등록) 후 공개되며, 생성 직후 결제 단계로 이어집니다."
 							: effectiveOwnerChoice === "false"
-								? "의사 프로필은 무료로 생성됩니다."
-								: "프로필만 만들지, 병원 홈페이지까지 만들지 선택해 주세요."}
+								? "의사 프로필만 무료로 생성합니다(병원 홈페이지는 만들지 않아요)."
+								: "의사 프로필을 만들지, 병원 홈페이지를 만들지 선택해 주세요."}
 				</p>
 			</InfoCallout>
 		</SectionCard>
@@ -1226,6 +1293,7 @@ function SubmitSection({
 	displayName,
 	hospitalName,
 	loginIdInvalid,
+	loginIdMissing,
 	passwordMissing,
 	passwordMismatch,
 }: {
@@ -1236,6 +1304,7 @@ function SubmitSection({
 	displayName: string;
 	hospitalName: string;
 	loginIdInvalid: boolean;
+	loginIdMissing: boolean;
 	passwordMissing: boolean;
 	passwordMismatch: boolean;
 }) {
@@ -1243,17 +1312,21 @@ function SubmitSection({
 		<div className="flex flex-col gap-3">
 			{!canSubmit && effectiveOwnerChoice !== "" ? (
 				<p className="text-sm text-body-soft">
-					{displayName.trim().length === 0
-						? "공개용 이름을 입력해 주세요."
-						: isClinicOwner && hospitalName.trim().length === 0
+					{isClinicOwner
+						? hospitalName.trim().length === 0
 							? "병원명을 입력해 주세요."
-							: loginIdInvalid
-								? `관리자 아이디는 ${LOGIN_ID_HINT}만 사용할 수 있습니다.`
-								: passwordMissing
-									? "관리자 비밀번호를 입력해 주세요."
-									: passwordMismatch
-										? "비밀번호가 일치하지 않습니다."
-										: "파일 업로드가 끝나면 제출할 수 있어요."}
+							: loginIdMissing
+								? "관리자 아이디를 입력해 주세요."
+								: loginIdInvalid
+									? `관리자 아이디는 ${LOGIN_ID_HINT}만 사용할 수 있습니다.`
+									: passwordMissing
+										? "관리자 비밀번호를 입력해 주세요."
+										: passwordMismatch
+											? "비밀번호가 일치하지 않습니다."
+											: "파일 업로드가 끝나면 제출할 수 있어요."
+						: displayName.trim().length === 0
+							? "공개용 이름을 입력해 주세요."
+							: "파일 업로드가 끝나면 제출할 수 있어요."}
 				</p>
 			) : null}
 			<Button
@@ -1264,7 +1337,7 @@ function SubmitSection({
 				disabled={!canSubmit || isPending}
 			>
 				{isPending ? <Loader2 className="size-5 animate-spin" /> : null}
-				{isClinicOwner ? "프로필·병원 생성하기" : "프로필 생성하기"}
+				{isClinicOwner ? "병원 홈페이지 생성하기" : "프로필 생성하기"}
 			</Button>
 		</div>
 	);
@@ -1327,6 +1400,56 @@ function DoctorProfileSection({
 	);
 }
 
+/** ref_clinic 옵션 고유키(no 우선, 없으면 hira_code/이름). */
+function clinicOptionValue(c: RefClinic): string {
+	return String(c.no ?? c.hira_code ?? c.name ?? "");
+}
+
+/**
+ * 병원명 입력 + 전국 병의원 레지스트리(`GET /ref/clinic`) 자동완성.
+ * 레지스트리 항목을 고르면 ref_clinic_no가 잡히고 주소·전화가 자동으로 채워진다(문서 §8.3).
+ * 목록에 없으면 자유 입력 — 그땐 ref_clinic_no 없이 이름만 저장된다.
+ */
+function ClinicSearchField({
+	name,
+	onNameChange,
+	onPick,
+}: {
+	name: string;
+	onNameChange: (value: string) => void;
+	onPick: (clinic: RefClinic) => void;
+}) {
+	const keyword = name.trim();
+	const { data } = useQuery({
+		queryKey: ["ref", "clinic", keyword],
+		queryFn: () => searchClinics({ keyword, limit: 20 }),
+		enabled: keyword.length >= 2,
+		staleTime: 60_000,
+	});
+	const items = data?.items ?? [];
+	const options: AutocompleteOption[] = items.map((c) => ({
+		value: clinicOptionValue(c),
+		label: c.name ?? "",
+		description:
+			[c.type_name, c.address].filter(Boolean).join(" · ") || undefined,
+	}));
+	return (
+		<Autocomplete
+			options={options}
+			value={name}
+			onChange={onNameChange}
+			onSelect={(opt) => {
+				const picked = items.find((c) => clinicOptionValue(c) === opt.value);
+				if (picked) onPick(picked);
+			}}
+			onManualEntry={() => {
+				/* 직접 입력 — 입력값 유지, ref_clinic_no 없이 진행 */
+			}}
+			placeholder="병원명을 검색하세요 (예: 행복내과의원)"
+		/>
+	);
+}
+
 /** 3. 병원 정보 섹션(기본 정보·진료시간·시안·로고·SNS). */
 function HospitalInfoSection({
 	fields,
@@ -1345,7 +1468,6 @@ function HospitalInfoSection({
 	onLogoPick: (e: React.ChangeEvent<HTMLInputElement>) => void;
 	dispatchUploads: React.Dispatch<UploadsAction>;
 }) {
-	const hospitalNameId = useId();
 	const roadAddressId = useId();
 	const mainPhoneId = useId();
 	const ccPhoneId = useId();
@@ -1362,15 +1484,25 @@ function HospitalInfoSection({
 		<SectionCard className="flex flex-col gap-6">
 			<SectionTitle>병원 정보</SectionTitle>
 			<Field>
-				<FieldLabel htmlFor={hospitalNameId} required>
-					병원명
-				</FieldLabel>
-				<FieldInput
-					id={hospitalNameId}
-					value={fields.hospitalName}
-					onChange={(e) => setField("hospitalName", e.target.value)}
-					placeholder="예: 행복내과의원"
+				<FieldLabel required>병원명</FieldLabel>
+				<ClinicSearchField
+					name={fields.hospitalName}
+					onNameChange={(v) => {
+						setField("hospitalName", v);
+						// 직접 편집하면 레지스트리 선택을 해제(자동채움 끔).
+						setField("refClinicNo", "");
+					}}
+					onPick={(c) => {
+						setField("hospitalName", c.name ?? "");
+						setField("refClinicNo", c.no != null ? String(c.no) : "");
+						if (c.address) setField("roadAddress", c.address);
+						if (c.phone) setField("mainPhone", c.phone);
+					}}
 				/>
+				<FieldDescription>
+					병원을 검색해 선택하면 주소·전화가 자동으로 채워집니다. 목록에 없으면
+					직접 입력하세요.
+				</FieldDescription>
 			</Field>
 			<Field>
 				<FieldLabel htmlFor={roadAddressId}>도로명 주소</FieldLabel>
@@ -1527,6 +1659,7 @@ function HospitalAdminSection({
 	fields,
 	setField,
 	loginIdInvalid,
+	loginIdMissing,
 	passwordRequired,
 	passwordMissing,
 	passwordMismatch,
@@ -1534,6 +1667,7 @@ function HospitalAdminSection({
 	fields: FieldsState;
 	setField: SetField;
 	loginIdInvalid: boolean;
+	loginIdMissing: boolean;
 	passwordRequired: boolean;
 	passwordMissing: boolean;
 	passwordMismatch: boolean;
@@ -1547,11 +1681,13 @@ function HospitalAdminSection({
 			<SectionTitle>병원 관리자 계정</SectionTitle>
 			<InfoCallout tone="info">
 				<p className="text-sm">
-					관리자 아이디를 입력하면 비밀번호도 함께 설정해야 합니다.
+					병원 홈페이지를 관리할 관리자 아이디와 비밀번호를 설정해 주세요.
 				</p>
 			</InfoCallout>
 			<Field>
-				<FieldLabel htmlFor={adminLoginIdId}>관리자 아이디</FieldLabel>
+				<FieldLabel htmlFor={adminLoginIdId} required>
+					관리자 아이디
+				</FieldLabel>
 				<FieldInput
 					id={adminLoginIdId}
 					value={fields.adminLoginId}
@@ -1564,6 +1700,8 @@ function HospitalAdminSection({
 					<FieldError>
 						아이디는 {LOGIN_ID_HINT}만 사용할 수 있습니다.
 					</FieldError>
+				) : loginIdMissing ? (
+					<FieldError>관리자 아이디를 입력해 주세요.</FieldError>
 				) : (
 					<FieldDescription>{LOGIN_ID_HINT}</FieldDescription>
 				)}
@@ -2012,10 +2150,10 @@ function omitEmpty<T extends Record<string, unknown>>(
 	return out;
 }
 
-/** 직렬화된 draft가 빈 폼(is_clinic_owner 외 입력 없음)인지 — 빈 세션 생성 방지용. */
+/** 직렬화된 draft가 빈 폼(mode 외 입력 없음)인지 — 빈 세션 생성 방지용. */
 function isDraftEmptyJson(draft: Record<string, unknown>): boolean {
 	for (const key of Object.keys(draft)) {
-		if (key !== "is_clinic_owner") return false;
+		if (key !== "mode") return false;
 	}
 	return true;
 }

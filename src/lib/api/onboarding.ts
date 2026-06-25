@@ -84,6 +84,9 @@ const SessionViewSchema = z.looseObject({
 	processing_text: numeric,
 	// 진행중 "업로드 문서" 추출 수(표시등 전용).
 	processing_file: numeric,
+	// 세션 모드(문서 §6.2.1): 'hospital'=병원만 생성(유료), 'profile'=프로필만(무료), null=인텐트 미확정.
+	mode: z.string().nullish(),
+	// 하위호환 별칭: is_clinic_owner === (mode === 'hospital'). 신규 코드는 mode 사용 권장.
 	is_clinic_owner: z.boolean().nullish(),
 	conflicts: z.array(OnboardingConflictSchema).nullish(),
 	// pending_payment 분기에서는 draft/history가 null로 옴 → null 허용(optional은 null 불가).
@@ -133,8 +136,9 @@ export async function getSession(): Promise<SessionView> {
 }
 
 /**
- * 일괄(폼) 입력 자동저장 — 문서 §3. 부분 draft를 머지만 한다(commit 아님).
+ * 일괄(폼) 입력 자동저장 — 문서 §8.3 `PATCH /onboarding/session/draft`. 부분 draft를 머지만 한다(commit 아님).
  * 보낸 키만 최신값으로 덮어쓰며, 진행중 세션이 없으면 자동저장용 새 세션이 생성된다.
+ * `mode`('hospital'|'profile')로 세션 모드를 고정하고, **현재 모드에 해당하는 키만** 머지된다.
  * ⚠ 비밀번호(hospital_admin.password)는 절대 넣지 말 것(commit/결제에서만).
  */
 export type OnboardingDraftInput = Record<string, unknown>;
@@ -162,10 +166,11 @@ export async function sendMessage(
 }
 
 /**
- * 프로필(+병원) 생성 확정. 관리자 계정(아이디·비밀번호)은 대화가 아닌 **이 단계에서만** 받는다
- * (문서 2026-06 §2). 둘 다 draft에 저장되지 않고 commit 본문으로만 전달.
- * - 병원 소유(is_clinic_owner): login_id + password 모두 필수.
- * - 프로필만: 인자 없이 호출.
+ * 수집된 내용으로 생성 확정 — 문서 §8.3 `POST /onboarding/session/commit`.
+ * **세션 모드(mode)에 따라 '병원만' 또는 '프로필만' 한쪽만 생성**한다(응답은 `profile:null` 또는 `hospital:null`).
+ * 관리자 계정(아이디·비밀번호)은 대화가 아닌 **이 단계에서만** 받으며 draft에 저장되지 않는다(문서 §6.2).
+ * - 병원 모드(mode==='hospital'): login_id + password 모두 필수.
+ * - 프로필 모드(mode==='profile'): 인자 없이 호출.
  */
 export async function commitSession(args?: {
 	login_id?: string;
@@ -188,26 +193,55 @@ export async function resetSession(): Promise<void> {
 
 /**
  * 일괄(직접) 입력 one-shot — 문서 §8.3.
- * 대화형 루프 대신 전체 정보를 한 요청으로 보내 즉시 프로필(+병원)을 생성한다.
- * 응답은 commit과 동일(`{ profile, hospital, seeded, payment }`). 파일/AI 추출은 거치지 않음.
+ * 대화형 루프 대신 전체 정보를 한 요청으로 보내 즉시 생성한다. 응답은 commit과 동일
+ * (`{ profile, hospital, seeded, payment }`). 파일/AI 추출은 거치지 않음.
+ *
+ * ⚠ 병원/프로필 생성은 **완전히 분리**되어 각각 전용 엔드포인트로 보낸다(구 `POST /onboarding/direct` 제거):
+ *  - `POST /onboarding/hospital` → 병원만 생성(`profile:null` + 결제 단계로 이어짐)
+ *  - `POST /onboarding/profile`  → 프로필만 생성(`hospital:null` + `payment:{required:false}`)
  */
-export type DirectOnboardingInput = {
-	is_clinic_owner?: boolean;
-	profile?: Record<string, unknown>;
+
+/** `POST /onboarding/hospital` 본문 — 병원만 생성(프로필 만들지 않음). */
+export type HospitalOnboardingInput = {
+	/** name·road_address·business_hours·template_key·logo_url·customer_center_phone·sns_links·ref_clinic_no 등. */
 	hospital?: Record<string, unknown>;
+	/** { login_id, name }. login_id 사실상 필수(비번은 아래 필드). */
 	hospital_admin?: { login_id?: string; name?: string };
+	/** 필수. draft에는 저장되지 않는다. */
 	hospital_admin_password?: string;
 	departments?: string[];
 	treatments?: Array<Record<string, unknown>>;
-	subentities?: Record<string, unknown>;
 	photos?: string[];
+	/** 증빙 URL 배열 — commit 후 데이터 검수 대상에 포함(추출은 안 함). */
+	file_urls?: string[];
 };
 
-export async function directOnboarding(
-	input: DirectOnboardingInput,
+/** `POST /onboarding/profile` 본문 — 프로필만 생성(병원 만들지 않음). */
+export type ProfileOnboardingInput = {
+	/** display_name·headline·primary_department_text·specialty_text 등. */
+	profile?: Record<string, unknown>;
+	/** { education, license, training, career, society, paper, schedule } 각 배열. */
+	subentities?: Record<string, unknown>;
+	/** 이력서/증빙 URL 배열 — commit 후 데이터 검수 대상에 포함(추출은 안 함). */
+	file_urls?: string[];
+};
+
+/** 병원만 일괄 생성(`POST /onboarding/hospital`). 성공 시 결제(payment.required=true)로 이어진다. */
+export async function hospitalOnboarding(
+	input: HospitalOnboardingInput,
 ): Promise<CommitResult> {
 	return parse(
-		await http.post("onboarding/direct", input, { timeout: AI_TIMEOUT }),
+		await http.post("onboarding/hospital", input, { timeout: AI_TIMEOUT }),
+		CommitResultSchema,
+	);
+}
+
+/** 프로필만 일괄 생성(`POST /onboarding/profile`). 무료(`payment.required=false`). */
+export async function profileOnboarding(
+	input: ProfileOnboardingInput,
+): Promise<CommitResult> {
+	return parse(
+		await http.post("onboarding/profile", input, { timeout: AI_TIMEOUT }),
 		CommitResultSchema,
 	);
 }
@@ -222,6 +256,8 @@ const OverviewDraftSchema = z.looseObject({
 	status: z.string().optional(),
 	session_no: numeric,
 	name: z.string().nullish(),
+	// 세션 모드('hospital'|'profile'). is_clinic_owner는 하위호환 별칭.
+	mode: z.string().nullish(),
 	is_clinic_owner: z.boolean().nullish(),
 	progress_percent: numeric,
 	next_question: z.string().nullish(),

@@ -18,7 +18,6 @@ import { InfoRows } from "#/components/common/info-rows.tsx";
 import { SectionCard } from "#/components/common/section-card.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
-import { publishProfile } from "#/lib/api/billing.ts";
 import type {
 	Overview,
 	OverviewDraft,
@@ -27,6 +26,7 @@ import type {
 	PaymentIntent,
 } from "#/lib/api/onboarding.ts";
 import { deleteHospital, resetSession } from "#/lib/api/onboarding.ts";
+import { publishProfile } from "#/lib/api/profile.ts";
 import { toastApiError } from "#/lib/api-error-message.ts";
 import { cn } from "#/lib/utils.ts";
 
@@ -258,6 +258,15 @@ function DraftCard({
 	const progress = clampPercent(draft.progress_percent);
 	const title = draft.name?.trim() ? draft.name : "진행 중인 작성";
 	const nextQuestion = draft.next_question?.trim() ? draft.next_question : null;
+	// 세션 모드 — mode('hospital'|'profile') 우선, 구 is_clinic_owner는 하위호환.
+	const draftMode: "hospital" | "profile" | null =
+		draft.mode === "hospital" || draft.mode === "profile"
+			? draft.mode
+			: draft.is_clinic_owner != null
+				? draft.is_clinic_owner
+					? "hospital"
+					: "profile"
+				: null;
 
 	return (
 		<CardShell
@@ -265,9 +274,9 @@ function DraftCard({
 			action={
 				<div className="flex flex-wrap items-center justify-end gap-2">
 					<Badge variant="warning">작성 중</Badge>
-					{draft.is_clinic_owner != null ? (
+					{draftMode ? (
 						<Badge variant="soft">
-							{draft.is_clinic_owner ? "병원 홈페이지까지" : "프로필만"}
+							{draftMode === "hospital" ? "병원 홈페이지" : "프로필"}
 						</Badge>
 					) : null}
 				</div>

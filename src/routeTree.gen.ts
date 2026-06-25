@@ -40,7 +40,6 @@ import { Route as BillingCallbackRouteImport } from './routes/billing.callback'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as AdminPaymentsRouteImport } from './routes/admin.payments'
 import { Route as AdminNotificationsRouteImport } from './routes/admin.notifications'
-import { Route as AdminLicensesRouteImport } from './routes/admin.licenses'
 import { Route as AdminInstitutionsIndexRouteImport } from './routes/admin.institutions.index'
 import { Route as OauthDoxmeetCallbackRouteImport } from './routes/oauth.doxmeet.callback'
 import { Route as AdminInstitutionsIdRouteImport } from './routes/admin.institutions.$id'
@@ -200,11 +199,6 @@ const AdminNotificationsRoute = AdminNotificationsRouteImport.update({
   path: '/admin/notifications',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AdminLicensesRoute = AdminLicensesRouteImport.update({
-  id: '/admin/licenses',
-  path: '/admin/licenses',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const AdminInstitutionsIndexRoute = AdminInstitutionsIndexRouteImport.update({
   id: '/admin/institutions/',
   path: '/admin/institutions/',
@@ -229,7 +223,6 @@ export interface FileRoutesByFullPath {
   '/find-id': typeof FindIdRoute
   '/find-password': typeof FindPasswordRoute
   '/login': typeof LoginRoute
-  '/admin/licenses': typeof AdminLicensesRoute
   '/admin/notifications': typeof AdminNotificationsRoute
   '/admin/payments': typeof AdminPaymentsRoute
   '/admin/users': typeof AdminUsersRoute
@@ -266,7 +259,6 @@ export interface FileRoutesByTo {
   '/find-id': typeof FindIdRoute
   '/find-password': typeof FindPasswordRoute
   '/login': typeof LoginRoute
-  '/admin/licenses': typeof AdminLicensesRoute
   '/admin/notifications': typeof AdminNotificationsRoute
   '/admin/payments': typeof AdminPaymentsRoute
   '/admin/users': typeof AdminUsersRoute
@@ -304,7 +296,6 @@ export interface FileRoutesById {
   '/find-id': typeof FindIdRoute
   '/find-password': typeof FindPasswordRoute
   '/login': typeof LoginRoute
-  '/admin/licenses': typeof AdminLicensesRoute
   '/admin/notifications': typeof AdminNotificationsRoute
   '/admin/payments': typeof AdminPaymentsRoute
   '/admin/users': typeof AdminUsersRoute
@@ -343,7 +334,6 @@ export interface FileRouteTypes {
     | '/find-id'
     | '/find-password'
     | '/login'
-    | '/admin/licenses'
     | '/admin/notifications'
     | '/admin/payments'
     | '/admin/users'
@@ -380,7 +370,6 @@ export interface FileRouteTypes {
     | '/find-id'
     | '/find-password'
     | '/login'
-    | '/admin/licenses'
     | '/admin/notifications'
     | '/admin/payments'
     | '/admin/users'
@@ -417,7 +406,6 @@ export interface FileRouteTypes {
     | '/find-id'
     | '/find-password'
     | '/login'
-    | '/admin/licenses'
     | '/admin/notifications'
     | '/admin/payments'
     | '/admin/users'
@@ -455,7 +443,6 @@ export interface RootRouteChildren {
   FindIdRoute: typeof FindIdRoute
   FindPasswordRoute: typeof FindPasswordRoute
   LoginRoute: typeof LoginRoute
-  AdminLicensesRoute: typeof AdminLicensesRoute
   AdminNotificationsRoute: typeof AdminNotificationsRoute
   AdminPaymentsRoute: typeof AdminPaymentsRoute
   AdminUsersRoute: typeof AdminUsersRoute
@@ -704,13 +691,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminNotificationsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/admin/licenses': {
-      id: '/admin/licenses'
-      path: '/admin/licenses'
-      fullPath: '/admin/licenses'
-      preLoaderRoute: typeof AdminLicensesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/admin/institutions/': {
       id: '/admin/institutions/'
       path: '/admin/institutions'
@@ -743,7 +723,6 @@ const rootRouteChildren: RootRouteChildren = {
   FindIdRoute: FindIdRoute,
   FindPasswordRoute: FindPasswordRoute,
   LoginRoute: LoginRoute,
-  AdminLicensesRoute: AdminLicensesRoute,
   AdminNotificationsRoute: AdminNotificationsRoute,
   AdminPaymentsRoute: AdminPaymentsRoute,
   AdminUsersRoute: AdminUsersRoute,

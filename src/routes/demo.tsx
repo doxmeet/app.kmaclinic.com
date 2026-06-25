@@ -35,11 +35,11 @@ const GROUPS: Group[] = [
 	},
 	{
 		title: "운영자 콘솔 (API 연동)",
-		desc: "요양기관 · 회원 · 면허",
+		desc: "요양기관 · 회원 · 결제",
 		screens: [
 			{ to: "/admin/institutions", title: "요양기관 현황", ready: true },
 			{ to: "/admin/users", title: "회원 관리", ready: true },
-			{ to: "/admin/licenses", title: "면허 검증", ready: true },
+			{ to: "/admin/payments", title: "결제 관리", ready: true },
 			{ to: "/error/payment-failed", title: "정기결제 실패", ready: true },
 		],
 	},
