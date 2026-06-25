@@ -742,7 +742,7 @@ function ProfileEditor() {
 
 	if (isPending) {
 		return (
-			<AppShell userName="원장님" maxWidth="1280px">
+			<AppShell userName="원장님" maxWidth="1280px" innerMaxWidth="720px">
 				<div className="flex min-h-80 items-center justify-center">
 					<Loader2 className="size-7 animate-spin text-brand" />
 				</div>
@@ -752,7 +752,7 @@ function ProfileEditor() {
 
 	if (isError) {
 		return (
-			<AppShell userName="원장님" maxWidth="1280px">
+			<AppShell userName="원장님" maxWidth="1280px" innerMaxWidth="720px">
 				<SectionCard className="flex flex-col items-center gap-4 py-16 text-center">
 					<AlertCircle className="size-8 text-danger" />
 					<p className="text-base text-ink">프로필을 불러오지 못했습니다.</p>
@@ -780,7 +780,8 @@ function ProfileEditor() {
 	return (
 		<AppShell
 			userName={userName}
-			maxWidth="1120px"
+			maxWidth="1280px"
+			innerMaxWidth="720px"
 			bottomBar={
 				<StickyActionBar
 					className="shadow-[0_-6px_20px_-8px_rgba(15,39,68,0.18)]"
@@ -940,7 +941,7 @@ function PhotoSection({
 			{/* 프로필 사진 — 전체폭, 원본은 contain으로 보이고 양옆 여백은 블러로 채움 */}
 			<div className="flex flex-col gap-3">
 				<span className="text-sm font-medium text-body">프로필 사진</span>
-				<div className="relative flex aspect-video w-full items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-line-strong bg-muted text-body-soft">
+				<div className="relative flex aspect-5/2 w-full items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-line-strong bg-muted text-body-soft">
 					{photoUrl ? (
 						<>
 							<img
