@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	AlertCircle,
 	Camera,
-	ExternalLink,
+	Check,
 	ImageIcon,
 	Loader2,
 	Plus,
@@ -31,10 +31,10 @@ import { FieldInput } from "#/components/form/field-input.tsx";
 import { FieldSelect } from "#/components/form/select-field.tsx";
 import { StickyActionBar } from "#/components/layout/action-bar.tsx";
 import { AppShell } from "#/components/layout/app-shell.tsx";
-import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Checkbox } from "#/components/ui/checkbox.tsx";
 import { Switch } from "#/components/ui/switch.tsx";
+import { useDebouncedValue } from "#/hooks/use-debounced-value.ts";
 import {
 	getCompletion,
 	getProfile,
@@ -46,6 +46,8 @@ import {
 	type RefClinic,
 	searchClinics,
 	searchDepartments,
+	searchMedicalSchools,
+	searchSocieties,
 } from "#/lib/api/ref.ts";
 import { toastApiError } from "#/lib/api-error-message.ts";
 import { uploadFileToStorage } from "#/lib/upload.ts";
@@ -63,13 +65,17 @@ import { cn } from "#/lib/utils.ts";
 // 컬렉션 설정 — 문서 §6.10.3~6.10.9 필드명(ASCII 계약)에 맞춤.
 // ─────────────────────────────────────────────────────────────────────
 
-type FieldKind = "text" | "year" | "date" | "select";
+type FieldKind = "text" | "year" | "date" | "select" | "bool" | "ref";
+/** ref 자동완성 소스(레지스트리 엔드포인트가 있는 것만). */
+type RefSourceKey = "medical_school" | "society";
 type ColField = {
 	name: string;
 	label: string;
 	kind?: FieldKind;
 	options?: { value: string; label: string }[];
 	placeholder?: string;
+	/** kind:"ref"일 때 — 선택 시 표시 텍스트(name)와 FK(noField)를 함께 저장. */
+	ref?: { source: RefSourceKey; noField: string };
 };
 
 /** 컬렉션 키(affiliations는 전용 에디터라 제외). */
@@ -87,6 +93,16 @@ const SELECT = {
 		{ value: "bachelor", label: "학사" },
 		{ value: "master", label: "석사" },
 		{ value: "doctorate", label: "박사" },
+	],
+	eduPath: [
+		{ value: "direct", label: "정시/수시" },
+		{ value: "transfer", label: "편입" },
+		{ value: "graduate_school", label: "의전원" },
+		{ value: "foreign", label: "외국/북한" },
+	],
+	highSchool: [
+		{ value: "graduated", label: "졸업" },
+		{ value: "ged", label: "검정고시" },
 	],
 	eduStatus: [
 		{ value: "graduated", label: "졸업" },
@@ -125,8 +141,6 @@ type CollConfig = {
 	title: string;
 	addLabel: string;
 	fields: ColField[];
-	/** education만 확정(is_confirmed) 토글 노출. */
-	hasConfirm?: boolean;
 };
 
 const COLLECTIONS: CollConfig[] = [
@@ -134,7 +148,6 @@ const COLLECTIONS: CollConfig[] = [
 		key: "education",
 		title: "학력",
 		addLabel: "학력 추가",
-		hasConfirm: true,
 		fields: [
 			{
 				name: "degree_type",
@@ -143,9 +156,23 @@ const COLLECTIONS: CollConfig[] = [
 				options: [...SELECT.degree],
 			},
 			{
+				name: "education_path",
+				label: "진학 경로",
+				kind: "select",
+				options: [...SELECT.eduPath],
+			},
+			{
+				name: "high_school_type",
+				label: "고교 구분",
+				kind: "select",
+				options: [...SELECT.highSchool],
+			},
+			{
 				name: "school_name_text",
 				label: "학교명",
-				placeholder: "예: 서울대학교 의과대학",
+				kind: "ref",
+				ref: { source: "medical_school", noField: "medical_school_no" },
+				placeholder: "의과대학을 검색하세요",
 			},
 			{ name: "major", label: "전공", placeholder: "예: 의학과" },
 			{
@@ -161,6 +188,7 @@ const COLLECTIONS: CollConfig[] = [
 				kind: "select",
 				options: [...SELECT.eduStatus],
 			},
+			{ name: "is_transfer", label: "편입", kind: "bool" },
 		],
 	},
 	{
@@ -182,6 +210,12 @@ const COLLECTIONS: CollConfig[] = [
 			{ name: "license_number", label: "면허번호" },
 			{ name: "acquired_at", label: "취득일", kind: "date" },
 			{ name: "specialist_number", label: "전문의 번호" },
+			{
+				name: "cert_name",
+				label: "인증서명",
+				placeholder: "예: 내시경 인증의",
+			},
+			{ name: "cert_number", label: "인증 번호" },
 			{ name: "issuing_society", label: "발급 학회" },
 		],
 	},
@@ -205,6 +239,7 @@ const COLLECTIONS: CollConfig[] = [
 			{ name: "subspecialty", label: "세부 전공" },
 			{ name: "start_date", label: "시작일", kind: "date" },
 			{ name: "end_date", label: "종료일", kind: "date" },
+			{ name: "is_current", label: "수련 중", kind: "bool" },
 		],
 	},
 	{
@@ -223,6 +258,7 @@ const COLLECTIONS: CollConfig[] = [
 			{ name: "department", label: "진료과" },
 			{ name: "start_date", label: "시작일", kind: "date" },
 			{ name: "end_date", label: "종료일", kind: "date" },
+			{ name: "is_current", label: "재직 중", kind: "bool" },
 		],
 	},
 	{
@@ -233,7 +269,9 @@ const COLLECTIONS: CollConfig[] = [
 			{
 				name: "name_text",
 				label: "학회/의사회명",
-				placeholder: "예: 대한소화기내시경학회",
+				kind: "ref",
+				ref: { source: "society", noField: "society_no" },
+				placeholder: "학회를 검색하세요",
 			},
 			{
 				name: "membership_type",
@@ -244,7 +282,15 @@ const COLLECTIONS: CollConfig[] = [
 			{ name: "grade", label: "회원 등급", placeholder: "예: 정회원" },
 			{ name: "role", label: "역할" },
 			{ name: "position", label: "직위/직책", placeholder: "예: 이사" },
+			{
+				name: "research_group",
+				label: "연구회/분과",
+				placeholder: "예: 췌담도 연구회",
+			},
 			{ name: "since_year", label: "가입연도", kind: "year" },
+			{ name: "term_start_year", label: "임기 시작연도", kind: "year" },
+			{ name: "term_end_year", label: "임기 종료연도", kind: "year" },
+			{ name: "is_current", label: "활동 중", kind: "bool" },
 		],
 	},
 	{
@@ -269,10 +315,10 @@ const COLLECTIONS: CollConfig[] = [
 
 // 프로필 공개 템플릿(template_key) — green/purple/mono/blue 4종.
 const TEMPLATE_OPTIONS = [
-	{ value: "blue", label: "블루" },
-	{ value: "green", label: "그린" },
-	{ value: "purple", label: "퍼플" },
-	{ value: "mono", label: "모노" },
+	{ value: "blue", label: "블루", desc: "기본형 · 신뢰감 있는 정통 레이아웃" },
+	{ value: "green", label: "그린", desc: "그린 톤 · 친근하고 편안한 느낌" },
+	{ value: "purple", label: "퍼플", desc: "퍼플 포인트 · 세련된 전문가형" },
+	{ value: "mono", label: "모노", desc: "모노 · 미니멀하고 정돈된 스타일" },
 ];
 
 const GENDER_OPTIONS = [
@@ -577,6 +623,7 @@ function numOrNull(v: unknown): number | null {
 /** 설정된 필드가 모두 비어 있는 신규 행인지(빈 행 생성 방지). */
 function isRowEmpty(row: Row, fields: ColField[]): boolean {
 	return fields.every((f) => {
+		if (f.kind === "bool") return true;
 		const v = row.values[f.name];
 		return v == null || (typeof v === "string" && v.trim() === "");
 	});
@@ -596,9 +643,14 @@ function buildItem(
 		item[f.name] =
 			f.kind === "year"
 				? numOrNull(row.values[f.name])
-				: textOrNull(row.values[f.name]);
+				: f.kind === "bool"
+					? row.values[f.name] === true
+					: textOrNull(row.values[f.name]);
+		// ref 필드는 표시 텍스트와 함께 FK(noField)도 전송(미선택/직접입력 시 null).
+		if (f.kind === "ref" && f.ref) {
+			item[f.ref.noField] = numOrNull(row.values[f.ref.noField]);
+		}
 	}
-	if (config.hasConfirm) item.is_confirmed = row.values.is_confirmed === true;
 	return item;
 }
 
@@ -772,9 +824,6 @@ function ProfileEditor() {
 		);
 	}
 
-	const isPublished = doc?.is_published === true;
-	const slug = typeof doc?.slug === "string" ? doc.slug : null;
-
 	const completionPercent = completion?.completion_percent;
 
 	return (
@@ -785,16 +834,6 @@ function ProfileEditor() {
 			bottomBar={
 				<StickyActionBar
 					className="shadow-[0_-6px_20px_-8px_rgba(15,39,68,0.18)]"
-					center={
-						typeof completionPercent === "number" ? (
-							<span>
-								프로필 완성도{" "}
-								<span className="font-semibold text-brand">
-									{completionPercent}%
-								</span>
-							</span>
-						) : undefined
-					}
 					right={
 						<Button
 							variant="brand"
@@ -815,14 +854,11 @@ function ProfileEditor() {
 			}
 		>
 			<div className="flex flex-col gap-6">
-				<ProfileHeader
-					isPublished={isPublished}
-					slug={slug}
-					completion={completionPercent}
-				/>
+				<ProfileHeader completion={completionPercent} />
 
 				<PhotoSection state={state} dispatch={dispatch} />
 				<BasicInfoSection state={state} dispatch={dispatch} />
+				<TemplateSection state={state} dispatch={dispatch} />
 				<VisibilitySection state={state} dispatch={dispatch} />
 
 				{COLLECTIONS.map((config) => (
@@ -844,47 +880,20 @@ function ProfileEditor() {
 // 섹션 컴포넌트
 // ─────────────────────────────────────────────────────────────────────
 
-function ProfileHeader({
-	isPublished,
-	slug,
-	completion,
-}: {
-	isPublished: boolean;
-	slug: string | null;
-	completion?: number;
-}) {
-	const kmadocUrl = slug ? `https://${slug}.kmadoc.com` : null;
+function ProfileHeader({ completion }: { completion?: number }) {
 	const pct =
 		typeof completion === "number"
 			? Math.max(0, Math.min(100, completion))
 			: null;
 	return (
 		<SectionCard className="flex flex-col gap-5">
-			<div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-				<div className="flex flex-col gap-1.5">
-					<h1 className="text-2xl font-bold text-ink sm:text-[28px]">
-						의사 프로필 관리
-					</h1>
-					<p className="text-base text-body-soft">
-						전문성을 입증하기 위한 정보를 한눈에 관리하세요.
-					</p>
-				</div>
-				<div className="flex shrink-0 flex-wrap items-center gap-2">
-					<Badge variant={isPublished ? "success" : "secondary"}>
-						{isPublished ? "공개 중" : "비공개"}
-					</Badge>
-					{isPublished && kmadocUrl ? (
-						<a
-							href={kmadocUrl}
-							target="_blank"
-							rel="noreferrer"
-							className="inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline"
-						>
-							<ExternalLink className="size-3.5" />
-							공개 페이지
-						</a>
-					) : null}
-				</div>
+			<div className="flex flex-col gap-1.5">
+				<h1 className="text-2xl font-bold text-ink sm:text-[28px]">
+					의사 프로필 관리
+				</h1>
+				<p className="text-base text-body-soft">
+					전문성을 입증하기 위한 정보를 한눈에 관리하세요.
+				</p>
 			</div>
 			{pct !== null ? (
 				<div className="flex flex-col gap-2">
@@ -900,6 +909,58 @@ function ProfileHeader({
 					</div>
 				</div>
 			) : null}
+		</SectionCard>
+	);
+}
+
+/** 공개 프로필 시안(template_key) — 병원 시안 선택과 동일한 카드 타일 스타일. */
+function TemplateSection({
+	state,
+	dispatch,
+}: {
+	state: EditState;
+	dispatch: React.Dispatch<EditAction>;
+}) {
+	const current = state.core.template_key || "blue";
+	return (
+		<SectionCard className="flex flex-col gap-5">
+			<SectionTitle>공개 프로필 시안</SectionTitle>
+			<div className="grid grid-cols-2 gap-3">
+				{TEMPLATE_OPTIONS.map((t) => {
+					const selected = current === t.value;
+					return (
+						<button
+							key={t.value}
+							type="button"
+							onClick={() =>
+								dispatch({
+									type: "setCore",
+									key: "template_key",
+									value: t.value,
+								})
+							}
+							className={cn(
+								"flex flex-col gap-1.5 rounded-xl border p-5 text-left transition-colors",
+								selected
+									? "border-brand bg-brand-50 ring-1 ring-brand"
+									: "border-line hover:border-line-strong",
+							)}
+						>
+							<div className="flex items-center justify-between gap-2">
+								<span className="text-base font-semibold text-ink">
+									{t.label}
+								</span>
+								{selected ? (
+									<span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-brand text-brand-foreground">
+										<Check className="size-4" />
+									</span>
+								) : null}
+							</div>
+							<span className="text-sm text-body-soft">{t.desc}</span>
+						</button>
+					);
+				})}
+			</div>
 		</SectionCard>
 	);
 }
@@ -1068,35 +1129,31 @@ function BasicInfoSection({
 	return (
 		<SectionCard className="flex flex-col gap-6">
 			<SectionTitle>기본 정보</SectionTitle>
-			<div className="grid gap-6 sm:grid-cols-2">
-				<TextField
-					label="성명"
-					value={state.core.display_name}
-					onChange={set("display_name")}
+			<TextField
+				label="성명"
+				value={state.core.display_name}
+				onChange={set("display_name")}
+			/>
+			<TextField
+				label="영문 성명"
+				value={state.core.name_en}
+				onChange={set("name_en")}
+			/>
+			<Field>
+				<FieldLabel>성별</FieldLabel>
+				<FieldSelect
+					value={state.core.gender}
+					onValueChange={set("gender")}
+					options={GENDER_OPTIONS}
+					placeholder="선택 안함"
 				/>
-				<TextField
-					label="영문 성명"
-					value={state.core.name_en}
-					onChange={set("name_en")}
-				/>
-			</div>
-			<div className="grid gap-6 sm:grid-cols-2">
-				<Field>
-					<FieldLabel>성별</FieldLabel>
-					<FieldSelect
-						value={state.core.gender}
-						onValueChange={set("gender")}
-						options={GENDER_OPTIONS}
-						placeholder="선택 안함"
-					/>
-				</Field>
-				<TextField
-					label="생년월일"
-					value={state.core.birth_date}
-					onChange={set("birth_date")}
-					placeholder="YYYY-MM-DD"
-				/>
-			</div>
+			</Field>
+			<TextField
+				label="생년월일"
+				value={state.core.birth_date}
+				onChange={set("birth_date")}
+				placeholder="YYYY-MM-DD"
+			/>
 			<TextField
 				label="한 줄 소개(헤드라인)"
 				value={state.core.headline}
@@ -1126,50 +1183,36 @@ function BasicInfoSection({
 				value={state.core.etc_text}
 				onChange={set("etc_text")}
 			/>
-			<div className="grid gap-6 sm:grid-cols-2">
-				<TextField
-					label="연락처 전화"
-					value={state.core.contact_phone}
-					onChange={set("contact_phone")}
-					placeholder="예: 02-123-4567"
-				/>
-				<TextField
-					label="연락처 이메일"
-					value={state.core.contact_email}
-					onChange={set("contact_email")}
-					placeholder="예: doctor@example.com"
-				/>
-			</div>
-			<div className="grid gap-6 sm:grid-cols-2">
-				<TextField
-					label="네이버 링크"
-					value={state.core.naver_url}
-					onChange={set("naver_url")}
-					placeholder="https://"
-				/>
-				<TextField
-					label="카카오 링크"
-					value={state.core.kakao_url}
-					onChange={set("kakao_url")}
-					placeholder="https://"
-				/>
-			</div>
-			<div className="grid gap-6 sm:grid-cols-2">
-				<TextField
-					label="ORCID iD"
-					value={state.core.orcid_id}
-					onChange={set("orcid_id")}
-					placeholder="0000-0000-0000-0000"
-				/>
-				<Field>
-					<FieldLabel>공개 프로필 시안</FieldLabel>
-					<FieldSelect
-						value={state.core.template_key || "blue"}
-						onValueChange={set("template_key")}
-						options={TEMPLATE_OPTIONS}
-					/>
-				</Field>
-			</div>
+			<TextField
+				label="연락처 전화"
+				value={state.core.contact_phone}
+				onChange={set("contact_phone")}
+				placeholder="예: 02-123-4567"
+			/>
+			<TextField
+				label="연락처 이메일"
+				value={state.core.contact_email}
+				onChange={set("contact_email")}
+				placeholder="예: doctor@example.com"
+			/>
+			<TextField
+				label="네이버 링크"
+				value={state.core.naver_url}
+				onChange={set("naver_url")}
+				placeholder="https://"
+			/>
+			<TextField
+				label="카카오 링크"
+				value={state.core.kakao_url}
+				onChange={set("kakao_url")}
+				placeholder="https://"
+			/>
+			<TextField
+				label="ORCID iD"
+				value={state.core.orcid_id}
+				onChange={set("orcid_id")}
+				placeholder="0000-0000-0000-0000"
+			/>
 		</SectionCard>
 	);
 }
@@ -1183,7 +1226,7 @@ function PrimaryDepartmentField({
 	dispatch: React.Dispatch<EditAction>;
 }) {
 	const text = state.core.primary_department_text;
-	const keyword = text.trim();
+	const keyword = useDebouncedValue(text.trim());
 	const { data } = useQuery({
 		queryKey: ["ref", "department", keyword],
 		queryFn: () => searchDepartments({ keyword }),
@@ -1305,7 +1348,7 @@ function VisibilitySection({
 			<FieldDescription>
 				끄면 공개 프로필(kmadoc.com)에서 해당 항목이 숨겨집니다.
 			</FieldDescription>
-			<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+			<div className="grid gap-3">
 				{VISIBILITY_KEYS.map((v) => (
 					<div
 						key={v.key}
@@ -1337,6 +1380,7 @@ function CollectionSection({
 	dispatch: React.Dispatch<EditAction>;
 }) {
 	const visible = rows.filter((r) => !r.deleted);
+
 	return (
 		<SectionCard className="flex flex-col gap-5">
 			<SectionTitle>{config.title}</SectionTitle>
@@ -1351,18 +1395,18 @@ function CollectionSection({
 						key={row.id}
 						className="flex flex-col gap-3 rounded-xl border border-line p-4"
 					>
-						<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+						<div className="grid gap-3">
 							{config.fields.map((f) => (
 								<CollField
 									key={f.name}
 									field={f}
 									value={row.values[f.name]}
-									onChange={(value) =>
+									setField={(field, value) =>
 										dispatch({
 											type: "updateRow",
 											coll: config.key,
 											id: row.id,
-											field: f.name,
+											field,
 											value,
 										})
 									}
@@ -1384,21 +1428,6 @@ function CollectionSection({
 										})
 									}
 								/>
-								{config.hasConfirm ? (
-									<RowToggle
-										label="확정"
-										checked={row.values.is_confirmed === true}
-										onChange={(v) =>
-											dispatch({
-												type: "updateRow",
-												coll: config.key,
-												id: row.id,
-												field: "is_confirmed",
-												value: v,
-											})
-										}
-									/>
-								) : null}
 							</div>
 							<Button
 								type="button"
@@ -1429,30 +1458,146 @@ function CollectionSection({
 	);
 }
 
+type RefRow = Record<string, unknown>;
+type RefSource = {
+	minLen: number;
+	placeholder: string;
+	search: (keyword: string) => Promise<{ items: RefRow[] }>;
+	describe?: (item: RefRow) => string | undefined;
+};
+
+/** 의과대학 type 한글화(영문 노출 방지). 미정의 값은 표시 생략. */
+const MEDICAL_SCHOOL_TYPE: Record<string, string> = {
+	university: "의과대학",
+	graduate: "의학전문대학원",
+};
+
+/** ref 자동완성 소스(레지스트리 GET이 존재하는 항목만). */
+const REF_SOURCES: Record<RefSourceKey, RefSource> = {
+	medical_school: {
+		minLen: 1,
+		placeholder: "의과대학을 검색하세요",
+		search: (keyword) => searchMedicalSchools({ keyword, limit: 20 }),
+		describe: (i) =>
+			[
+				typeof i.region === "string" ? i.region : null,
+				MEDICAL_SCHOOL_TYPE[String(i.type)] ?? null,
+				i.status === "predecessor" ? "전신" : null,
+			]
+				.filter(Boolean)
+				.join(" · ") || undefined,
+	},
+	society: {
+		minLen: 1,
+		placeholder: "학회를 검색하세요",
+		search: (keyword) => searchSocieties({ keyword, limit: 20 }),
+		describe: (i) =>
+			[i.category, i.is_official ? "공식" : null].filter(Boolean).join(" · ") ||
+			undefined,
+	},
+};
+
+const refIdOf = (item: RefRow) => String(item.no ?? item.name ?? "");
+
+/** 레지스트리 자동완성 — 고르면 name/no를, 직접 입력하면 name만(no="") 올린다. */
+function RefAutocomplete({
+	source,
+	value,
+	placeholder,
+	onPick,
+}: {
+	source: RefSourceKey;
+	value: string;
+	placeholder?: string;
+	onPick: (name: string, no: string) => void;
+}) {
+	const src = REF_SOURCES[source];
+	const keyword = useDebouncedValue(value.trim());
+	const { data } = useQuery({
+		queryKey: ["ref", source, keyword],
+		queryFn: () => src.search(keyword),
+		enabled: keyword.length >= src.minLen,
+		staleTime: 60_000,
+	});
+	const items = data?.items ?? [];
+	const options: AutocompleteOption[] = items.map((it) => ({
+		value: refIdOf(it),
+		label: String(it.name ?? ""),
+		description: src.describe?.(it),
+	}));
+	return (
+		<Autocomplete
+			options={options}
+			value={value}
+			onChange={(v) => onPick(v, "")}
+			onSelect={(opt) => {
+				const picked = items.find((it) => refIdOf(it) === opt.value);
+				onPick(
+					String(picked?.name ?? opt.label),
+					picked?.no != null ? String(picked.no) : "",
+				);
+			}}
+			onManualEntry={() => {}}
+			placeholder={placeholder ?? src.placeholder}
+		/>
+	);
+}
+
 function CollField({
 	field,
 	value,
-	onChange,
+	setField,
 }: {
 	field: ColField;
 	value: unknown;
-	onChange: (value: string) => void;
+	setField: (name: string, value: unknown) => void;
 }) {
 	const str = asString(value);
+	if (field.kind === "bool") {
+		return (
+			<Field>
+				<FieldLabel>{field.label}</FieldLabel>
+				<div className="flex h-10 items-center">
+					<Switch
+						checked={value === true}
+						onCheckedChange={(v) => setField(field.name, v === true)}
+						aria-label={field.label}
+					/>
+				</div>
+			</Field>
+		);
+	}
+	if (field.kind === "ref" && field.ref) {
+		const ref = field.ref;
+		return (
+			<Field>
+				<FieldLabel>{field.label}</FieldLabel>
+				<RefAutocomplete
+					source={ref.source}
+					value={str}
+					placeholder={field.placeholder}
+					onPick={(name, no) => {
+						setField(field.name, name);
+						setField(ref.noField, no);
+					}}
+				/>
+			</Field>
+		);
+	}
 	return (
 		<Field>
 			<FieldLabel>{field.label}</FieldLabel>
 			{field.kind === "select" ? (
 				<FieldSelect
 					value={str}
-					onValueChange={onChange}
+					onValueChange={(v) => setField(field.name, v)}
 					options={field.options ?? []}
 					placeholder="선택"
 				/>
 			) : (
 				<FieldInput
 					value={str}
-					onChange={(e) => onChange(e.target.value)}
+					onChange={(e) => setField(field.name, e.target.value)}
 					placeholder={
 						field.placeholder ??
 						(field.kind === "date"
@@ -1492,7 +1637,7 @@ function AffiliationsSection({
 						className="flex flex-col gap-4 rounded-xl border border-line p-4"
 					>
 						<AffiliationInstitutionField row={row} dispatch={dispatch} />
-						<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+						<div className="grid gap-3">
 							<AffField
 								row={row}
 								field="title"
@@ -1609,7 +1754,7 @@ function AffiliationInstitutionField({
 	dispatch: React.Dispatch<EditAction>;
 }) {
 	const name = asString(row.values.institution_name);
-	const keyword = name.trim();
+	const keyword = useDebouncedValue(name.trim());
 	const { data } = useQuery({
 		queryKey: ["ref", "clinic", keyword],
 		queryFn: () => searchClinics({ keyword, limit: 20 }),

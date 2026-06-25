@@ -30,6 +30,7 @@ import {
 	type CommitResult,
 	commitSession,
 	getSession,
+	type OnboardingMode,
 	type SessionView,
 	sendMessage,
 	startSession,
@@ -160,12 +161,15 @@ const initialConvState: ConvState = {
 };
 
 export function OnboardingConversation({
+	mode,
 	onBackToDashboard,
 }: {
+	/** 세션 모드 — 'hospital'(병원) | 'profile'(프로필). startSession에 그대로 전달. */
+	mode: OnboardingMode;
 	/** 상단 "← 대시보드" — 클릭 시 대시보드 모드 복귀 + overview refetch. */
 	onBackToDashboard: () => void;
 }) {
-	const conv = useOnboardingConversation();
+	const conv = useOnboardingConversation(mode);
 	const { session, startError, commitResult, adminDialogOpen, pollExpired } =
 		conv.state;
 
@@ -198,7 +202,6 @@ export function OnboardingConversation({
 
 			<ProgressHeader
 				progress={conv.progress}
-				showOwnerBadge={session.is_clinic_owner != null}
 				isClinicOwner={conv.isClinicOwner}
 			/>
 
@@ -265,7 +268,7 @@ export function OnboardingConversation({
  *  - 진행률·waiting·옵션 등 파생값, 자동 스크롤/포커스/폴링 부수효과,
  *  - 입력/파일/완료 핸들러까지 한 곳에서 묶어 컴포넌트는 JSX만 담당.
  */
-function useOnboardingConversation() {
+function useOnboardingConversation(mode: OnboardingMode) {
 	const queryClient = useQueryClient();
 	// 세션 진행 상태 묶음(시작/세션뷰/완료/다이얼로그/폴링). 단일 진실원.
 	const [state, dispatch] = useReducer(convReducer, initialConvState);
@@ -284,10 +287,10 @@ function useOnboardingConversation() {
 	useEffect(() => {
 		if (started.current) return;
 		started.current = true;
-		startSession()
+		startSession(mode)
 			.then((view) => dispatch({ type: "setSession", view }))
 			.catch((err) => dispatch({ type: "setStartError", error: err }));
-	}, []);
+	}, [mode]);
 
 	// 새 메시지/응답을 받으면 폴링 안전장치 플래그를 리셋(새 대기 구간을 위해).
 	function applySession(view: SessionView) {
@@ -357,7 +360,9 @@ function useOnboardingConversation() {
 	const processingFile = session?.processing_file ?? 0;
 	const history = (session?.history as ChatMessage[] | undefined) ?? [];
 	const historyLength = history.length;
-	const isClinicOwner = session?.is_clinic_owner === true;
+	// 세션 모드는 시작 시 확정됨(startSession에 전달). 백엔드 응답 mode를 우선하되
+	// 아직 없으면 호출 시 넘긴 prop으로 판단한다(인텐트 미확정 단계는 제거됨).
+	const isClinicOwner = (session?.mode ?? mode) === "hospital";
 	// 관리자 아이디 prefill: 대화 중 언급했다면 draft에 있을 수 있음(비밀번호는 절대 안 옴).
 	const draftLoginId =
 		(
@@ -462,7 +467,7 @@ function useOnboardingConversation() {
 	function retryStart() {
 		dispatch({ type: "setStartError", error: null });
 		started.current = false;
-		startSession()
+		startSession(mode)
 			.then((view) => dispatch({ type: "setSession", view }))
 			.catch((err) => dispatch({ type: "setStartError", error: err }));
 	}
@@ -724,14 +729,12 @@ function LoadingState({ onBack }: { onBack: () => void }) {
 	);
 }
 
-/** 진행바 + "한 번에 입력하기" 링크 + 소유 유형 배지. */
+/** 진행바 + "한 번에 입력하기" 링크 + 소유 유형 배지(모드는 시작 시 확정되므로 항상 노출). */
 function ProgressHeader({
 	progress,
-	showOwnerBadge,
 	isClinicOwner,
 }: {
 	progress: number;
-	showOwnerBadge: boolean;
 	isClinicOwner: boolean;
 }) {
 	return (
@@ -754,13 +757,11 @@ function ProgressHeader({
 					style={{ width: `${progress}%` }}
 				/>
 			</div>
-			{showOwnerBadge ? (
-				<div>
-					<Badge variant="soft">
-						{isClinicOwner ? "병원 홈페이지" : "프로필"}
-					</Badge>
-				</div>
-			) : null}
+			<div>
+				<Badge variant="soft">
+					{isClinicOwner ? "병원 홈페이지" : "프로필"}
+				</Badge>
+			</div>
 		</div>
 	);
 }

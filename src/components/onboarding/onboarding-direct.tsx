@@ -31,6 +31,7 @@ import { AppShell } from "#/components/layout/app-shell.tsx";
 import { CommitComplete } from "#/components/onboarding/commit-complete.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Textarea } from "#/components/ui/textarea.tsx";
+import { useDebouncedValue } from "#/hooks/use-debounced-value.ts";
 import {
 	type CommitResult,
 	type HospitalOnboardingInput,
@@ -191,7 +192,6 @@ type FieldsState = {
 	refClinicNo: string;
 	roadAddress: string;
 	mainPhone: string;
-	customerCenterPhone: string;
 	hoursWeekday: string;
 	hoursSaturday: string;
 	hoursSunday: string;
@@ -213,7 +213,6 @@ const INITIAL_FIELDS: FieldsState = {
 	refClinicNo: "",
 	roadAddress: "",
 	mainPhone: "",
-	customerCenterPhone: "",
 	hoursWeekday: "",
 	hoursSaturday: "",
 	hoursSunday: "",
@@ -326,7 +325,6 @@ function buildHospitalPayload(input: FormInput): HospitalOnboardingInput {
 		name: fields.hospitalName.trim(),
 		road_address: fields.roadAddress.trim(),
 		main_phone: fields.mainPhone.trim(),
-		customer_center_phone: fields.customerCenterPhone.trim(),
 		// 문서 §8.3: 병원 디자인 시안은 `template_key`(t1~t5) 컬럼으로 전달.
 		template_key: fields.templateKey,
 		logo_url: logoUrl,
@@ -412,7 +410,6 @@ function prefillFromDraft(
 		merge.refClinicNo = yearToText(hospital.ref_clinic_no);
 		merge.roadAddress = asString(hospital.road_address);
 		merge.mainPhone = asString(hospital.main_phone);
-		merge.customerCenterPhone = asString(hospital.customer_center_phone);
 		if (asString(hospital.template_key)) {
 			merge.templateKey = asString(hospital.template_key);
 		}
@@ -656,7 +653,8 @@ function DirectOnboardingForm() {
 		if (restoreStartedRef.current) return;
 		restoreStartedRef.current = true;
 		try {
-			const view = await startSession();
+			// 직접 입력 폼은 병원 전용 → 병원 모드 세션을 startOrGet.
+			const view = await startSession("hospital");
 			// 결제만 남은 병원 → 폼 대신 결제 복귀 화면.
 			if (view.status === "pending_payment" && view.pending_payment) {
 				dispatchSession({
@@ -913,7 +911,7 @@ function ClinicSearchField({
 	onNameChange: (value: string) => void;
 	onPick: (clinic: RefClinic) => void;
 }) {
-	const keyword = name.trim();
+	const keyword = useDebouncedValue(name.trim());
 	const { data } = useQuery({
 		queryKey: ["ref", "clinic", keyword],
 		queryFn: () => searchClinics({ keyword, limit: 20 }),
@@ -964,7 +962,6 @@ function HospitalInfoSection({
 }) {
 	const roadAddressId = useId();
 	const mainPhoneId = useId();
-	const ccPhoneId = useId();
 	const hoursWeekdayId = useId();
 	const hoursSatId = useId();
 	const hoursSunId = useId();
@@ -1014,15 +1011,6 @@ function HospitalInfoSection({
 					value={fields.mainPhone}
 					onChange={(e) => setField("mainPhone", e.target.value)}
 					placeholder="예: 02-123-4567"
-				/>
-			</Field>
-			<Field>
-				<FieldLabel htmlFor={ccPhoneId}>고객센터 대표번호</FieldLabel>
-				<FieldInput
-					id={ccPhoneId}
-					value={fields.customerCenterPhone}
-					onChange={(e) => setField("customerCenterPhone", e.target.value)}
-					placeholder="예: 1588-0000"
 				/>
 			</Field>
 

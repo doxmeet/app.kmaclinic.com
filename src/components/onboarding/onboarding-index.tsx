@@ -22,6 +22,7 @@ import {
 } from "#/lib/api/billing.ts";
 import {
 	getOverview,
+	type OnboardingMode,
 	type OverviewHospital,
 	type PaymentIntent,
 } from "#/lib/api/onboarding.ts";
@@ -53,6 +54,10 @@ function OnboardingOrchestrator() {
 	const queryClient = useQueryClient();
 
 	const [mode, setMode] = useState<Mode>("dashboard");
+	// conversation 모드로 진입할 때 시작할 온보딩 모드(병원/프로필) — startSession에 전달.
+	// 신규 대화형은 항상 병원, draft "이어서 작성"은 그 draft의 모드를 따른다.
+	const [conversationMode, setConversationMode] =
+		useState<OnboardingMode>("hospital");
 	// payment 모드: 어떤 병원의 결제 페이로드를 쓸지.
 	const [paymentTarget, setPaymentTarget] = useState<PaymentIntent | null>(
 		null,
@@ -90,7 +95,10 @@ function OnboardingOrchestrator() {
 	if (mode === "conversation") {
 		return (
 			<AppShell userName={userName} maxWidth="1280px" innerMaxWidth="720px">
-				<OnboardingConversation onBackToDashboard={backToDashboard} />
+				<OnboardingConversation
+					mode={conversationMode}
+					onBackToDashboard={backToDashboard}
+				/>
 			</AppShell>
 		);
 	}
@@ -150,8 +158,18 @@ function OnboardingOrchestrator() {
 			) : overview ? (
 				<OnboardingDashboard
 					overview={overview}
-					onStartConversation={() => setMode("conversation")}
-					onContinueDraft={() => setMode("conversation")}
+					onStartConversation={() => {
+						// 대화형 "새로 만들기"는 병원 홈페이지 전용(프로필은 /doctor/profile).
+						setConversationMode("hospital");
+						setMode("conversation");
+					}}
+					onContinueDraft={() => {
+						// draft를 이어서 작성 — 그 draft의 모드로 startOrGet.
+						setConversationMode(
+							overview.draft?.mode === "profile" ? "profile" : "hospital",
+						);
+						setMode("conversation");
+					}}
 					onPay={(payment) => {
 						setPaymentTarget(payment);
 						setMode("payment");

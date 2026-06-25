@@ -13,6 +13,10 @@ const MESSAGES: Record<string, string> = {
 	ERROR_403_FORBIDDEN: "권한이 없습니다.",
 	ERROR_403_USER_WITHDRAWN: "탈퇴한 계정입니다. 로그인할 수 없습니다.",
 	// 온보딩
+	ERROR_400_ONBOARDING_MODE_REQUIRED:
+		"작성할 유형(병원 또는 프로필)을 선택해 주세요.",
+	ERROR_409_PROFILE_ALREADY_EXISTS:
+		"이미 의사 프로필이 있습니다. 프로필 관리에서 수정할 수 있어요.",
 	ERROR_404_ONBOARDING_SESSION_NOT_FOUND:
 		"작성 중인 내용이 없습니다. 처음부터 시작해 주세요.",
 	ERROR_409_ONBOARDING_FILES_PROCESSING:

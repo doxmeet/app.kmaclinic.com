@@ -84,7 +84,8 @@ const SessionViewSchema = z.looseObject({
 	processing_text: numeric,
 	// 진행중 "업로드 문서" 추출 수(표시등 전용).
 	processing_file: numeric,
-	// 세션 모드(문서 §6.2.1): 'hospital'=병원만 생성(유료), 'profile'=프로필만(무료), null=인텐트 미확정.
+	// 세션 모드(문서 §6.2.1): 'hospital'=병원만 생성(유료), 'profile'=프로필만(무료).
+	// 세션 시작 시 startSession({ mode })으로 확정된다(인텐트 질문 단계는 제거됨).
 	mode: z.string().nullish(),
 	// 하위호환 별칭: is_clinic_owner === (mode === 'hospital'). 신규 코드는 mode 사용 권장.
 	is_clinic_owner: z.boolean().nullish(),
@@ -124,9 +125,21 @@ export type SendMessageInput = {
 /** AI 추출/질문 생성은 수십 초가 걸릴 수 있어 넉넉히(2분). */
 const AI_TIMEOUT = 120_000;
 
-export async function startSession(): Promise<SessionView> {
+/** 세션 모드 — 'hospital'=병원만 생성(유료), 'profile'=프로필만(무료). */
+export type OnboardingMode = "hospital" | "profile";
+
+/**
+ * 대화형 세션 시작(startOrGet) — `POST /onboarding/session { mode }`.
+ * 해당 모드의 진행중 세션이 있으면 이어서, 없으면 그 모드의 **첫 질문**으로 새로 시작한다.
+ * (인텐트 질문 단계는 제거됨 — 모드는 호출 시점에 확정한다.)
+ *
+ * 에러: `mode` 누락 → `ERROR_400_ONBOARDING_MODE_REQUIRED`,
+ * 이미 프로필이 있는 사용자가 `mode:"profile"` 요청 → `ERROR_409_PROFILE_ALREADY_EXISTS`
+ * (병원 모드는 여러 개 허용되므로 막지 않는다).
+ */
+export async function startSession(mode: OnboardingMode): Promise<SessionView> {
 	return parse(
-		await http.post("onboarding/session", undefined, { timeout: AI_TIMEOUT }),
+		await http.post("onboarding/session", { mode }, { timeout: AI_TIMEOUT }),
 		SessionViewSchema,
 	);
 }
@@ -203,7 +216,7 @@ export async function resetSession(): Promise<void> {
 
 /** `POST /onboarding/hospital` 본문 — 병원만 생성(프로필 만들지 않음). */
 export type HospitalOnboardingInput = {
-	/** name·road_address·business_hours·template_key·logo_url·customer_center_phone·sns_links·ref_clinic_no 등. */
+	/** name·road_address·business_hours·template_key·logo_url·main_phone·sns_links·ref_clinic_no 등. */
 	hospital?: Record<string, unknown>;
 	/** { login_id, name }. login_id 사실상 필수(비번은 아래 필드). */
 	hospital_admin?: { login_id?: string; name?: string };

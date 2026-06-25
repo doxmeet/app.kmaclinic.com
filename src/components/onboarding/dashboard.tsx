@@ -17,8 +17,11 @@ import { CardShell } from "#/components/common/card-shell.tsx";
 import { InfoCallout } from "#/components/common/info-callout.tsx";
 import { InfoRows } from "#/components/common/info-rows.tsx";
 import { SectionCard } from "#/components/common/section-card.tsx";
+import { isSlugValid } from "#/components/onboarding/slug.ts";
+import { SlugField } from "#/components/onboarding/slug-field.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
+import { setProfileSlug } from "#/lib/api/billing.ts";
 import type {
 	Overview,
 	OverviewDraft,
@@ -27,7 +30,7 @@ import type {
 	PaymentIntent,
 } from "#/lib/api/onboarding.ts";
 import { deleteHospital, resetSession } from "#/lib/api/onboarding.ts";
-import { publishProfile } from "#/lib/api/profile.ts";
+import { publishProfile, unpublishProfile } from "#/lib/api/profile.ts";
 import { toastApiError } from "#/lib/api-error-message.ts";
 import { cn } from "#/lib/utils.ts";
 
@@ -383,13 +386,28 @@ function ProfileCard({
 	const slug = profile.slug?.trim() || null;
 	const name = profile.display_name?.trim() || "원장님";
 	const kmadocUrl = slug ? `https://${slug}.kmadoc.com` : null;
+	const [slugInput, setSlugInput] = useState("");
+	const needsSlug = !slug;
+	const validSlug = isSlugValid(slugInput);
 
-	// 발행하기 → 프로필 발행 API(병원 publish와 대칭). slug는 선설정돼 있어야 한다.
+	// 발행하기 → 프로필 발행 API(병원 publish와 대칭). slug 미설정 시 먼저 설정 후 공개.
 	const publishMutation = useMutation({
-		mutationFn: publishProfile,
+		mutationFn: async () => {
+			if (needsSlug) await setProfileSlug(slugInput.trim());
+			return publishProfile();
+		},
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: ["onboarding", "overview"] });
 			toast.success("프로필을 공개했어요.");
+			onRefetch();
+		},
+		onError: (err) => toastApiError(err),
+	});
+	const unpublishMutation = useMutation({
+		mutationFn: unpublishProfile,
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["onboarding", "overview"] });
+			toast.success("프로필 공개를 해제했어요.");
 			onRefetch();
 		},
 		onError: (err) => toastApiError(err),
@@ -454,6 +472,17 @@ function ProfileCard({
 									공개 페이지 보기
 								</Button>
 							) : null}
+							<Button
+								variant="neutral-outline"
+								size="xl"
+								onClick={() => unpublishMutation.mutate()}
+								disabled={unpublishMutation.isPending}
+							>
+								{unpublishMutation.isPending ? (
+									<Loader2 className="size-4 animate-spin" />
+								) : null}
+								공개 해제
+							</Button>
 						</div>
 					</>
 				) : (
@@ -461,9 +490,20 @@ function ProfileCard({
 						<InfoCallout tone="info">
 							<p className="text-sm">
 								의사 프로필이 아직 비공개예요. "프로필 관리"에서 내용을 채운 뒤
-								공개하면 공개 주소로 게시됩니다.
+								공개 주소를 정하고 공개하면 게시됩니다.
 							</p>
 						</InfoCallout>
+						{needsSlug ? (
+							<SlugField
+								label="공개 주소"
+								domain=".kmadoc.com"
+								value={slugInput}
+								onChange={setSlugInput}
+								placeholder="예: hong-gildong"
+								invalid={slugInput.length > 0 && !validSlug}
+								description="공개 시 사용할 주소예요. 한 번 정하면 바꿀 수 없어요."
+							/>
+						) : null}
 						<div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
 							<Button
 								nativeButton={false}
@@ -478,7 +518,9 @@ function ProfileCard({
 								variant="brand"
 								size="xl"
 								onClick={() => publishMutation.mutate()}
-								disabled={publishMutation.isPending}
+								disabled={
+									publishMutation.isPending || (needsSlug && !validSlug)
+								}
 							>
 								{publishMutation.isPending ? (
 									<Loader2 className="size-4 animate-spin" />
