@@ -165,11 +165,111 @@ export function OnboardingConversation({
 	/** 상단 "← 대시보드" — 클릭 시 대시보드 모드 복귀 + overview refetch. */
 	onBackToDashboard: () => void;
 }) {
+	const conv = useOnboardingConversation();
+	const { session, startError, commitResult, adminDialogOpen, pollExpired } =
+		conv.state;
+
+	if (commitResult) {
+		return (
+			<CommitCompleteView
+				result={commitResult}
+				onBackToDashboard={onBackToDashboard}
+			/>
+		);
+	}
+
+	if (startError) {
+		return (
+			<StartErrorState
+				error={startError}
+				onBack={onBackToDashboard}
+				onRetry={conv.retryStart}
+			/>
+		);
+	}
+
+	if (!session) {
+		return <LoadingState onBack={onBackToDashboard} />;
+	}
+
+	return (
+		<div className="flex flex-col gap-5">
+			<BackToDashboardLink onClick={onBackToDashboard} />
+
+			<ProgressHeader
+				progress={conv.progress}
+				showOwnerBadge={session.is_clinic_owner != null}
+				isClinicOwner={conv.isClinicOwner}
+			/>
+
+			{/* 채팅 영역 */}
+			<SectionCard className="flex flex-col gap-4 p-4 sm:p-5">
+				<ChatScroll
+					viewportRef={conv.viewportRef}
+					history={conv.history}
+					questionBubble={conv.questionBubble}
+					interrupt={conv.interrupt}
+					isSending={conv.isSending}
+					isUploading={conv.isUploading}
+					isAnalyzing={conv.isAnalyzing}
+					waiting={conv.waiting}
+					pollExpired={pollExpired}
+					pendingMessage={conv.pendingMessage}
+					processingFile={conv.processingFile}
+					uploadingFileName={conv.uploadingFileName}
+					onManualRefresh={conv.handleManualRefresh}
+				/>
+
+				<Composer
+					inputRef={conv.inputRef}
+					fileInputRef={conv.fileInputRef}
+					pickConflicts={conv.pickConflicts}
+					isSelect={conv.isSelect}
+					selectOptions={conv.selectOptions}
+					showSkip={conv.showSkip}
+					allowText={conv.allowText}
+					allowFile={conv.allowFile}
+					text={conv.text}
+					pending={{
+						sending: conv.isSending,
+						uploading: conv.isUploading,
+						conflict: conv.conflictPending,
+					}}
+					onTextChange={conv.setText}
+					onSubmit={conv.handleSubmit}
+					onPickFile={conv.handlePickFile}
+					onOpenFilePicker={conv.openFilePicker}
+					onSendOption={conv.sendOption}
+					onPickConflict={conv.pickConflict}
+				/>
+			</SectionCard>
+
+			<CommitSection
+				readyToCommit={conv.readyToCommit}
+				isClinicOwner={conv.isClinicOwner}
+				isCommitting={conv.isCommitting}
+				processingFile={conv.processingFile}
+				adminDialogOpen={adminDialogOpen}
+				draftLoginId={conv.draftLoginId}
+				onCommit={conv.handleCommit}
+				onAdminDialogChange={conv.setAdminDialogOpen}
+				onAdminSubmit={conv.submitAdminCredentials}
+			/>
+		</div>
+	);
+}
+
+/**
+ * 대화 화면의 데이터 오케스트레이션을 담당하는 훅:
+ *  - 세션 reducer + 시작/재시도, 텍스트/파일/충돌 해소/commit 4종 mutation,
+ *  - 진행률·waiting·옵션 등 파생값, 자동 스크롤/포커스/폴링 부수효과,
+ *  - 입력/파일/완료 핸들러까지 한 곳에서 묶어 컴포넌트는 JSX만 담당.
+ */
+function useOnboardingConversation() {
 	const queryClient = useQueryClient();
 	// 세션 진행 상태 묶음(시작/세션뷰/완료/다이얼로그/폴링). 단일 진실원.
 	const [state, dispatch] = useReducer(convReducer, initialConvState);
-	const { session, startError, commitResult, adminDialogOpen, pollExpired } =
-		state;
+	const { session, pollExpired } = state;
 	const [text, setText] = useState("");
 
 	const fileInputRef = useRef<HTMLInputElement>(null);
@@ -188,13 +288,6 @@ export function OnboardingConversation({
 			.then((view) => dispatch({ type: "setSession", view }))
 			.catch((err) => dispatch({ type: "setStartError", error: err }));
 	}, []);
-
-	// 백그라운드 분석 진행 수(표시등 전용). waiting과 별개 — 폴링 트리거 아님(문서 2026-06 §1).
-	const processingText = session?.processing_text ?? 0;
-	const processingFile = session?.processing_file ?? 0;
-
-	const history = (session?.history as ChatMessage[] | undefined) ?? [];
-	const historyLength = history.length;
 
 	// 새 메시지/응답을 받으면 폴링 안전장치 플래그를 리셋(새 대기 구간을 위해).
 	function applySession(view: SessionView) {
@@ -259,6 +352,11 @@ export function OnboardingConversation({
 	});
 
 	// ── 파생 상태 ───────────────────────────────────────────────────
+	// 백그라운드 분석 진행 수(표시등 전용). waiting과 별개 — 폴링 트리거 아님(문서 2026-06 §1).
+	const processingText = session?.processing_text ?? 0;
+	const processingFile = session?.processing_file ?? 0;
+	const history = (session?.history as ChatMessage[] | undefined) ?? [];
+	const historyLength = history.length;
 	const isClinicOwner = session?.is_clinic_owner === true;
 	// 관리자 아이디 prefill: 대화 중 언급했다면 draft에 있을 수 있음(비밀번호는 절대 안 옴).
 	const draftLoginId =
@@ -317,37 +415,9 @@ export function OnboardingConversation({
 		nextQuestion,
 	});
 
-	// commit 완료 화면(무료 또는 결제 유도). 결제는 toss → /billing/callback → 대시보드 복귀.
-	if (commitResult) {
-		return (
-			<CommitCompleteView
-				result={commitResult}
-				onBackToDashboard={onBackToDashboard}
-			/>
-		);
-	}
-
-	// 세션 시작 실패
-	if (startError) {
-		return (
-			<StartErrorState
-				error={startError}
-				onBack={onBackToDashboard}
-				onRetry={() => {
-					dispatch({ type: "setStartError", error: null });
-					started.current = false;
-					startSession()
-						.then((view) => dispatch({ type: "setSession", view }))
-						.catch((err) => dispatch({ type: "setStartError", error: err }));
-				}}
-			/>
-		);
-	}
-
-	// 세션 로딩 중
-	if (!session) {
-		return <LoadingState onBack={onBackToDashboard} />;
-	}
+	// 완료 버튼 노출은 progress 100(ready)으로만 판단한다(문서 §6.2.2/§6.2.4/§7.4 —
+	// 완료 안내 문구는 상황별로 달라 문구 매칭 금지).
+	const readyToCommit = isReadyToCommit(progress);
 
 	function handleSubmit(e: React.FormEvent) {
 		e.preventDefault();
@@ -389,79 +459,56 @@ export function OnboardingConversation({
 		}
 	}
 
-	// 완료 버튼 노출은 progress 100(ready)으로만 판단한다(문서 §6.2.2/§6.2.4/§7.4 —
-	// 완료 안내 문구는 상황별로 달라 문구 매칭 금지).
-	const readyToCommit = isReadyToCommit(progress);
+	function retryStart() {
+		dispatch({ type: "setStartError", error: null });
+		started.current = false;
+		startSession()
+			.then((view) => dispatch({ type: "setSession", view }))
+			.catch((err) => dispatch({ type: "setStartError", error: err }));
+	}
 
-	return (
-		<div className="flex flex-col gap-5">
-			<BackToDashboardLink onClick={onBackToDashboard} />
-
-			<ProgressHeader
-				progress={progress}
-				showOwnerBadge={session.is_clinic_owner != null}
-				isClinicOwner={isClinicOwner}
-			/>
-
-			{/* 채팅 영역 */}
-			<SectionCard className="flex flex-col gap-4 p-4 sm:p-5">
-				<ChatScroll
-					viewportRef={viewportRef}
-					history={history}
-					questionBubble={questionBubble}
-					interrupt={interrupt}
-					isSending={isSending}
-					isUploading={isUploading}
-					isAnalyzing={isAnalyzing}
-					waiting={waiting}
-					pollExpired={pollExpired}
-					pendingMessage={pendingMessage}
-					processingFile={processingFile}
-					uploadingFileName={fileMutation.variables?.name}
-					onManualRefresh={handleManualRefresh}
-				/>
-
-				<Composer
-					inputRef={inputRef}
-					fileInputRef={fileInputRef}
-					pickConflicts={pickConflicts}
-					isSelect={isSelect}
-					selectOptions={selectOptions}
-					showSkip={showSkip}
-					allowText={allowText}
-					allowFile={allowFile}
-					text={text}
-					pending={{
-						sending: isSending,
-						uploading: isUploading,
-						conflict: conflictMutation.isPending,
-					}}
-					onTextChange={setText}
-					onSubmit={handleSubmit}
-					onPickFile={handlePickFile}
-					onOpenFilePicker={() => fileInputRef.current?.click()}
-					onSendOption={(value) => textMutation.mutate(value)}
-					onPickConflict={(value) => conflictMutation.mutate(value)}
-				/>
-			</SectionCard>
-
-			<CommitSection
-				readyToCommit={readyToCommit}
-				isClinicOwner={isClinicOwner}
-				isCommitting={isCommitting}
-				processingFile={processingFile}
-				adminDialogOpen={adminDialogOpen}
-				draftLoginId={draftLoginId}
-				onCommit={handleCommit}
-				onAdminDialogChange={(open) =>
-					dispatch({ type: "setAdminDialogOpen", open })
-				}
-				onAdminSubmit={(login_id, password) =>
-					commitMutation.mutate({ login_id, password })
-				}
-			/>
-		</div>
-	);
+	return {
+		state,
+		text,
+		setText,
+		viewportRef,
+		inputRef,
+		fileInputRef,
+		history,
+		questionBubble,
+		interrupt,
+		progress,
+		isClinicOwner,
+		pickConflicts,
+		processingFile,
+		pendingMessage,
+		isSending,
+		isUploading,
+		isCommitting,
+		isAnalyzing,
+		waiting,
+		selectOptions,
+		isSelect,
+		allowText,
+		allowFile,
+		showSkip,
+		conflictPending: conflictMutation.isPending,
+		draftLoginId,
+		readyToCommit,
+		uploadingFileName: fileMutation.variables?.name,
+		handleSubmit,
+		handlePickFile,
+		handleCommit,
+		handleManualRefresh,
+		retryStart,
+		openFilePicker: () => fileInputRef.current?.click(),
+		sendOption: (value: string) => textMutation.mutate(value),
+		pickConflict: (value: string) => conflictMutation.mutate(value),
+		setAdminDialogOpen: (open: boolean) =>
+			dispatch({ type: "setAdminDialogOpen", open }),
+		submitAdminCredentials: (login_id: string, password: string) =>
+			commitMutation.mutate({ login_id, password }),
+	};
 }
 
 /**
