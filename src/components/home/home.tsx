@@ -269,8 +269,6 @@ function WhatYouGet() {
 						domain="*.kmadoc.com"
 						desc="경력·학력, 전문 자격, 진료 일정, 대표 논문까지. 환자가 신뢰할 수 있는 공개 프로필이 자동으로 구성됩니다."
 						bullets={["진료 일정", "경력 타임라인"]}
-						to="/doctor/preview"
-						ctaLabel="공개 프로필 예시 보기"
 					/>
 					<CreateCard
 						icon={LayoutGrid}

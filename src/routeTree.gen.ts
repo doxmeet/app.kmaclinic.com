@@ -12,29 +12,13 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as FindPasswordRouteImport } from './routes/find-password'
 import { Route as FindIdRouteImport } from './routes/find-id'
-import { Route as ComponentsRouteImport } from './routes/components'
 import { Route as AccountRouteImport } from './routes/account'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as OnboardingIndexRouteImport } from './routes/onboarding.index'
-import { Route as BoardIndexRouteImport } from './routes/board.index'
 import { Route as SubscriptionHospitalNoRouteImport } from './routes/subscription.$hospitalNo'
-import { Route as PlaygroundEditorRouteImport } from './routes/playground.editor'
 import { Route as OnboardingDirectRouteImport } from './routes/onboarding.direct'
-import { Route as Landing5RouteImport } from './routes/landing.5'
-import { Route as Landing4RouteImport } from './routes/landing.4'
-import { Route as Landing3RouteImport } from './routes/landing.3'
-import { Route as Landing2RouteImport } from './routes/landing.2'
-import { Route as Landing1RouteImport } from './routes/landing.1'
-import { Route as HospitalRegisterRouteImport } from './routes/hospital.register'
-import { Route as HospitalPreviewRouteImport } from './routes/hospital.preview'
-import { Route as HospitalManageRouteImport } from './routes/hospital.manage'
-import { Route as HospitalConfirmRouteImport } from './routes/hospital.confirm'
-import { Route as HospitalBillingRouteImport } from './routes/hospital.billing'
 import { Route as ErrorPaymentFailedRouteImport } from './routes/error.payment-failed'
 import { Route as DoctorProfileRouteImport } from './routes/doctor.profile'
-import { Route as DoctorPreviewRouteImport } from './routes/doctor.preview'
-import { Route as BoardOutputRouteImport } from './routes/board.output'
-import { Route as BoardIdRouteImport } from './routes/board.$id'
 import { Route as BillingCallbackRouteImport } from './routes/billing.callback'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as AdminPaymentsRouteImport } from './routes/admin.payments'
@@ -58,11 +42,6 @@ const FindIdRoute = FindIdRouteImport.update({
   path: '/find-id',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ComponentsRoute = ComponentsRouteImport.update({
-  id: '/components',
-  path: '/components',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const AccountRoute = AccountRouteImport.update({
   id: '/account',
   path: '/account',
@@ -78,74 +57,14 @@ const OnboardingIndexRoute = OnboardingIndexRouteImport.update({
   path: '/onboarding/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const BoardIndexRoute = BoardIndexRouteImport.update({
-  id: '/board/',
-  path: '/board/',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const SubscriptionHospitalNoRoute = SubscriptionHospitalNoRouteImport.update({
   id: '/subscription/$hospitalNo',
   path: '/subscription/$hospitalNo',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PlaygroundEditorRoute = PlaygroundEditorRouteImport.update({
-  id: '/playground/editor',
-  path: '/playground/editor',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const OnboardingDirectRoute = OnboardingDirectRouteImport.update({
   id: '/onboarding/direct',
   path: '/onboarding/direct',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const Landing5Route = Landing5RouteImport.update({
-  id: '/landing/5',
-  path: '/landing/5',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const Landing4Route = Landing4RouteImport.update({
-  id: '/landing/4',
-  path: '/landing/4',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const Landing3Route = Landing3RouteImport.update({
-  id: '/landing/3',
-  path: '/landing/3',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const Landing2Route = Landing2RouteImport.update({
-  id: '/landing/2',
-  path: '/landing/2',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const Landing1Route = Landing1RouteImport.update({
-  id: '/landing/1',
-  path: '/landing/1',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const HospitalRegisterRoute = HospitalRegisterRouteImport.update({
-  id: '/hospital/register',
-  path: '/hospital/register',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const HospitalPreviewRoute = HospitalPreviewRouteImport.update({
-  id: '/hospital/preview',
-  path: '/hospital/preview',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const HospitalManageRoute = HospitalManageRouteImport.update({
-  id: '/hospital/manage',
-  path: '/hospital/manage',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const HospitalConfirmRoute = HospitalConfirmRouteImport.update({
-  id: '/hospital/confirm',
-  path: '/hospital/confirm',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const HospitalBillingRoute = HospitalBillingRouteImport.update({
-  id: '/hospital/billing',
-  path: '/hospital/billing',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ErrorPaymentFailedRoute = ErrorPaymentFailedRouteImport.update({
@@ -156,21 +75,6 @@ const ErrorPaymentFailedRoute = ErrorPaymentFailedRouteImport.update({
 const DoctorProfileRoute = DoctorProfileRouteImport.update({
   id: '/doctor/profile',
   path: '/doctor/profile',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DoctorPreviewRoute = DoctorPreviewRouteImport.update({
-  id: '/doctor/preview',
-  path: '/doctor/preview',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const BoardOutputRoute = BoardOutputRouteImport.update({
-  id: '/board/output',
-  path: '/board/output',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const BoardIdRoute = BoardIdRouteImport.update({
-  id: '/board/$id',
-  path: '/board/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BillingCallbackRoute = BillingCallbackRouteImport.update({
@@ -212,7 +116,6 @@ const AdminInstitutionsIdRoute = AdminInstitutionsIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
-  '/components': typeof ComponentsRoute
   '/find-id': typeof FindIdRoute
   '/find-password': typeof FindPasswordRoute
   '/login': typeof LoginRoute
@@ -220,25 +123,10 @@ export interface FileRoutesByFullPath {
   '/admin/payments': typeof AdminPaymentsRoute
   '/admin/users': typeof AdminUsersRoute
   '/billing/callback': typeof BillingCallbackRoute
-  '/board/$id': typeof BoardIdRoute
-  '/board/output': typeof BoardOutputRoute
-  '/doctor/preview': typeof DoctorPreviewRoute
   '/doctor/profile': typeof DoctorProfileRoute
   '/error/payment-failed': typeof ErrorPaymentFailedRoute
-  '/hospital/billing': typeof HospitalBillingRoute
-  '/hospital/confirm': typeof HospitalConfirmRoute
-  '/hospital/manage': typeof HospitalManageRoute
-  '/hospital/preview': typeof HospitalPreviewRoute
-  '/hospital/register': typeof HospitalRegisterRoute
-  '/landing/1': typeof Landing1Route
-  '/landing/2': typeof Landing2Route
-  '/landing/3': typeof Landing3Route
-  '/landing/4': typeof Landing4Route
-  '/landing/5': typeof Landing5Route
   '/onboarding/direct': typeof OnboardingDirectRoute
-  '/playground/editor': typeof PlaygroundEditorRoute
   '/subscription/$hospitalNo': typeof SubscriptionHospitalNoRoute
-  '/board/': typeof BoardIndexRoute
   '/onboarding/': typeof OnboardingIndexRoute
   '/admin/institutions/$id': typeof AdminInstitutionsIdRoute
   '/oauth/doxmeet/callback': typeof OauthDoxmeetCallbackRoute
@@ -247,7 +135,6 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
-  '/components': typeof ComponentsRoute
   '/find-id': typeof FindIdRoute
   '/find-password': typeof FindPasswordRoute
   '/login': typeof LoginRoute
@@ -255,25 +142,10 @@ export interface FileRoutesByTo {
   '/admin/payments': typeof AdminPaymentsRoute
   '/admin/users': typeof AdminUsersRoute
   '/billing/callback': typeof BillingCallbackRoute
-  '/board/$id': typeof BoardIdRoute
-  '/board/output': typeof BoardOutputRoute
-  '/doctor/preview': typeof DoctorPreviewRoute
   '/doctor/profile': typeof DoctorProfileRoute
   '/error/payment-failed': typeof ErrorPaymentFailedRoute
-  '/hospital/billing': typeof HospitalBillingRoute
-  '/hospital/confirm': typeof HospitalConfirmRoute
-  '/hospital/manage': typeof HospitalManageRoute
-  '/hospital/preview': typeof HospitalPreviewRoute
-  '/hospital/register': typeof HospitalRegisterRoute
-  '/landing/1': typeof Landing1Route
-  '/landing/2': typeof Landing2Route
-  '/landing/3': typeof Landing3Route
-  '/landing/4': typeof Landing4Route
-  '/landing/5': typeof Landing5Route
   '/onboarding/direct': typeof OnboardingDirectRoute
-  '/playground/editor': typeof PlaygroundEditorRoute
   '/subscription/$hospitalNo': typeof SubscriptionHospitalNoRoute
-  '/board': typeof BoardIndexRoute
   '/onboarding': typeof OnboardingIndexRoute
   '/admin/institutions/$id': typeof AdminInstitutionsIdRoute
   '/oauth/doxmeet/callback': typeof OauthDoxmeetCallbackRoute
@@ -283,7 +155,6 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
-  '/components': typeof ComponentsRoute
   '/find-id': typeof FindIdRoute
   '/find-password': typeof FindPasswordRoute
   '/login': typeof LoginRoute
@@ -291,25 +162,10 @@ export interface FileRoutesById {
   '/admin/payments': typeof AdminPaymentsRoute
   '/admin/users': typeof AdminUsersRoute
   '/billing/callback': typeof BillingCallbackRoute
-  '/board/$id': typeof BoardIdRoute
-  '/board/output': typeof BoardOutputRoute
-  '/doctor/preview': typeof DoctorPreviewRoute
   '/doctor/profile': typeof DoctorProfileRoute
   '/error/payment-failed': typeof ErrorPaymentFailedRoute
-  '/hospital/billing': typeof HospitalBillingRoute
-  '/hospital/confirm': typeof HospitalConfirmRoute
-  '/hospital/manage': typeof HospitalManageRoute
-  '/hospital/preview': typeof HospitalPreviewRoute
-  '/hospital/register': typeof HospitalRegisterRoute
-  '/landing/1': typeof Landing1Route
-  '/landing/2': typeof Landing2Route
-  '/landing/3': typeof Landing3Route
-  '/landing/4': typeof Landing4Route
-  '/landing/5': typeof Landing5Route
   '/onboarding/direct': typeof OnboardingDirectRoute
-  '/playground/editor': typeof PlaygroundEditorRoute
   '/subscription/$hospitalNo': typeof SubscriptionHospitalNoRoute
-  '/board/': typeof BoardIndexRoute
   '/onboarding/': typeof OnboardingIndexRoute
   '/admin/institutions/$id': typeof AdminInstitutionsIdRoute
   '/oauth/doxmeet/callback': typeof OauthDoxmeetCallbackRoute
@@ -320,7 +176,6 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/account'
-    | '/components'
     | '/find-id'
     | '/find-password'
     | '/login'
@@ -328,25 +183,10 @@ export interface FileRouteTypes {
     | '/admin/payments'
     | '/admin/users'
     | '/billing/callback'
-    | '/board/$id'
-    | '/board/output'
-    | '/doctor/preview'
     | '/doctor/profile'
     | '/error/payment-failed'
-    | '/hospital/billing'
-    | '/hospital/confirm'
-    | '/hospital/manage'
-    | '/hospital/preview'
-    | '/hospital/register'
-    | '/landing/1'
-    | '/landing/2'
-    | '/landing/3'
-    | '/landing/4'
-    | '/landing/5'
     | '/onboarding/direct'
-    | '/playground/editor'
     | '/subscription/$hospitalNo'
-    | '/board/'
     | '/onboarding/'
     | '/admin/institutions/$id'
     | '/oauth/doxmeet/callback'
@@ -355,7 +195,6 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/account'
-    | '/components'
     | '/find-id'
     | '/find-password'
     | '/login'
@@ -363,25 +202,10 @@ export interface FileRouteTypes {
     | '/admin/payments'
     | '/admin/users'
     | '/billing/callback'
-    | '/board/$id'
-    | '/board/output'
-    | '/doctor/preview'
     | '/doctor/profile'
     | '/error/payment-failed'
-    | '/hospital/billing'
-    | '/hospital/confirm'
-    | '/hospital/manage'
-    | '/hospital/preview'
-    | '/hospital/register'
-    | '/landing/1'
-    | '/landing/2'
-    | '/landing/3'
-    | '/landing/4'
-    | '/landing/5'
     | '/onboarding/direct'
-    | '/playground/editor'
     | '/subscription/$hospitalNo'
-    | '/board'
     | '/onboarding'
     | '/admin/institutions/$id'
     | '/oauth/doxmeet/callback'
@@ -390,7 +214,6 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/account'
-    | '/components'
     | '/find-id'
     | '/find-password'
     | '/login'
@@ -398,25 +221,10 @@ export interface FileRouteTypes {
     | '/admin/payments'
     | '/admin/users'
     | '/billing/callback'
-    | '/board/$id'
-    | '/board/output'
-    | '/doctor/preview'
     | '/doctor/profile'
     | '/error/payment-failed'
-    | '/hospital/billing'
-    | '/hospital/confirm'
-    | '/hospital/manage'
-    | '/hospital/preview'
-    | '/hospital/register'
-    | '/landing/1'
-    | '/landing/2'
-    | '/landing/3'
-    | '/landing/4'
-    | '/landing/5'
     | '/onboarding/direct'
-    | '/playground/editor'
     | '/subscription/$hospitalNo'
-    | '/board/'
     | '/onboarding/'
     | '/admin/institutions/$id'
     | '/oauth/doxmeet/callback'
@@ -426,7 +234,6 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccountRoute: typeof AccountRoute
-  ComponentsRoute: typeof ComponentsRoute
   FindIdRoute: typeof FindIdRoute
   FindPasswordRoute: typeof FindPasswordRoute
   LoginRoute: typeof LoginRoute
@@ -434,25 +241,10 @@ export interface RootRouteChildren {
   AdminPaymentsRoute: typeof AdminPaymentsRoute
   AdminUsersRoute: typeof AdminUsersRoute
   BillingCallbackRoute: typeof BillingCallbackRoute
-  BoardIdRoute: typeof BoardIdRoute
-  BoardOutputRoute: typeof BoardOutputRoute
-  DoctorPreviewRoute: typeof DoctorPreviewRoute
   DoctorProfileRoute: typeof DoctorProfileRoute
   ErrorPaymentFailedRoute: typeof ErrorPaymentFailedRoute
-  HospitalBillingRoute: typeof HospitalBillingRoute
-  HospitalConfirmRoute: typeof HospitalConfirmRoute
-  HospitalManageRoute: typeof HospitalManageRoute
-  HospitalPreviewRoute: typeof HospitalPreviewRoute
-  HospitalRegisterRoute: typeof HospitalRegisterRoute
-  Landing1Route: typeof Landing1Route
-  Landing2Route: typeof Landing2Route
-  Landing3Route: typeof Landing3Route
-  Landing4Route: typeof Landing4Route
-  Landing5Route: typeof Landing5Route
   OnboardingDirectRoute: typeof OnboardingDirectRoute
-  PlaygroundEditorRoute: typeof PlaygroundEditorRoute
   SubscriptionHospitalNoRoute: typeof SubscriptionHospitalNoRoute
-  BoardIndexRoute: typeof BoardIndexRoute
   OnboardingIndexRoute: typeof OnboardingIndexRoute
   AdminInstitutionsIdRoute: typeof AdminInstitutionsIdRoute
   OauthDoxmeetCallbackRoute: typeof OauthDoxmeetCallbackRoute
@@ -482,13 +274,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FindIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/components': {
-      id: '/components'
-      path: '/components'
-      fullPath: '/components'
-      preLoaderRoute: typeof ComponentsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/account': {
       id: '/account'
       path: '/account'
@@ -510,13 +295,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OnboardingIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/board/': {
-      id: '/board/'
-      path: '/board'
-      fullPath: '/board/'
-      preLoaderRoute: typeof BoardIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/subscription/$hospitalNo': {
       id: '/subscription/$hospitalNo'
       path: '/subscription/$hospitalNo'
@@ -524,88 +302,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SubscriptionHospitalNoRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/playground/editor': {
-      id: '/playground/editor'
-      path: '/playground/editor'
-      fullPath: '/playground/editor'
-      preLoaderRoute: typeof PlaygroundEditorRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/onboarding/direct': {
       id: '/onboarding/direct'
       path: '/onboarding/direct'
       fullPath: '/onboarding/direct'
       preLoaderRoute: typeof OnboardingDirectRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/landing/5': {
-      id: '/landing/5'
-      path: '/landing/5'
-      fullPath: '/landing/5'
-      preLoaderRoute: typeof Landing5RouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/landing/4': {
-      id: '/landing/4'
-      path: '/landing/4'
-      fullPath: '/landing/4'
-      preLoaderRoute: typeof Landing4RouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/landing/3': {
-      id: '/landing/3'
-      path: '/landing/3'
-      fullPath: '/landing/3'
-      preLoaderRoute: typeof Landing3RouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/landing/2': {
-      id: '/landing/2'
-      path: '/landing/2'
-      fullPath: '/landing/2'
-      preLoaderRoute: typeof Landing2RouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/landing/1': {
-      id: '/landing/1'
-      path: '/landing/1'
-      fullPath: '/landing/1'
-      preLoaderRoute: typeof Landing1RouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/hospital/register': {
-      id: '/hospital/register'
-      path: '/hospital/register'
-      fullPath: '/hospital/register'
-      preLoaderRoute: typeof HospitalRegisterRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/hospital/preview': {
-      id: '/hospital/preview'
-      path: '/hospital/preview'
-      fullPath: '/hospital/preview'
-      preLoaderRoute: typeof HospitalPreviewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/hospital/manage': {
-      id: '/hospital/manage'
-      path: '/hospital/manage'
-      fullPath: '/hospital/manage'
-      preLoaderRoute: typeof HospitalManageRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/hospital/confirm': {
-      id: '/hospital/confirm'
-      path: '/hospital/confirm'
-      fullPath: '/hospital/confirm'
-      preLoaderRoute: typeof HospitalConfirmRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/hospital/billing': {
-      id: '/hospital/billing'
-      path: '/hospital/billing'
-      fullPath: '/hospital/billing'
-      preLoaderRoute: typeof HospitalBillingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/error/payment-failed': {
@@ -620,27 +321,6 @@ declare module '@tanstack/react-router' {
       path: '/doctor/profile'
       fullPath: '/doctor/profile'
       preLoaderRoute: typeof DoctorProfileRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/doctor/preview': {
-      id: '/doctor/preview'
-      path: '/doctor/preview'
-      fullPath: '/doctor/preview'
-      preLoaderRoute: typeof DoctorPreviewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/board/output': {
-      id: '/board/output'
-      path: '/board/output'
-      fullPath: '/board/output'
-      preLoaderRoute: typeof BoardOutputRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/board/$id': {
-      id: '/board/$id'
-      path: '/board/$id'
-      fullPath: '/board/$id'
-      preLoaderRoute: typeof BoardIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/billing/callback': {
@@ -698,7 +378,6 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccountRoute: AccountRoute,
-  ComponentsRoute: ComponentsRoute,
   FindIdRoute: FindIdRoute,
   FindPasswordRoute: FindPasswordRoute,
   LoginRoute: LoginRoute,
@@ -706,25 +385,10 @@ const rootRouteChildren: RootRouteChildren = {
   AdminPaymentsRoute: AdminPaymentsRoute,
   AdminUsersRoute: AdminUsersRoute,
   BillingCallbackRoute: BillingCallbackRoute,
-  BoardIdRoute: BoardIdRoute,
-  BoardOutputRoute: BoardOutputRoute,
-  DoctorPreviewRoute: DoctorPreviewRoute,
   DoctorProfileRoute: DoctorProfileRoute,
   ErrorPaymentFailedRoute: ErrorPaymentFailedRoute,
-  HospitalBillingRoute: HospitalBillingRoute,
-  HospitalConfirmRoute: HospitalConfirmRoute,
-  HospitalManageRoute: HospitalManageRoute,
-  HospitalPreviewRoute: HospitalPreviewRoute,
-  HospitalRegisterRoute: HospitalRegisterRoute,
-  Landing1Route: Landing1Route,
-  Landing2Route: Landing2Route,
-  Landing3Route: Landing3Route,
-  Landing4Route: Landing4Route,
-  Landing5Route: Landing5Route,
   OnboardingDirectRoute: OnboardingDirectRoute,
-  PlaygroundEditorRoute: PlaygroundEditorRoute,
   SubscriptionHospitalNoRoute: SubscriptionHospitalNoRoute,
-  BoardIndexRoute: BoardIndexRoute,
   OnboardingIndexRoute: OnboardingIndexRoute,
   AdminInstitutionsIdRoute: AdminInstitutionsIdRoute,
   OauthDoxmeetCallbackRoute: OauthDoxmeetCallbackRoute,

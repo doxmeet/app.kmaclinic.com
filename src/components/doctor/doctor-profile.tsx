@@ -3,6 +3,7 @@ import {
 	AlertCircle,
 	Camera,
 	ExternalLink,
+	ImageIcon,
 	Loader2,
 	Plus,
 	RotateCcw,
@@ -28,9 +29,11 @@ import {
 } from "#/components/form/field.tsx";
 import { FieldInput } from "#/components/form/field-input.tsx";
 import { FieldSelect } from "#/components/form/select-field.tsx";
+import { StickyActionBar } from "#/components/layout/action-bar.tsx";
 import { AppShell } from "#/components/layout/app-shell.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
+import { Checkbox } from "#/components/ui/checkbox.tsx";
 import { Switch } from "#/components/ui/switch.tsx";
 import {
 	getCompletion,
@@ -278,7 +281,7 @@ const GENDER_OPTIONS = [
 	{ value: "female", label: "여성" },
 ];
 
-/** 진료 일정 그리드 — 요일 × 시간대 × 상태(문서 §6.10.9, 셀 enum 서버 미강제). */
+/** 진료 일정 그리드 — 요일 × 시간대(am/pm) boolean(true=진료가능, false=휴진) + schedule.note. */
 const GRID_DAYS = [
 	{ key: "mon", label: "월" },
 	{ key: "tue", label: "화" },
@@ -291,16 +294,7 @@ const GRID_DAYS = [
 const GRID_BANDS = [
 	{ key: "am", label: "오전" },
 	{ key: "pm", label: "오후" },
-	{ key: "night", label: "야간" },
 ] as const;
-const GRID_OPTIONS = [
-	{ value: "", label: "—" },
-	{ value: "available", label: "진료" },
-	{ value: "off", label: "휴진" },
-	{ value: "surgery", label: "수술" },
-	{ value: "research", label: "연구" },
-	{ value: "outpatient", label: "외래" },
-];
 
 /** 코어 스칼라 키 — 저장 시 항상 전송하는 사용자 편집 필드. */
 const CORE_KEYS = [
@@ -325,13 +319,14 @@ const CORE_KEYS = [
 ] as const;
 type CoreKey = (typeof CORE_KEYS)[number];
 
+// 각 토글이 가리는 섹션/필드 라벨과 일치시킨다(문서 §6.10.1 field_visibility 매핑).
 const VISIBILITY_KEYS: { key: string; label: string }[] = [
-	{ key: "specialty", label: "전문 분야" },
+	{ key: "specialty", label: "전문 진료 분야" },
 	{ key: "etc", label: "기타" },
-	{ key: "photo", label: "사진" },
+	{ key: "photo", label: "프로필 사진" },
 	{ key: "contact", label: "연락처" },
-	{ key: "media", label: "언론/방송" },
-	{ key: "schedule", label: "진료 일정(소속병원)" },
+	{ key: "media", label: "방송 출연 및 언론 보도" },
+	{ key: "schedule", label: "소속 병원·진료 일정" },
 ];
 
 // ─────────────────────────────────────────────────────────────────────
@@ -375,8 +370,9 @@ type EditAction =
 			id: string;
 			day: string;
 			band: string;
-			value: string;
-	  };
+			value: boolean;
+	  }
+	| { type: "setScheduleNote"; id: string; value: string };
 
 const EMPTY_STATE: EditState = {
 	core: Object.fromEntries(CORE_KEYS.map((k) => [k, ""])) as Record<
@@ -455,6 +451,12 @@ function editReducer(state: EditState, action: EditAction): EditState {
 			return withRows(state, "affiliations", (rows) =>
 				rows.map((r) => (r.id === action.id ? setGridCell(r, action) : r)),
 			);
+		case "setScheduleNote":
+			return withRows(state, "affiliations", (rows) =>
+				rows.map((r) =>
+					r.id === action.id ? setScheduleField(r, "note", action.value) : r,
+				),
+			);
 		default:
 			return state;
 	}
@@ -471,19 +473,30 @@ function withRows(
 	return { ...state, colls: { ...state.colls, [coll]: fn(state.colls[coll]) } };
 }
 
+/** 그리드 셀(요일×시간대) boolean 설정 — true=진료가능, false=휴진. */
 function setGridCell(
 	row: Row,
-	action: { day: string; band: string; value: string },
+	action: { day: string; band: string; value: boolean },
 ): Row {
 	const schedule = asObject(row.values.schedule) ?? {};
 	const grid = asObject(schedule.grid) ?? {};
-	const dayObj = { ...(asObject(grid[action.day]) ?? {}) };
-	// 비우면 null로 둔다 — merge-patch가 서버의 해당 셀을 삭제하도록(생략하면 유지됨).
-	dayObj[action.band] = action.value || null;
+	const dayObj = {
+		...(asObject(grid[action.day]) ?? {}),
+		[action.band]: action.value,
+	};
 	const nextGrid = { ...grid, [action.day]: dayObj };
 	return {
 		...row,
 		values: { ...row.values, schedule: { ...schedule, grid: nextGrid } },
+	};
+}
+
+/** schedule 하위 스칼라 필드(note 등) 설정. */
+function setScheduleField(row: Row, field: string, value: unknown): Row {
+	const schedule = asObject(row.values.schedule) ?? {};
+	return {
+		...row,
+		values: { ...row.values, schedule: { ...schedule, [field]: value } },
 	};
 }
 
@@ -592,7 +605,7 @@ function buildItem(
 
 /** 소속병원 행 → 저장 항목(institution/ref_clinic_no/일정 포함). */
 function buildAffiliation(row: Row, index: number): Record<string, unknown> {
-	const grid = asObject(asObject(row.values.schedule)?.grid) ?? {};
+	const schedule = asObject(row.values.schedule) ?? {};
 	return {
 		order: index,
 		is_public: row.values.is_public !== false,
@@ -602,8 +615,30 @@ function buildAffiliation(row: Row, index: number): Record<string, unknown> {
 		department: textOrNull(row.values.department),
 		join_date: textOrNull(row.values.join_date),
 		role: textOrNull(row.values.role),
-		schedule: { grid },
+		// schedule.grid는 요일×{am,pm} boolean, note는 일정 전체 비고(문서 모델).
+		schedule: {
+			grid: normalizeGrid(schedule.grid),
+			note: textOrNull(schedule.note),
+		},
 	};
+}
+
+/** grid를 요일×{am,pm} boolean으로 정규화(레거시 enum/야간 값은 제거). */
+function normalizeGrid(
+	raw: unknown,
+): Record<string, { am?: boolean; pm?: boolean }> {
+	const obj = asObject(raw);
+	if (!obj) return {};
+	const out: Record<string, { am?: boolean; pm?: boolean }> = {};
+	for (const [day, cells] of Object.entries(obj)) {
+		const c = asObject(cells);
+		if (!c) continue;
+		const entry: { am?: boolean; pm?: boolean } = {};
+		if (typeof c.am === "boolean") entry.am = c.am;
+		if (typeof c.pm === "boolean") entry.pm = c.pm;
+		if ("am" in entry || "pm" in entry) out[day] = entry;
+	}
+	return out;
 }
 
 /** 컬렉션 patch 조각: 유지 행=전체 전송, 삭제 행=null. */
@@ -741,15 +776,49 @@ function ProfileEditor() {
 	const isPublished = doc?.is_published === true;
 	const slug = typeof doc?.slug === "string" ? doc.slug : null;
 
+	const completionPercent = completion?.completion_percent;
+
 	return (
-		<AppShell userName={userName} maxWidth="960px">
-			<div className="flex flex-col gap-8">
+		<AppShell
+			userName={userName}
+			maxWidth="1120px"
+			bottomBar={
+				<StickyActionBar
+					className="shadow-[0_-6px_20px_-8px_rgba(15,39,68,0.18)]"
+					center={
+						typeof completionPercent === "number" ? (
+							<span>
+								프로필 완성도{" "}
+								<span className="font-semibold text-brand">
+									{completionPercent}%
+								</span>
+							</span>
+						) : undefined
+					}
+					right={
+						<Button
+							variant="brand"
+							size="2xl"
+							className="px-8 font-semibold"
+							disabled={saveMutation.isPending}
+							onClick={() => saveMutation.mutate()}
+						>
+							{saveMutation.isPending ? (
+								<Loader2 className="size-5 animate-spin" />
+							) : (
+								<Save className="size-5" />
+							)}
+							프로필 저장
+						</Button>
+					}
+				/>
+			}
+		>
+			<div className="flex flex-col gap-6">
 				<ProfileHeader
 					isPublished={isPublished}
 					slug={slug}
-					completion={completion?.completion_percent}
-					saving={saveMutation.isPending}
-					onSave={() => saveMutation.mutate()}
+					completion={completionPercent}
 				/>
 
 				<PhotoSection state={state} dispatch={dispatch} />
@@ -766,23 +835,6 @@ function ProfileEditor() {
 				))}
 
 				<AffiliationsSection rows={state.affiliations} dispatch={dispatch} />
-
-				<div className="flex justify-center pt-1">
-					<Button
-						variant="brand"
-						size="cta"
-						className="px-12 font-semibold sm:w-80"
-						disabled={saveMutation.isPending}
-						onClick={() => saveMutation.mutate()}
-					>
-						{saveMutation.isPending ? (
-							<Loader2 className="size-5 animate-spin" />
-						) : (
-							<Save className="size-5" />
-						)}
-						프로필 전체 저장하기
-					</Button>
-				</div>
 			</div>
 		</AppShell>
 	);
@@ -796,27 +848,28 @@ function ProfileHeader({
 	isPublished,
 	slug,
 	completion,
-	saving,
-	onSave,
 }: {
 	isPublished: boolean;
 	slug: string | null;
 	completion?: number;
-	saving: boolean;
-	onSave: () => void;
 }) {
 	const kmadocUrl = slug ? `https://${slug}.kmadoc.com` : null;
+	const pct =
+		typeof completion === "number"
+			? Math.max(0, Math.min(100, completion))
+			: null;
 	return (
-		<div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-			<div className="flex flex-col gap-[7px]">
-				<h1 className="text-2xl font-bold text-ink sm:text-[32px]">
-					의사 프로필 관리
-				</h1>
-				<div className="flex flex-wrap items-center gap-2 text-base text-body-soft">
-					<span>전문성을 입증하는 정보를 한곳에서 관리하세요.</span>
-					{typeof completion === "number" ? (
-						<Badge variant="soft">완성도 {completion}%</Badge>
-					) : null}
+		<SectionCard className="flex flex-col gap-5">
+			<div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+				<div className="flex flex-col gap-1.5">
+					<h1 className="text-2xl font-bold text-ink sm:text-[28px]">
+						의사 프로필 관리
+					</h1>
+					<p className="text-base text-body-soft">
+						전문성을 입증하기 위한 정보를 한눈에 관리하세요.
+					</p>
+				</div>
+				<div className="flex shrink-0 flex-wrap items-center gap-2">
 					<Badge variant={isPublished ? "success" : "secondary"}>
 						{isPublished ? "공개 중" : "비공개"}
 					</Badge>
@@ -833,21 +886,21 @@ function ProfileHeader({
 					) : null}
 				</div>
 			</div>
-			<Button
-				variant="brand"
-				size="2xl"
-				className="self-start px-8"
-				disabled={saving}
-				onClick={onSave}
-			>
-				{saving ? (
-					<Loader2 className="size-4 animate-spin" />
-				) : (
-					<Save className="size-4" />
-				)}
-				전체 저장
-			</Button>
-		</div>
+			{pct !== null ? (
+				<div className="flex flex-col gap-2">
+					<div className="flex items-center justify-between text-sm">
+						<span className="text-body-soft">입력 완료도</span>
+						<span className="font-semibold text-brand">{pct}%</span>
+					</div>
+					<div className="h-2 w-full overflow-hidden rounded-full bg-line-soft">
+						<div
+							className="h-full rounded-full bg-brand transition-all duration-500"
+							style={{ width: `${pct}%` }}
+						/>
+					</div>
+				</div>
+			) : null}
+		</SectionCard>
 	);
 }
 
@@ -879,28 +932,39 @@ function PhotoSection({
 		}
 	}
 
+	const coverUrl = state.core.cover_url;
+
 	return (
-		<SectionCard className="gap-6">
-			<SectionTitle>프로필 사진</SectionTitle>
-			<div className="flex flex-col gap-6 sm:flex-row sm:items-center">
-				<div className="relative shrink-0">
-					<div className="flex size-[120px] items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-line-strong bg-muted text-body-soft">
-						{photoUrl ? (
+		<SectionCard className="flex flex-col gap-8">
+			<SectionTitle>프로필 사진 · 배너</SectionTitle>
+
+			{/* 프로필 사진 — 전체폭, 원본은 contain으로 보이고 양옆 여백은 블러로 채움 */}
+			<div className="flex flex-col gap-3">
+				<span className="text-sm font-medium text-body">프로필 사진</span>
+				<div className="relative flex aspect-video w-full items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-line-strong bg-muted text-body-soft">
+					{photoUrl ? (
+						<>
 							<img
 								src={photoUrl}
-								alt="프로필 미리보기"
-								className="size-full object-cover"
+								alt=""
+								aria-hidden
+								className="absolute inset-0 size-full scale-110 object-cover blur-xl"
 							/>
-						) : (
-							<Camera className="size-7" />
-						)}
-					</div>
+							<img
+								src={photoUrl}
+								alt="프로필 사진 미리보기"
+								className="relative size-full object-contain"
+							/>
+						</>
+					) : (
+						<Camera className="size-7" />
+					)}
 				</div>
-				<div className="flex flex-col gap-3">
+				<div className="flex flex-wrap items-center gap-2">
 					<span className="text-sm text-body-soft">
-						JPG, PNG · 권장 400×400px
+						JPG, PNG · 잘리지 않게 원본 그대로 보입니다
 					</span>
-					<div className="flex flex-wrap gap-3">
+					<div className="flex flex-wrap gap-2 sm:ml-auto">
 						<PhotoUploadButton
 							label={photoUrl ? "사진 변경" : "사진 업로드"}
 							uploading={uploading === "photo"}
@@ -918,11 +982,46 @@ function PhotoSection({
 								삭제
 							</Button>
 						) : null}
+					</div>
+				</div>
+			</div>
+
+			{/* 상단 배너 — 가로형(16:5) 미리보기, 별도 줄 */}
+			<div className="flex flex-col gap-3">
+				<span className="text-sm font-medium text-body">상단 배너</span>
+				<div className="flex aspect-16/5 w-full items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-line-strong bg-muted text-body-soft">
+					{coverUrl ? (
+						<img
+							src={coverUrl}
+							alt="상단 배너 미리보기"
+							className="size-full object-cover"
+						/>
+					) : (
+						<ImageIcon className="size-7" />
+					)}
+				</div>
+				<div className="flex flex-wrap items-center gap-2">
+					<span className="text-sm text-body-soft">
+						가로형 이미지 권장(예: 1600×500)
+					</span>
+					<div className="flex flex-wrap gap-2 sm:ml-auto">
 						<PhotoUploadButton
-							label={state.core.cover_url ? "배너 변경" : "배너 업로드"}
+							label={coverUrl ? "배너 변경" : "배너 업로드"}
 							uploading={uploading === "cover"}
 							onPick={(e) => pick(e, "cover_url")}
 						/>
+						{coverUrl ? (
+							<Button
+								variant="neutral-outline"
+								size="2xl"
+								onClick={() =>
+									dispatch({ type: "setCore", key: "cover_url", value: "" })
+								}
+							>
+								<Trash2 className="size-4" />
+								삭제
+							</Button>
+						) : null}
 					</div>
 				</div>
 			</div>
@@ -977,16 +1076,14 @@ function BasicInfoSection({
 			<SectionTitle>기본 정보</SectionTitle>
 			<div className="grid gap-6 sm:grid-cols-2">
 				<TextField
-					label="공개용 이름"
+					label="성명"
 					value={state.core.display_name}
 					onChange={set("display_name")}
-					placeholder="예: 김민준"
 				/>
 				<TextField
 					label="영문 성명"
 					value={state.core.name_en}
 					onChange={set("name_en")}
-					placeholder="예: KIM MIN JUN"
 				/>
 			</div>
 			<div className="grid gap-6 sm:grid-cols-2">
@@ -1573,20 +1670,31 @@ function ScheduleGrid({
 	row: Row;
 	dispatch: React.Dispatch<EditAction>;
 }) {
-	const grid = asObject(asObject(row.values.schedule)?.grid) ?? {};
+	const schedule = asObject(row.values.schedule) ?? {};
+	const grid = asObject(schedule.grid) ?? {};
+	const note = asString(schedule.note);
+	const isOn = (day: string, band: string) =>
+		asObject(grid[day])?.[band] === true;
+	const toggle = (day: string, band: string, value: boolean) =>
+		dispatch({ type: "setGrid", id: row.id, day, band, value });
+
 	return (
-		<div className="flex flex-col gap-2">
+		<div className="flex flex-col gap-3">
 			<span className="text-sm font-medium text-body">진료 일정</span>
-			<div className="overflow-x-auto">
-				<table className="w-full min-w-[560px] border-separate border-spacing-1 text-center text-sm">
+
+			{/* 데스크탑/태블릿: 보더 테이블 + 진료가능/휴진 알약 토글 */}
+			<div className="hidden overflow-hidden rounded-xl border border-line-soft md:block">
+				<table className="w-full border-collapse text-center text-sm">
 					<thead>
-						<tr>
-							<th className="px-2 py-1 text-body-soft font-medium">구분</th>
+						<tr className="bg-app-bg">
+							<th className="border-b border-line-soft px-4 py-3 text-left font-medium text-body-soft">
+								구분
+							</th>
 							{GRID_DAYS.map((d) => (
 								<th
 									key={d.key}
 									className={cn(
-										"px-2 py-1 font-medium",
+										"border-b border-line-soft px-2 py-3 font-medium",
 										d.key === "sun" ? "text-danger-strong" : "text-body",
 									)}
 								>
@@ -1595,29 +1703,33 @@ function ScheduleGrid({
 							))}
 						</tr>
 					</thead>
-					<tbody>
+					<tbody className="[&>tr:last-child>td]:border-b-0">
 						{GRID_BANDS.map((band) => (
 							<tr key={band.key}>
-								<td className="px-2 py-1 text-left text-ink">{band.label}</td>
+								<td className="border-b border-line-soft px-4 py-3 text-left text-ink">
+									{band.label}
+								</td>
 								{GRID_DAYS.map((day) => {
-									const cell = asString(asObject(grid[day.key])?.[band.key]);
+									const on = isOn(day.key, band.key);
 									return (
-										<td key={day.key} className="px-1 py-1">
-											<FieldSelect
-												value={cell}
-												onValueChange={(value) =>
-													dispatch({
-														type: "setGrid",
-														id: row.id,
-														day: day.key,
-														band: band.key,
-														value,
-													})
-												}
-												options={GRID_OPTIONS}
-												placeholder="—"
-												className="h-10 min-w-[78px] text-sm"
-											/>
+										<td
+											key={day.key}
+											className="border-b border-line-soft px-2 py-3"
+										>
+											<button
+												type="button"
+												onClick={() => toggle(day.key, band.key, !on)}
+												aria-pressed={on}
+												aria-label={`${day.label} ${band.label}`}
+												className={cn(
+													"inline-flex min-w-[64px] items-center justify-center rounded-full px-3 py-1.5 text-xs font-semibold transition-colors",
+													on
+														? "bg-brand text-brand-foreground"
+														: "bg-muted text-body-soft hover:bg-line-soft",
+												)}
+											>
+												{on ? "진료가능" : "휴진"}
+											</button>
 										</td>
 									);
 								})}
@@ -1626,6 +1738,66 @@ function ScheduleGrid({
 					</tbody>
 				</table>
 			</div>
+
+			{/* 모바일: 요일 헤더 + 시간대별 체크박스 줄 */}
+			<div className="flex flex-col gap-3 md:hidden">
+				<div className="grid grid-cols-7 gap-1 px-1 text-center text-xs font-medium">
+					{GRID_DAYS.map((d) => (
+						<span
+							key={d.key}
+							className={d.key === "sun" ? "text-danger-strong" : "text-body"}
+						>
+							{d.label}
+						</span>
+					))}
+				</div>
+				{GRID_BANDS.map((band) => (
+					<div
+						key={band.key}
+						className="flex flex-col gap-2 rounded-xl border border-line-soft p-2"
+					>
+						<div className="rounded-md bg-app-bg px-3 py-1.5 text-center text-xs font-medium text-body">
+							{band.label}
+						</div>
+						<div className="grid grid-cols-7 gap-1 py-1">
+							{GRID_DAYS.map((day) => {
+								const on = isOn(day.key, band.key);
+								return (
+									<div key={day.key} className="flex justify-center">
+										<Checkbox
+											checked={on}
+											onCheckedChange={(value) =>
+												toggle(day.key, band.key, value === true)
+											}
+											aria-label={`${day.label} ${band.label}`}
+											className="size-6 rounded-md [&_svg]:size-4"
+										/>
+									</div>
+								);
+							})}
+						</div>
+					</div>
+				))}
+			</div>
+
+			<p className="text-xs text-muted-fg">
+				※ 셀을 눌러 요일·시간대별 진료 여부(진료가능/휴진)를 설정하세요.
+			</p>
+
+			<Field>
+				<FieldLabel>일정 비고</FieldLabel>
+				<FieldInput
+					value={note}
+					onChange={(e) =>
+						dispatch({
+							type: "setScheduleNote",
+							id: row.id,
+							value: e.target.value,
+						})
+					}
+					placeholder="예: 화요일 오후는 수술로 휴진"
+				/>
+			</Field>
 		</div>
 	);
 }

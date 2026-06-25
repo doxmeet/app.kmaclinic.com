@@ -157,12 +157,12 @@ function FreeProfileComplete({ commitSlug }: { commitSlug: string | null }) {
 				<p className="text-[15px] leading-7 text-body-soft">
 					의사 프로필이 무료로 만들어졌습니다.
 					<br />
-					이제 본인 프로필 도메인에서 자유롭게 편집할 수 있어요.
+					이제 프로필 관리에서 내용을 채우고 공개할 수 있어요.
 				</p>
 			</div>
 			<InfoCallout tone="success" className="w-full text-left">
 				<p className="text-sm">
-					프로필 관리:{" "}
+					공개 주소:{" "}
 					<span className="font-semibold text-ink">
 						{`${settledSlug}.kmadoc.com`}
 					</span>
@@ -171,12 +171,12 @@ function FreeProfileComplete({ commitSlug }: { commitSlug: string | null }) {
 			<div className="flex w-full flex-col gap-3 sm:flex-row">
 				<Button
 					nativeButton={false}
-					render={<Link to="/doctor/preview" />}
+					render={<Link to="/doctor/profile" />}
 					variant="brand"
 					size="xl"
 					className="w-full sm:flex-1"
 				>
-					공개 프로필 예시 보기
+					프로필 관리하기
 				</Button>
 				<Button
 					nativeButton={false}

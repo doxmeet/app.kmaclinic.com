@@ -216,8 +216,14 @@ function Autocomplete({
 							{/* 결과 헤더 */}
 							<div className="flex items-center gap-2 border-b border-line-soft px-4 py-2.5 text-base">
 								<Search className="size-3 text-muted-fg" aria-hidden />
-								<span className="text-muted-fg">'{value}' 검색 결과</span>
-								<span className="text-brand">{filtered.length}건</span>
+								{value.trim() ? (
+									<>
+										<span className="text-muted-fg">'{value}' 검색 결과</span>
+										<span className="text-brand">{filtered.length}건</span>
+									</>
+								) : (
+									<span className="text-muted-fg">검색어를 입력해주세요</span>
+								)}
 							</div>
 
 							<div className="flex-1 overflow-y-auto">
@@ -270,7 +276,7 @@ function Autocomplete({
 											</span>
 										</span>
 										<span className="text-sm text-muted-fg">
-											'해외 대학교'등 검색 결과에 없으면 직접 입력해 주세요
+											검색 결과에 없으면 직접 입력해 주세요
 										</span>
 									</span>
 									<ChevronRight className="size-4 shrink-0 text-muted-fg" />
