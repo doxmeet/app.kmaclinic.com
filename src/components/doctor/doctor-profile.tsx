@@ -768,20 +768,26 @@ function buildProfilePreviewBundle(
 
 	const bundle: ProfilePreviewBundle = { profile };
 	for (const config of COLLECTIONS) {
-		bundle[config.key] = state.colls[config.key]
-			.filter((r) => !r.deleted && !(r.isNew && isRowEmpty(r, config.fields)))
-			.map((r, i) => buildItem(r, i, config));
+		const items: Record<string, unknown>[] = [];
+		for (const r of state.colls[config.key]) {
+			if (r.deleted || (r.isNew && isRowEmpty(r, config.fields))) continue;
+			// order는 보존 행들 사이의 순번(필터 후 인덱스)이라 items.length로 매긴다.
+			items.push(buildItem(r, items.length, config));
+		}
+		bundle[config.key] = items;
 	}
-	bundle.affiliations = state.affiliations
-		.filter(
-			(r) =>
-				!r.deleted &&
-				!(
-					textOrNull(r.values.institution_name) == null &&
-					numOrNull(r.values.ref_clinic_no) == null
-				),
-		)
-		.map((r, i) => buildAffiliation(r, i));
+	const affiliations: Record<string, unknown>[] = [];
+	for (const r of state.affiliations) {
+		if (
+			r.deleted ||
+			(textOrNull(r.values.institution_name) == null &&
+				numOrNull(r.values.ref_clinic_no) == null)
+		) {
+			continue;
+		}
+		affiliations.push(buildAffiliation(r, affiliations.length));
+	}
+	bundle.affiliations = affiliations;
 	return bundle;
 }
 
