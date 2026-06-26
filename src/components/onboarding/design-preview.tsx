@@ -77,7 +77,7 @@ export function DesignPreviewScreen({
 							미리보기 모드
 						</span>
 						<p className="hidden truncate text-[15px] text-[#d1d5db] xl:block">
-							현재 화면은 환자들에게 노출될 실제 페이지의 프리뷰 상태입니다.
+							현재 화면은 공개될 페이지의 프리뷰 상태입니다.
 						</p>
 					</div>
 
