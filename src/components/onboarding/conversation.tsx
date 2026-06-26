@@ -1548,7 +1548,7 @@ type SearchMeta = {
  * 입력 UI 메타 계산(문서 §6.2.2). question이 없으면(구버전 호환) 텍스트+파일 항상 허용.
  * - 보기(select)는 value가 비지 않은 옵션만.
  * - 검색(search)은 endpoint가 있을 때만 — 자동완성으로 입력하고 고른 항목은 selection으로 전송.
- * - 직접 입력은 type="text" 또는 allow_text일 때만(보기/검색으로도 답할 수 있어도 별개).
+ * - 직접 입력은 allow_text가 명시되면 그 값(false면 type:"text"여도 숨김), 미지정이면 type="text"일 때만.
  * - 파일 업로드는 백엔드가 요청한 질문(allow_file)에서만.
  */
 function deriveQuestionMeta(raw: unknown): {
@@ -1580,8 +1580,12 @@ function deriveQuestionMeta(raw: unknown): {
 		isSelect: selectOptions.length > 0,
 		isSearch: search != null,
 		search,
+		// allow_text가 명시(boolean)되면 그 값이 우선 — false면 type:"text"여도 직접입력을 숨긴다
+		// (대기 상태 등 백엔드가 답변 입력을 막는 경우). 미지정일 때만 type==="text"를 허용 신호로 폴백.
 		allowText: question
-			? question.type === "text" || question.allow_text === true
+			? typeof question.allow_text === "boolean"
+				? question.allow_text
+				: question.type === "text"
 			: true,
 		allowFile: question ? question.allow_file === true : true,
 		allowSkip: question?.allow_skip === true,
