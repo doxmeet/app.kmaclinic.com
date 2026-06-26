@@ -3,12 +3,12 @@ import { env } from "#/lib/env.ts";
 /**
  * 의사 프로필 실시간 미리보기 연동 — 단일 진실 출처는 `editor-preview-integration.md`.
  *
- * 편집기(app.kmaclinic.com)가 미리보기 앱(`wildcard.kmadoc.com`)을 iframe으로 띄우고,
+ * 편집기(app.kmaclinic.com)가 미리보기 앱(`preview.kmadoc.com`)을 iframe으로 띄우고,
  * 프로필 편집 상태를 `/profile/me` 형태의 번들로 postMessage 한다. 미리보기 앱은 공개 API를
  * 치지 않고 **받은 payload로만** 공개 프로필 템플릿(4종)으로 렌더한다(§0).
  *
  * ⚠ 병원 미리보기(`#/lib/preview.ts`)와 **다르다**: source `kmadoc-preview`,
- *   type `profile:update`/`preview:ready`, origin `wildcard.kmadoc.com`.
+ *   type `profile:update`/`preview:ready`, origin `preview.kmadoc.com`.
  *   또한 iframe src에 `/preview` 경로를 붙이지 않는다(origin 루트가 미리보기 화면).
  */
 
@@ -18,7 +18,7 @@ import { env } from "#/lib/env.ts";
 
 /** 프로필 미리보기 앱 origin. 미설정 시 prod로 폴백. postMessage targetOrigin + iframe src에 사용. */
 export const PROFILE_PREVIEW_ORIGIN =
-	env.VITE_PROFILE_PREVIEW_ORIGIN ?? "https://wildcard.kmadoc.com";
+	env.VITE_PROFILE_PREVIEW_ORIGIN ?? "https://preview.kmadoc.com";
 
 /** iframe src — origin 루트(미리보기 앱이 루트에서 바로 렌더, `/preview` 경로 없음). */
 export const PROFILE_PREVIEW_SRC = PROFILE_PREVIEW_ORIGIN;

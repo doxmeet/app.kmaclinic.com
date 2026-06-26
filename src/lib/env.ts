@@ -21,9 +21,9 @@ const schema = z.object({
 	// iframe src = origin 루트(`/preview` 경로 없음) + postMessage targetOrigin(preview-integration.md §2).
 	// 미리보기 앱은 dev가 없어 모든 환경이 prod(preview.kmaclinic.com)를 쓴다. 미설정 시 폴백.
 	VITE_PREVIEW_ORIGIN: z.url().optional(),
-	// 의사 프로필 실시간 미리보기 앱(wildcard.kmadoc.com)의 origin.
+	// 의사 프로필 실시간 미리보기 앱(preview.kmadoc.com)의 origin.
 	// iframe src = origin 루트(`/preview` 경로 없음) + postMessage targetOrigin(editor-preview-integration.md §4).
-	// 미리보기 앱은 dev가 없어 모든 환경이 prod(wildcard.kmadoc.com)를 쓴다. 미설정 시 폴백.
+	// 미리보기 앱은 dev가 없어 모든 환경이 prod(preview.kmadoc.com)를 쓴다. 미설정 시 폴백.
 	VITE_PROFILE_PREVIEW_ORIGIN: z.url().optional(),
 });
 
