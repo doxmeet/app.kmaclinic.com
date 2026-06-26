@@ -7,9 +7,9 @@ import {
 import {
 	AlertCircle,
 	Camera,
-	Check,
 	ImageIcon,
 	Loader2,
+	Palette,
 	Plus,
 	RotateCcw,
 	Save,
@@ -23,6 +23,7 @@ import {
 	SectionCard,
 	SectionTitle,
 } from "#/components/common/section-card.tsx";
+import { ProfileLivePreview } from "#/components/doctor/profile-live-preview.tsx";
 import {
 	Autocomplete,
 	type AutocompleteOption,
@@ -36,6 +37,7 @@ import { FieldInput } from "#/components/form/field-input.tsx";
 import { FieldSelect } from "#/components/form/select-field.tsx";
 import { StickyActionBar } from "#/components/layout/action-bar.tsx";
 import { AppShell } from "#/components/layout/app-shell.tsx";
+import { DesignPreviewScreen } from "#/components/onboarding/design-preview.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Checkbox } from "#/components/ui/checkbox.tsx";
 import { Switch } from "#/components/ui/switch.tsx";
@@ -55,6 +57,10 @@ import {
 	searchSocieties,
 } from "#/lib/api/ref.ts";
 import { toastApiError } from "#/lib/api-error-message.ts";
+import {
+	PROFILE_TEMPLATE_SWATCHES,
+	type ProfilePreviewBundle,
+} from "#/lib/profile-preview.ts";
 import { uploadFileToStorage } from "#/lib/upload.ts";
 import { cn } from "#/lib/utils.ts";
 
@@ -316,14 +322,6 @@ const COLLECTIONS: CollConfig[] = [
 			{ name: "url", label: "URL" },
 		],
 	},
-];
-
-// 프로필 공개 템플릿(template_key) — green/purple/mono/blue 4종.
-const TEMPLATE_OPTIONS = [
-	{ value: "blue", label: "블루", desc: "기본형 · 신뢰감 있는 정통 레이아웃" },
-	{ value: "green", label: "그린", desc: "그린 톤 · 친근하고 편안한 느낌" },
-	{ value: "purple", label: "퍼플", desc: "퍼플 포인트 · 세련된 전문가형" },
-	{ value: "mono", label: "모노", desc: "모노 · 미니멀하고 정돈된 스타일" },
 ];
 
 const GENDER_OPTIONS = [
@@ -746,6 +744,49 @@ function buildPatch(state: EditState): ProfilePatch {
 	return patch;
 }
 
+/**
+ * 편집 상태 → 미리보기 번들(`/profile/me` 형태, 컬렉션은 배열). buildPatch와 같은 행 빌더를
+ * 재사용하되 id-키 대신 배열로 모은다. `templateOverride`로 스와치 실시간 선택을 반영.
+ * (editor-preview-integration.md §3)
+ */
+function buildProfilePreviewBundle(
+	state: EditState,
+	templateOverride?: string,
+): ProfilePreviewBundle {
+	const profile: Record<string, unknown> = {};
+	for (const key of CORE_KEYS) {
+		const v = state.core[key]?.trim();
+		if (v) profile[key] = v;
+	}
+	profile.template_key = (
+		templateOverride ||
+		state.core.template_key ||
+		"blue"
+	).toLowerCase();
+	const deptNo = numOrNull(state.primaryDepartmentNo);
+	if (deptNo != null) profile.primary_department_no = deptNo;
+	profile.specialty_tags = state.specialtyTags;
+	profile.field_visibility = state.visibility;
+
+	const bundle: ProfilePreviewBundle = { profile };
+	for (const config of COLLECTIONS) {
+		bundle[config.key] = state.colls[config.key]
+			.filter((r) => !r.deleted && !(r.isNew && isRowEmpty(r, config.fields)))
+			.map((r, i) => buildItem(r, i, config));
+	}
+	bundle.affiliations = state.affiliations
+		.filter(
+			(r) =>
+				!r.deleted &&
+				!(
+					textOrNull(r.values.institution_name) == null &&
+					numOrNull(r.values.ref_clinic_no) == null
+				),
+		)
+		.map((r, i) => buildAffiliation(r, i));
+	return bundle;
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // 페이지
 // ─────────────────────────────────────────────────────────────────────
@@ -761,6 +802,9 @@ export function DoctorProfilePage() {
 function ProfileEditor() {
 	const queryClient = useQueryClient();
 	const [state, dispatch] = useReducer(editReducer, EMPTY_STATE);
+	// 전체화면 디자인 시안 선택(공개 전 미리보기). selectedTemplate는 화면에서 고르는 임시값.
+	const [designOpen, setDesignOpen] = useState(false);
+	const [selectedTemplate, setSelectedTemplate] = useState("blue");
 
 	const {
 		data: doc,
@@ -831,6 +875,33 @@ function ProfileEditor() {
 
 	const completionPercent = completion?.completion_percent;
 
+	// 전체화면 디자인 시안 선택 — 현재 편집 내용 그대로 미리보며 시안 고르기.
+	// "이 디자인 선택" → 편집 상태에 반영(저장은 하단 "프로필 저장"으로).
+	if (designOpen) {
+		return (
+			<DesignPreviewScreen
+				swatches={PROFILE_TEMPLATE_SWATCHES}
+				templateKey={selectedTemplate}
+				preview={
+					<ProfileLivePreview
+						payload={buildProfilePreviewBundle(state, selectedTemplate)}
+					/>
+				}
+				onTemplateChange={setSelectedTemplate}
+				onBack={() => setDesignOpen(false)}
+				onConfirm={() => {
+					dispatch({
+						type: "setCore",
+						key: "template_key",
+						value: selectedTemplate,
+					});
+					setDesignOpen(false);
+				}}
+				confirmLabel="이 디자인 선택"
+			/>
+		);
+	}
+
 	return (
 		<AppShell
 			userName={userName}
@@ -840,20 +911,34 @@ function ProfileEditor() {
 				<StickyActionBar
 					className="shadow-[0_-6px_20px_-8px_rgba(15,39,68,0.18)]"
 					right={
-						<Button
-							variant="brand"
-							size="2xl"
-							className="px-8 font-semibold"
-							disabled={saveMutation.isPending}
-							onClick={() => saveMutation.mutate()}
-						>
-							{saveMutation.isPending ? (
-								<Loader2 className="size-5 animate-spin" />
-							) : (
-								<Save className="size-5" />
-							)}
-							프로필 저장
-						</Button>
+						<>
+							<Button
+								variant="neutral-outline"
+								size="2xl"
+								className="font-semibold"
+								onClick={() => {
+									setSelectedTemplate(state.core.template_key || "blue");
+									setDesignOpen(true);
+								}}
+							>
+								<Palette className="size-5" />
+								디자인 선택
+							</Button>
+							<Button
+								variant="brand"
+								size="2xl"
+								className="px-8 font-semibold"
+								disabled={saveMutation.isPending}
+								onClick={() => saveMutation.mutate()}
+							>
+								{saveMutation.isPending ? (
+									<Loader2 className="size-5 animate-spin" />
+								) : (
+									<Save className="size-5" />
+								)}
+								프로필 저장
+							</Button>
+						</>
 					}
 				/>
 			}
@@ -863,7 +948,6 @@ function ProfileEditor() {
 
 				<PhotoSection state={state} dispatch={dispatch} />
 				<BasicInfoSection state={state} dispatch={dispatch} />
-				<TemplateSection state={state} dispatch={dispatch} />
 				<VisibilitySection state={state} dispatch={dispatch} />
 
 				{COLLECTIONS.map((config) => (
@@ -914,58 +998,6 @@ function ProfileHeader({ completion }: { completion?: number }) {
 					</div>
 				</div>
 			) : null}
-		</SectionCard>
-	);
-}
-
-/** 공개 프로필 시안(template_key) — 병원 시안 선택과 동일한 카드 타일 스타일. */
-function TemplateSection({
-	state,
-	dispatch,
-}: {
-	state: EditState;
-	dispatch: React.Dispatch<EditAction>;
-}) {
-	const current = state.core.template_key || "blue";
-	return (
-		<SectionCard className="flex flex-col gap-5">
-			<SectionTitle>공개 프로필 시안</SectionTitle>
-			<div className="grid grid-cols-2 gap-3">
-				{TEMPLATE_OPTIONS.map((t) => {
-					const selected = current === t.value;
-					return (
-						<button
-							key={t.value}
-							type="button"
-							onClick={() =>
-								dispatch({
-									type: "setCore",
-									key: "template_key",
-									value: t.value,
-								})
-							}
-							className={cn(
-								"flex flex-col gap-1.5 rounded-xl border p-5 text-left transition-colors",
-								selected
-									? "border-brand bg-brand-50 ring-1 ring-brand"
-									: "border-line hover:border-line-strong",
-							)}
-						>
-							<div className="flex items-center justify-between gap-2">
-								<span className="text-base font-semibold text-ink">
-									{t.label}
-								</span>
-								{selected ? (
-									<span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-brand text-brand-foreground">
-										<Check className="size-4" />
-									</span>
-								) : null}
-							</div>
-							<span className="text-sm text-body-soft">{t.desc}</span>
-						</button>
-					);
-				})}
-			</div>
 		</SectionCard>
 	);
 }

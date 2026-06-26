@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
 	ArrowRight,
@@ -7,6 +7,7 @@ import {
 	IdCard,
 	Loader2,
 	MessageSquareText,
+	Palette,
 	PenLine,
 	Plus,
 	Trash2,
@@ -17,6 +18,8 @@ import { CardShell } from "#/components/common/card-shell.tsx";
 import { InfoCallout } from "#/components/common/info-callout.tsx";
 import { InfoRows } from "#/components/common/info-rows.tsx";
 import { SectionCard } from "#/components/common/section-card.tsx";
+import { ProfileLivePreview } from "#/components/doctor/profile-live-preview.tsx";
+import { DesignPreviewScreen } from "#/components/onboarding/design-preview.tsx";
 import { isSlugValid } from "#/components/onboarding/slug.ts";
 import { SlugField } from "#/components/onboarding/slug-field.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
@@ -30,8 +33,17 @@ import type {
 	PaymentIntent,
 } from "#/lib/api/onboarding.ts";
 import { deleteHospital, resetSession } from "#/lib/api/onboarding.ts";
-import { publishProfile, unpublishProfile } from "#/lib/api/profile.ts";
+import {
+	getProfile,
+	patchProfile,
+	publishProfile,
+	unpublishProfile,
+} from "#/lib/api/profile.ts";
 import { toastApiError } from "#/lib/api-error-message.ts";
+import {
+	buildProfilePreviewBundleFromDoc,
+	PROFILE_TEMPLATE_SWATCHES,
+} from "#/lib/profile-preview.ts";
 import { cn } from "#/lib/utils.ts";
 
 /**
@@ -390,6 +402,32 @@ function ProfileCard({
 	const needsSlug = !slug;
 	const validSlug = isSlugValid(slugInput);
 
+	// 공개 전 디자인 시안 선택(전체화면). 열릴 때만 /profile/me 를 불러 미리보기.
+	const [designOpen, setDesignOpen] = useState(false);
+	const [pickedTemplate, setPickedTemplate] = useState<string | null>(null);
+	const { data: previewDoc } = useQuery({
+		queryKey: ["profile", "me"],
+		queryFn: getProfile,
+		enabled: designOpen,
+	});
+	const currentTemplate =
+		pickedTemplate ??
+		(typeof previewDoc?.template_key === "string"
+			? previewDoc.template_key
+			: "blue");
+	const templateMutation = useMutation({
+		mutationFn: (tk: string) => patchProfile({ template_key: tk }),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["profile", "me"] });
+			queryClient.invalidateQueries({ queryKey: ["onboarding", "overview"] });
+			setDesignOpen(false);
+			setPickedTemplate(null);
+			toast.success("디자인 시안을 저장했어요.");
+			onRefetch();
+		},
+		onError: (err) => toastApiError(err),
+	});
+
 	// 발행하기 → 프로필 발행 API(병원 publish와 대칭). slug 미설정 시 먼저 설정 후 공개.
 	const publishMutation = useMutation({
 		mutationFn: async () => {
@@ -415,6 +453,32 @@ function ProfileCard({
 
 	const rows: Array<{ label: string; value: string }> = [];
 	if (slug) rows.push({ label: "공개 주소", value: `${slug}.kmadoc.com` });
+
+	// 전체화면 디자인 시안 선택 — 저장된 프로필로 미리보며 시안을 고르고 바로 저장.
+	if (designOpen) {
+		return (
+			<DesignPreviewScreen
+				swatches={PROFILE_TEMPLATE_SWATCHES}
+				templateKey={currentTemplate}
+				preview={
+					<ProfileLivePreview
+						payload={buildProfilePreviewBundleFromDoc(
+							previewDoc,
+							currentTemplate,
+						)}
+					/>
+				}
+				onTemplateChange={setPickedTemplate}
+				onBack={() => {
+					setDesignOpen(false);
+					setPickedTemplate(null);
+				}}
+				onConfirm={() => templateMutation.mutate(currentTemplate)}
+				confirming={templateMutation.isPending}
+				confirmLabel="이 디자인 저장"
+			/>
+		);
+	}
 
 	return (
 		<CardShell
@@ -505,6 +569,14 @@ function ProfileCard({
 							/>
 						) : null}
 						<div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+							<Button
+								variant="neutral-outline"
+								size="xl"
+								onClick={() => setDesignOpen(true)}
+							>
+								<Palette className="size-4" />
+								디자인 선택
+							</Button>
 							<Button
 								nativeButton={false}
 								render={<Link to="/doctor/profile" />}

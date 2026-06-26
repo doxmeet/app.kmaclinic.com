@@ -22,6 +22,10 @@ const schema = z.object({
 	// iframe src(`${origin}/preview`) + postMessage targetOrigin 으로 쓴다(preview-integration.md §2).
 	// 미설정 시 prod origin으로 폴백.
 	VITE_PREVIEW_ORIGIN: z.url().optional(),
+	// 의사 프로필 실시간 미리보기 앱(wildcard.kmadoc.com)의 origin.
+	// iframe src(`${origin}/preview`) + postMessage targetOrigin 으로 쓴다(editor-preview-integration.md §4).
+	// 미리보기 앱은 dev가 없어 모든 환경이 prod(wildcard.kmadoc.com)를 쓴다. 미설정 시 폴백.
+	VITE_PROFILE_PREVIEW_ORIGIN: z.url().optional(),
 });
 
 const parsed = schema.safeParse(import.meta.env);

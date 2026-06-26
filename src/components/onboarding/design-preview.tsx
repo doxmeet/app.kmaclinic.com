@@ -5,19 +5,20 @@ import { cn } from "#/lib/utils.ts";
 import { LivePreview } from "./live-preview.tsx";
 
 /**
- * 디자인 시안 미리보기·선택 (Figma PC_미리보기 1:18885 / 모바일 1:12260).
+ * 디자인 시안 미리보기·선택 — 전체화면 공용 셸 (Figma PC_미리보기 1:18885 / 모바일 1:12260).
  *
- * **결제 전** 전체화면으로 띄워, 입력한 병원 정보로 실시간 렌더되는 홈페이지를 보면서
- * 상단 고정 바의 색상 스와치로 시안(template_key)을 실시간 전환·선택한다.
- * 상단 바는 항상 보이고(sticky), 아래 영역은 미리보기 iframe이 채운다.
+ * 상단 고정 바(항상 보임)의 색상 스와치로 시안(template_key)을 실시간 전환·선택하고,
+ * 아래 영역은 미리보기 iframe이 채운다. 데스크톱/모바일 폭 토글 포함.
+ *
+ * 병원(결제 전)·프로필(공개 전) 양쪽에서 재사용한다:
+ *  - 병원: `payload`만 주면 내부 `LivePreview`가 렌더(기본 스와치 t1~t5).
+ *  - 프로필 등: `swatches` + `preview`(임의 iframe 노드)를 주입.
  */
 
-/** 시안 스와치 — key별 색 재배정: t1 블루 · t2 그린 · t3 퍼플 · t4 슬레이트 · t5 레드. */
-const TEMPLATE_SWATCHES: {
-	key: string;
-	color: string;
-	label: string;
-}[] = [
+type Swatch = { key: string; color: string; label: string };
+
+/** 기본(병원) 시안 스와치 — key별 색: t1 블루 · t2 그린 · t3 퍼플 · t4 슬레이트 · t5 레드. */
+const HOSPITAL_SWATCHES: Swatch[] = [
 	{ key: "t1", color: "#2a64f6", label: "블루 · 신뢰감 있는 기본형" },
 	{ key: "t2", color: "#74ef44", label: "그린 · 친근한 동네 병원" },
 	{ key: "t3", color: "#8b5cf6", label: "퍼플 · 모던 클리닉" },
@@ -29,23 +30,32 @@ type Device = "desktop" | "mobile";
 
 export function DesignPreviewScreen({
 	payload,
+	preview,
+	swatches = HOSPITAL_SWATCHES,
 	templateKey,
 	onTemplateChange,
 	onBack,
 	onConfirm,
 	confirming = false,
 	confirmLabel = "이 디자인으로 결제하기",
+	backLabel = "수정하기",
 }: {
-	payload: PreviewPayload;
+	/** 병원 미리보기 편의 — 주면 내부 LivePreview로 렌더(preview 미지정 시). */
+	payload?: PreviewPayload;
+	/** 임의 미리보기 iframe 노드(프로필 등). 주면 payload 대신 이걸 렌더. */
+	preview?: React.ReactNode;
+	/** 시안 스와치 목록(미지정 시 병원 t1~t5). */
+	swatches?: Swatch[];
 	templateKey: string;
 	onTemplateChange: (key: string) => void;
 	onBack: () => void;
 	onConfirm: () => void;
 	confirming?: boolean;
 	confirmLabel?: string;
+	backLabel?: string;
 }) {
 	const [device, setDevice] = useState<Device>("desktop");
-	const current = (templateKey || "t1").toLowerCase();
+	const current = (templateKey || swatches[0]?.key || "").toLowerCase();
 
 	// 전체화면 동안 배경(body) 스크롤 잠금.
 	useEffect(() => {
@@ -75,7 +85,7 @@ export function DesignPreviewScreen({
 					<div className="flex items-center justify-between gap-4 lg:justify-center">
 						{/* 시안 색상 스와치 — 각 버튼에 aria-label로 라벨 제공 */}
 						<div className="flex items-center gap-2">
-							{TEMPLATE_SWATCHES.map((t) => {
+							{swatches.map((t) => {
 								const selected = current === t.key;
 								return (
 									<button
@@ -124,7 +134,7 @@ export function DesignPreviewScreen({
 							disabled={confirming}
 							className="shrink-0 rounded-md border border-[#4b5563] px-4 py-2 text-[15px] font-medium whitespace-nowrap text-white transition-colors hover:bg-white/5 disabled:opacity-50 sm:px-5"
 						>
-							수정하기
+							{backLabel}
 						</button>
 						<button
 							type="button"
@@ -149,7 +159,7 @@ export function DesignPreviewScreen({
 							: "w-full sm:rounded-xl",
 					)}
 				>
-					<LivePreview payload={payload} />
+					{preview ?? (payload ? <LivePreview payload={payload} /> : null)}
 				</div>
 			</div>
 		</div>
