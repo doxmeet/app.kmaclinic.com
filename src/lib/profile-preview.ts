@@ -3,13 +3,13 @@ import { env } from "#/lib/env.ts";
 /**
  * 의사 프로필 실시간 미리보기 연동 — 단일 진실 출처는 `editor-preview-integration.md`.
  *
- * 편집기(app.kmaclinic.com)가 미리보기 앱(`preview.kmadoc.com/preview`)을 iframe으로 띄우고,
+ * 편집기(app.kmaclinic.com)가 미리보기 앱(`wildcard.kmadoc.com`)을 iframe으로 띄우고,
  * 프로필 편집 상태를 `/profile/me` 형태의 번들로 postMessage 한다. 미리보기 앱은 공개 API를
  * 치지 않고 **받은 payload로만** 공개 프로필 템플릿(4종)으로 렌더한다(§0).
- * (문서의 호스트명 `wildcard.kmadoc.com`은 프로젝트 코드네임 — 실제 배포는 `preview.kmadoc.com`.)
  *
- * ⚠ 병원 미리보기(`#/lib/preview.ts`)와 **프로토콜이 다르다**:
- *   source `kmadoc-preview`, type `profile:update`/`preview:ready`, origin `preview.kmadoc.com`.
+ * ⚠ 병원 미리보기(`#/lib/preview.ts`)와 **다르다**: source `kmadoc-preview`,
+ *   type `profile:update`/`preview:ready`, origin `wildcard.kmadoc.com`.
+ *   또한 iframe src에 `/preview` 경로를 붙이지 않는다(origin 루트가 미리보기 화면).
  */
 
 // ─────────────────────────────────────────────────────────────────────
@@ -18,10 +18,10 @@ import { env } from "#/lib/env.ts";
 
 /** 프로필 미리보기 앱 origin. 미설정 시 prod로 폴백. postMessage targetOrigin + iframe src에 사용. */
 export const PROFILE_PREVIEW_ORIGIN =
-	env.VITE_PROFILE_PREVIEW_ORIGIN ?? "https://preview.kmadoc.com";
+	env.VITE_PROFILE_PREVIEW_ORIGIN ?? "https://wildcard.kmadoc.com";
 
-/** iframe src — 미리보기 라우트(`/preview`). */
-export const PROFILE_PREVIEW_SRC = `${PROFILE_PREVIEW_ORIGIN}/preview`;
+/** iframe src — origin 루트(미리보기 앱이 루트에서 바로 렌더, `/preview` 경로 없음). */
+export const PROFILE_PREVIEW_SRC = PROFILE_PREVIEW_ORIGIN;
 
 /** 모든 메시지에 붙는 식별자/버전(§2). */
 export const PROFILE_PREVIEW_SOURCE = "kmadoc-preview" as const;
@@ -64,7 +64,6 @@ export type ProfilePreviewCore = Record<string, unknown> & {
 	template_key?: string;
 	display_name?: string | null;
 	photo_url?: string | null;
-	cover_url?: string | null;
 };
 
 /** 미리보기로 보내는 최상위 번들(부분 스냅샷). 컬렉션은 배열. */

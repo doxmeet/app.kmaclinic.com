@@ -48,7 +48,6 @@ export type ProfileDoc = Record<string, unknown> & {
 	intro_text?: string | null;
 	media_text?: string | null;
 	photo_url?: string | null;
-	cover_url?: string | null;
 	naver_url?: string | null;
 	kakao_url?: string | null;
 	contact_phone?: string | null;

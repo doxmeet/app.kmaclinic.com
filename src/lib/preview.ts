@@ -3,9 +3,10 @@ import { env } from "#/lib/env.ts";
 /**
  * 병원 홈페이지 실시간 미리보기 연동 — 단일 진실 출처는 `preview-integration.md`.
  *
- * 콘솔(app.kmaclinic.com)이 미리보기 앱(`preview.kmaclinic.com/preview`)을 iframe으로 띄우고,
+ * 콘솔(app.kmaclinic.com)이 미리보기 앱(`preview.kmaclinic.com`)을 iframe으로 띄우고,
  * 온보딩 입력을 `PublicHospitalData` 형태로 매핑해 postMessage로 보내면 미리보기가 실시간 렌더한다.
  * 미리보기 앱은 공개 API를 치지 않고 **오직 받은 payload로만** 그린다(§1).
+ * (iframe src는 origin 루트 — `/preview` 경로를 붙이지 않는다.)
  */
 
 // ─────────────────────────────────────────────────────────────────────
@@ -16,8 +17,8 @@ import { env } from "#/lib/env.ts";
 export const PREVIEW_ORIGIN =
 	env.VITE_PREVIEW_ORIGIN ?? "https://preview.kmaclinic.com";
 
-/** iframe src — 미리보기 라우트(`/preview`). */
-export const PREVIEW_SRC = `${PREVIEW_ORIGIN}/preview`;
+/** iframe src — origin 루트(미리보기 앱이 루트에서 바로 렌더, `/preview` 경로 없음). */
+export const PREVIEW_SRC = PREVIEW_ORIGIN;
 
 /** 모든 메시지에 붙는 식별자/버전(§3). 버전이 다르면 미리보기 앱이 무시한다. */
 export const PREVIEW_SOURCE = "kmaclinic-preview" as const;

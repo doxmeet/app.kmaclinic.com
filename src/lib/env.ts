@@ -17,14 +17,13 @@ const schema = z.object({
 	VITE_OAUTH_REDIRECT_URI: z.string().optional(),
 	// 결제 위젯(toss) — payment.toss_client_key가 응답으로 오므로 보통 불필요(선택 폴백)
 	VITE_TOSS_CLIENT_KEY: z.string().optional(),
-	// 병원 홈페이지 실시간 미리보기 앱(wildcard.kmaclinic.com)의 origin.
-	//   - app: https://preview.kmaclinic.com / dev: https://preview-dev.kmaclinic.com
-	// iframe src(`${origin}/preview`) + postMessage targetOrigin 으로 쓴다(preview-integration.md §2).
-	// 미설정 시 prod origin으로 폴백.
+	// 병원 홈페이지 실시간 미리보기 앱(preview.kmaclinic.com)의 origin.
+	// iframe src = origin 루트(`/preview` 경로 없음) + postMessage targetOrigin(preview-integration.md §2).
+	// 미리보기 앱은 dev가 없어 모든 환경이 prod(preview.kmaclinic.com)를 쓴다. 미설정 시 폴백.
 	VITE_PREVIEW_ORIGIN: z.url().optional(),
-	// 의사 프로필 실시간 미리보기 앱(preview.kmadoc.com)의 origin.
-	// iframe src(`${origin}/preview`) + postMessage targetOrigin 으로 쓴다(editor-preview-integration.md §4).
-	// 미리보기 앱은 dev가 없어 모든 환경이 prod(preview.kmadoc.com)를 쓴다. 미설정 시 폴백.
+	// 의사 프로필 실시간 미리보기 앱(wildcard.kmadoc.com)의 origin.
+	// iframe src = origin 루트(`/preview` 경로 없음) + postMessage targetOrigin(editor-preview-integration.md §4).
+	// 미리보기 앱은 dev가 없어 모든 환경이 prod(wildcard.kmadoc.com)를 쓴다. 미설정 시 폴백.
 	VITE_PROFILE_PREVIEW_ORIGIN: z.url().optional(),
 });
 

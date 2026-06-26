@@ -7,7 +7,6 @@ import {
 import {
 	AlertCircle,
 	Camera,
-	ImageIcon,
 	Loader2,
 	Palette,
 	Plus,
@@ -363,7 +362,6 @@ const CORE_KEYS = [
 	"orcid_id",
 	"template_key",
 	"photo_url",
-	"cover_url",
 ] as const;
 type CoreKey = (typeof CORE_KEYS)[number];
 
@@ -1009,17 +1007,17 @@ function PhotoSection({
 	state: EditState;
 	dispatch: React.Dispatch<EditAction>;
 }) {
-	const [uploading, setUploading] = useState<"photo" | "cover" | null>(null);
+	const [uploading, setUploading] = useState<"photo" | null>(null);
 	const photoUrl = state.core.photo_url;
 
 	async function pick(
 		e: React.ChangeEvent<HTMLInputElement>,
-		key: "photo_url" | "cover_url",
+		key: "photo_url",
 	) {
 		const file = e.target.files?.[0];
 		e.target.value = "";
 		if (!file) return;
-		setUploading(key === "photo_url" ? "photo" : "cover");
+		setUploading("photo");
 		try {
 			const url = await uploadFileToStorage(file, "profile");
 			dispatch({ type: "setCore", key, value: url });
@@ -1030,11 +1028,9 @@ function PhotoSection({
 		}
 	}
 
-	const coverUrl = state.core.cover_url;
-
 	return (
 		<SectionCard className="flex flex-col gap-8">
-			<SectionTitle>프로필 사진 · 배너</SectionTitle>
+			<SectionTitle>프로필 사진</SectionTitle>
 
 			{/* 프로필 사진 — 전체폭, 원본은 contain으로 보이고 양옆 여백은 블러로 채움 */}
 			<div className="flex flex-col gap-3">
@@ -1071,43 +1067,6 @@ function PhotoSection({
 								size="2xl"
 								onClick={() =>
 									dispatch({ type: "setCore", key: "photo_url", value: "" })
-								}
-							>
-								<Trash2 className="size-4" />
-								삭제
-							</Button>
-						) : null}
-					</div>
-				</div>
-			</div>
-
-			{/* 상단 배너 — 가로형(16:5) 미리보기, 별도 줄 */}
-			<div className="flex flex-col gap-3">
-				<span className="text-sm font-medium text-body">상단 배너</span>
-				<div className="flex aspect-16/5 w-full items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-line-strong bg-muted text-body-soft">
-					{coverUrl ? (
-						<img
-							src={coverUrl}
-							alt="상단 배너 미리보기"
-							className="size-full object-cover"
-						/>
-					) : (
-						<ImageIcon className="size-7" />
-					)}
-				</div>
-				<div className="flex flex-wrap items-center gap-2">
-					<div className="flex flex-wrap gap-2 sm:ml-auto">
-						<PhotoUploadButton
-							label={coverUrl ? "배너 변경" : "배너 업로드"}
-							uploading={uploading === "cover"}
-							onPick={(e) => pick(e, "cover_url")}
-						/>
-						{coverUrl ? (
-							<Button
-								variant="neutral-outline"
-								size="2xl"
-								onClick={() =>
-									dispatch({ type: "setCore", key: "cover_url", value: "" })
 								}
 							>
 								<Trash2 className="size-4" />
