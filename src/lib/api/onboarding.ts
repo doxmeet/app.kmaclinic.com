@@ -72,6 +72,9 @@ const SessionViewSchema = z.looseObject({
 			allow_text: z.boolean().nullish(),
 			allow_skip: z.boolean().nullish(),
 			allow_file: z.boolean().nullish(),
+			// allow_file=true일 때만: 항목별 허용 확장자(예: 로고는 이미지만, 가격표는 문서만).
+			// 서버가 권위 — input[accept]와 클라 검증에 그대로 쓴다. allow_file=false면 null.
+			accept: z.array(z.string()).nullish(),
 			// type="search"일 때만: 자동완성 메타. endpoint(공개 GET)로 keyword 질의 →
 			// label_field로 표시, value_field로 식별. 고른 항목은 message의 selection으로 전송.
 			search: z

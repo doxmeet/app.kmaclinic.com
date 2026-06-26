@@ -93,8 +93,11 @@ const HOLDING_POLL_MAX_MS = 60000;
 /** 온보딩 개요 쿼리 키 — 메시지/파일/충돌/commit이 바꾸는 상태(대시보드와 동일). */
 const OVERVIEW_KEY = ["onboarding", "overview"] as const;
 
-/** 대화형 온보딩 파일 첨부 허용 확장자(문서/표/압축만). */
-const ALLOWED_FILE_EXTENSIONS: readonly string[] = [
+/**
+ * 파일 허용 확장자 폴백 — 질문이 accept를 안 줄 때(구버전/누락)만 쓴다.
+ * 정상 경로는 서버가 질문별로 내려주는 question.accept가 권위(이미지만/문서만 등).
+ */
+const FALLBACK_FILE_EXTENSIONS: readonly string[] = [
 	"txt",
 	"md",
 	"csv",
@@ -108,12 +111,6 @@ const ALLOWED_FILE_EXTENSIONS: readonly string[] = [
 	"pdf",
 	"zip",
 ];
-/** input[type=file] 의 accept 속성값(허용 확장자에서 생성). */
-const FILE_ACCEPT = ALLOWED_FILE_EXTENSIONS.map((ext) => `.${ext}`).join(",");
-/** 안내/에러 메시지용 허용 확장자 표기(예: "TXT, MD, ..."). */
-const FILE_ACCEPT_LABEL = ALLOWED_FILE_EXTENSIONS.map((ext) =>
-	ext.toUpperCase(),
-).join(", ");
 
 /** 세션 진행 상태 묶음(단일 진실원 + 시작/완료/대기·다이얼로그 흐름). */
 type ConvState = {
@@ -274,6 +271,7 @@ export function OnboardingConversation({
 					showSkip={conv.showSkip}
 					allowText={conv.allowText}
 					allowFile={conv.allowFile}
+					fileAccept={conv.fileAccept}
 					text={conv.text}
 					pending={{
 						sending: conv.isSending,
@@ -481,6 +479,9 @@ function useOnboardingConversation(mode: OnboardingMode) {
 		allowText,
 		allowFile,
 		allowSkip,
+		fileAccept,
+		acceptExtensions,
+		fileAcceptLabel,
 	} = deriveQuestionMeta(session?.question);
 
 	// 전송 중일 때 낙관적으로 보여줄, 유저가 방금 보낸 메시지(React Query variables).
@@ -530,10 +531,12 @@ function useOnboardingConversation(mode: OnboardingMode) {
 		const file = e.target.files?.[0];
 		e.target.value = ""; // 같은 파일 재선택 허용
 		if (!file) return;
+		// accept attr는 선택 다이얼로그만 거른다("모든 파일"로 우회 가능) → 여기서 다시 검증.
+		// 질문별 허용 확장자(서버 권위)로 막아 가격표·이력서 칸에 이미지가 올라오지 않게 한다.
 		const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-		if (!ALLOWED_FILE_EXTENSIONS.includes(ext)) {
+		if (!acceptExtensions.includes(ext)) {
 			toast.error(
-				`지원하지 않는 파일 형식입니다. ${FILE_ACCEPT_LABEL} 파일만 첨부할 수 있습니다.`,
+				`지원하지 않는 파일 형식입니다. ${fileAcceptLabel} 파일만 첨부할 수 있습니다.`,
 			);
 			return;
 		}
@@ -600,6 +603,7 @@ function useOnboardingConversation(mode: OnboardingMode) {
 		search,
 		allowText,
 		allowFile,
+		fileAccept,
 		showSkip,
 		conflictPending: conflictMutation.isPending,
 		draftLoginId,
@@ -1047,6 +1051,7 @@ function Composer({
 	showSkip,
 	allowText,
 	allowFile,
+	fileAccept,
 	text,
 	pending,
 	onTextChange,
@@ -1070,6 +1075,8 @@ function Composer({
 	showSkip: boolean;
 	allowText: boolean;
 	allowFile: boolean;
+	/** input[type=file]의 accept 속성값(질문별 허용 확장자, 서버 권위). */
+	fileAccept: string;
 	text: string;
 	/** 진행 중 상태 묶음 — 전송/업로드/충돌해소 mutation의 pending 플래그. */
 	pending: { sending: boolean; uploading: boolean; conflict: boolean };
@@ -1156,7 +1163,7 @@ function Composer({
 						type="file"
 						className="hidden"
 						onChange={onPickFile}
-						accept={FILE_ACCEPT}
+						accept={fileAccept}
 						aria-label="파일 선택"
 					/>
 					{allowFile ? (
@@ -1529,6 +1536,8 @@ type QuestionMeta = {
 	allow_text?: boolean | null;
 	allow_skip?: boolean | null;
 	allow_file?: boolean | null;
+	// allow_file=true일 때 항목별 허용 확장자(서버 권위). 예: ".png", ".pdf".
+	accept?: string[] | null;
 	// type="search"일 때만: 자동완성 메타(공개 GET endpoint + 표시/식별 필드).
 	search?: {
 		endpoint?: string | null;
@@ -1559,6 +1568,12 @@ function deriveQuestionMeta(raw: unknown): {
 	allowText: boolean;
 	allowFile: boolean;
 	allowSkip: boolean;
+	/** input[type=file]의 accept 속성값(예: ".pdf,.docx"). */
+	fileAccept: string;
+	/** 클라 검증용 정규화 확장자 목록(점 없는 소문자, 예: ["pdf","docx"]). */
+	acceptExtensions: readonly string[];
+	/** 거부 토스트용 확장자 표기(예: "PDF, DOCX"). */
+	fileAcceptLabel: string;
 } {
 	const question = raw as QuestionMeta | null | undefined;
 	const selectOptions =
@@ -1575,11 +1590,28 @@ function deriveQuestionMeta(raw: unknown): {
 					valueField: question.search?.value_field?.trim() || "no",
 				}
 			: null;
+	// 파일 허용 확장자: 서버(question.accept)가 권위. 점 없는 소문자로 정규화하고,
+	// 미지정(구버전/누락)일 때만 폴백 목록을 쓴다. accept attr/검증/안내 표기를 여기서 일괄 도출.
+	const serverExts = Array.isArray(question?.accept)
+		? question.accept.reduce<string[]>((acc, e) => {
+				const ext = typeof e === "string" ? e.trim() : "";
+				if (ext) acc.push(ext.replace(/^\./, "").toLowerCase());
+				return acc;
+			}, [])
+		: [];
+	const acceptExtensions: readonly string[] = serverExts.length
+		? serverExts
+		: FALLBACK_FILE_EXTENSIONS;
 	return {
 		selectOptions,
 		isSelect: selectOptions.length > 0,
 		isSearch: search != null,
 		search,
+		fileAccept: acceptExtensions.map((ext) => `.${ext}`).join(","),
+		acceptExtensions,
+		fileAcceptLabel: acceptExtensions
+			.map((ext) => ext.toUpperCase())
+			.join(", "),
 		// allow_text가 명시(boolean)되면 그 값이 우선 — false면 type:"text"여도 직접입력을 숨긴다
 		// (대기 상태 등 백엔드가 답변 입력을 막는 경우). 미지정일 때만 type==="text"를 허용 신호로 폴백.
 		allowText: question
