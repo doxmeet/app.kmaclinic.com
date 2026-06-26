@@ -69,6 +69,9 @@ export function ProfileLivePreview({
 			src={PROFILE_PREVIEW_SRC}
 			title={title}
 			// 1st-party 미리보기 앱이지만 iframe 권한은 명시 제한(병원 LivePreview와 동일 근거).
+			// 교차출처 미리보기 + postMessage origin 핸드셰이크에 allow-same-origin 필수 — 빼면
+			// frame origin이 null이 되어 미리보기가 깨진다. 의도된 구현이라 오탐 억제.
+			// react-doctor-disable-next-line iframe-missing-sandbox
 			sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
 			className={cn("h-full w-full border-0 bg-white", className)}
 		/>

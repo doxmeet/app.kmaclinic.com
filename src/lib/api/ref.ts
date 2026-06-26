@@ -66,11 +66,6 @@ export function searchClinics(
 	);
 }
 
-/** 병의원 단건 상세(`GET /ref/clinic/:no`). 자동채움/표시용. 없으면 ERROR_404_CLINIC_NOT_FOUND. */
-export function getClinic(no: number | string) {
-	return publicHttp.get<{ clinic: RefClinic }>(`ref/clinic/${no}`);
-}
-
 /** 온보딩 search 질문이 돌려주는 자동완성 항목(필드는 endpoint마다 다름). */
 export type RefSearchItem = Record<string, unknown>;
 

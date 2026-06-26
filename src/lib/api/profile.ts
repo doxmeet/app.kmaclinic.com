@@ -95,40 +95,6 @@ export async function getCompletion(): Promise<ProfileCompletion> {
 	return http.get<ProfileCompletion>("profile/me/completion");
 }
 
-/** 동료 비교(과·표본 부족 시 comparison_available:false). 표시용. */
-export type ProfileComparison = Record<string, unknown> & {
-	comparison_available?: boolean;
-	reason?: string;
-	sample_size?: number;
-};
-
-export async function getComparison(): Promise<ProfileComparison> {
-	return http.get<ProfileComparison>("profile/me/comparison");
-}
-
-// ── 자동완성/확정(§8.11.3) ─────────────────────────────────────────────
-
-/** 학위 자동 제안(bachelor일 때 master/doctorate 2건). 사용자가 확인 후 PATCH로 추가. */
-export function suggestEducation() {
-	return http.post<{ suggestions: ProfileItem[] }>(
-		"profile/me/education/suggest",
-	);
-}
-
-/** 미확정 학력 확정(is_confirmed=true). `:id`는 doc.education의 문자열 id. */
-export function confirmEducation(id: string) {
-	return http.patch<{ item: ProfileItem }>(
-		`profile/me/education/${id}/confirm`,
-	);
-}
-
-/** 수련 기간 자동 제안(있으면 { start_date, end_date }, 없으면 null). */
-export function suggestTraining() {
-	return http.post<{
-		suggestion: { start_date?: string; end_date?: string } | null;
-	}>("profile/me/training/suggest");
-}
-
 // ── 게시(§8.11.1) — slug 선설정 필요(setProfileSlug는 billing.ts) ──────────
 
 /** 프로필 공개. slug 미설정 시 ERROR_400_SLUG_REQUIRED. */
