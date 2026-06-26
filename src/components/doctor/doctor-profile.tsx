@@ -7,6 +7,8 @@ import {
 import {
 	AlertCircle,
 	Camera,
+	Check,
+	Eye,
 	Loader2,
 	Palette,
 	Plus,
@@ -15,7 +17,7 @@ import {
 	Trash2,
 	X,
 } from "lucide-react";
-import { useEffect, useId, useReducer, useState } from "react";
+import { useEffect, useId, useReducer, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AuthGuard } from "#/components/auth/auth-guard.tsx";
 import {
@@ -37,8 +39,25 @@ import { FieldSelect } from "#/components/form/select-field.tsx";
 import { StickyActionBar } from "#/components/layout/action-bar.tsx";
 import { AppShell } from "#/components/layout/app-shell.tsx";
 import { DesignPreviewScreen } from "#/components/onboarding/design-preview.tsx";
+import {
+	Accordion,
+	AccordionContent,
+	AccordionItem,
+	AccordionTrigger,
+} from "#/components/ui/accordion.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { Checkbox } from "#/components/ui/checkbox.tsx";
+import {
+	Dialog,
+	DialogBody,
+	DialogClose,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "#/components/ui/dialog.tsx";
+import { ScrollArea } from "#/components/ui/scroll-area.tsx";
 import { Switch } from "#/components/ui/switch.tsx";
 import { useDebouncedValue } from "#/hooks/use-debounced-value.ts";
 import {
@@ -128,6 +147,10 @@ const SELECT = {
 	],
 } as const;
 
+/** 학력 학위 입력 순서(학사 → 석사 → 박사). "추가" 버튼은 다음 미입력 학위를 안내하고,
+ *  박사까지 모두 입력되면 버튼을 숨긴다. */
+const DEGREE_ORDER: readonly string[] = SELECT.degree.map((d) => d.value);
+
 /** license_number 라벨 분기(§3.2): doctor=의사면허, specialist=전문의, subspecialist/certified=인증번호. */
 const LICENSE_NUMBER_LABEL: Record<string, string> = {
 	doctor: "의사면허번호",
@@ -147,6 +170,8 @@ type CollConfig = {
 	title: string;
 	addLabel: string;
 	fields: ColField[];
+	// 빈 행 판정 시 무시할 필드(예: 학력은 자동 선택되는 degree_type만 있으면 빈 행으로 본다).
+	ignoreForEmpty?: readonly string[];
 };
 
 const COLLECTIONS: CollConfig[] = [
@@ -154,6 +179,7 @@ const COLLECTIONS: CollConfig[] = [
 		key: "education",
 		title: "학력",
 		addLabel: "학력 추가",
+		ignoreForEmpty: ["degree_type"],
 		fields: [
 			{
 				name: "degree_type",
@@ -372,7 +398,11 @@ type EditAction =
 	| { type: "setPrimaryDept"; no: string; text: string }
 	| { type: "setSpecialtyTags"; tags: string[] }
 	| { type: "toggleVisibility"; key: string }
-	| { type: "addRow"; coll: CollKey | "affiliations" }
+	| {
+			type: "addRow";
+			coll: CollKey | "affiliations";
+			values?: Record<string, unknown>;
+	  }
 	| {
 			type: "updateRow";
 			coll: CollKey | "affiliations";
@@ -444,7 +474,7 @@ function editReducer(state: EditState, action: EditAction): EditState {
 					id: genId(action.coll, rows),
 					isNew: true,
 					deleted: false,
-					values: { is_public: true },
+					values: { is_public: true, ...action.values },
 				},
 			]);
 		case "updateRow":
@@ -561,7 +591,7 @@ function loadState(doc: ProfileDoc): EditState {
 			: [],
 		visibility: { ...defaultVisibility(), ...(doc.field_visibility ?? {}) },
 		colls: {
-			education: rowsOf(doc.education),
+			education: withDefaultEducation(rowsOf(doc.education)),
 			license: rowsOf(doc.license),
 			training: rowsOf(doc.training),
 			career: rowsOf(doc.career),
@@ -570,6 +600,20 @@ function loadState(doc: ProfileDoc): EditState {
 		},
 		affiliations: rowsOf(doc.affiliations),
 	};
+}
+
+/** 학력이 비어 있으면 학사 입력칸을 기본으로 띄운다. isNew라 자동으로 펼쳐지고,
+ *  실제 내용(학교명 등) 없이 저장하면 [[ignoreForEmpty]]로 빈 행 취급돼 전송되지 않는다. */
+function withDefaultEducation(rows: Row[]): Row[] {
+	if (rows.length > 0) return rows;
+	return [
+		{
+			id: "education_default",
+			isNew: true,
+			deleted: false,
+			values: { is_public: true, degree_type: "bachelor" },
+		},
+	];
 }
 
 /**
@@ -641,8 +685,13 @@ function buildVisibility(
 }
 
 /** 설정된 필드가 모두 비어 있는 신규 행인지(빈 행 생성 방지). */
-function isRowEmpty(row: Row, fields: ColField[]): boolean {
+function isRowEmpty(
+	row: Row,
+	fields: ColField[],
+	ignore?: readonly string[],
+): boolean {
 	return fields.every((f) => {
+		if (ignore?.includes(f.name)) return true;
 		const v = row.values[f.name];
 		return v == null || (typeof v === "string" && v.trim() === "");
 	});
@@ -763,7 +812,7 @@ function buildPatch(state: EditState): ProfilePatch {
 		const sub = collectionPatch(
 			state.colls[config.key],
 			(row) => buildItem(row, config),
-			(row) => isRowEmpty(row, config.fields),
+			(row) => isRowEmpty(row, config.fields, config.ignoreForEmpty),
 		);
 		if (Object.keys(sub).length > 0) patch[config.key] = sub;
 	}
@@ -805,7 +854,11 @@ function buildProfilePreviewBundle(
 	for (const config of COLLECTIONS) {
 		const items: Record<string, unknown>[] = [];
 		for (const r of state.colls[config.key]) {
-			if (r.deleted || (r.isNew && isRowEmpty(r, config.fields))) continue;
+			if (
+				r.deleted ||
+				(r.isNew && isRowEmpty(r, config.fields, config.ignoreForEmpty))
+			)
+				continue;
 			items.push(buildItem(r, config));
 		}
 		bundle[config.key] = items;
@@ -837,6 +890,8 @@ function ProfileEditor() {
 	// 전체화면 디자인 시안 선택(공개 전 미리보기). selectedTemplate는 화면에서 고르는 임시값.
 	const [designOpen, setDesignOpen] = useState(false);
 	const [selectedTemplate, setSelectedTemplate] = useState("blue");
+	// 환자 페이지 노출(공개) 설정 dialog. 토글은 편집 상태에 즉시 반영되고, 실제 저장은 "프로필 저장".
+	const [visibilityOpen, setVisibilityOpen] = useState(false);
 
 	const {
 		data: doc,
@@ -951,6 +1006,17 @@ function ProfileEditor() {
 			bottomBar={
 				<StickyActionBar
 					className="shadow-[0_-6px_20px_-8px_rgba(15,39,68,0.18)]"
+					left={
+						<Button
+							variant="neutral-outline"
+							size="2xl"
+							className="font-semibold"
+							onClick={() => setVisibilityOpen(true)}
+						>
+							<Eye className="size-5" />
+							공개 설정
+						</Button>
+					}
 					right={
 						<>
 							<Button
@@ -1001,6 +1067,19 @@ function ProfileEditor() {
 
 				<AffiliationsSection rows={state.affiliations} dispatch={dispatch} />
 			</div>
+
+			<VisibilityDialog
+				open={visibilityOpen}
+				onOpenChange={setVisibilityOpen}
+				state={state}
+				dispatch={dispatch}
+				saving={saveMutation.isPending}
+				onSave={() =>
+					saveMutation.mutate(undefined, {
+						onSuccess: () => setVisibilityOpen(false),
+					})
+				}
+			/>
 		</AppShell>
 	);
 }
@@ -1072,16 +1151,7 @@ function PhotoSection({
 
 	return (
 		<SectionCard className="flex flex-col gap-8">
-			<div className="flex items-center justify-between gap-3">
-				<SectionTitle>프로필 사진</SectionTitle>
-				<VisibilityToggle
-					on={state.visibility.photo_url !== false}
-					onToggle={() =>
-						dispatch({ type: "toggleVisibility", key: "photo_url" })
-					}
-					label="프로필 사진"
-				/>
-			</div>
+			<SectionTitle>프로필 사진</SectionTitle>
 
 			{/* 프로필 사진 — 전체폭, 원본은 contain으로 보이고 양옆 여백은 블러로 채움 */}
 			<div className="flex flex-col gap-3">
@@ -1173,18 +1243,12 @@ function BasicInfoSection({
 }) {
 	const set = (key: CoreKey) => (v: string) =>
 		dispatch({ type: "setCore", key, value: v });
-	// 토글 가능한 필드의 공개여부 props(§3.3). display_name·대표 진료과는 항상 공개라 vis 없음.
-	const vis = (key: string, label: string): VisProps => ({
-		on: state.visibility[key] !== false,
-		onToggle: () => dispatch({ type: "toggleVisibility", key }),
-		label,
-	});
 	return (
 		<SectionCard className="flex flex-col gap-6">
 			<SectionTitle>기본 정보</SectionTitle>
 			<FieldDescription>
-				오른쪽 토글로 공개 프로필(kmadoc.com)에 항목을 노출할지 정할 수 있어요.
-				성명·대표 진료과는 항상 공개됩니다.
+				하단 “공개 설정”에서 공개 프로필(kmadoc.com)에 어떤 항목을 노출할지 한
+				곳에서 정할 수 있어요. 성명·대표 진료과는 항상 공개됩니다.
 			</FieldDescription>
 			<TextField
 				label="성명"
@@ -1195,10 +1259,9 @@ function BasicInfoSection({
 				label="영문 성명"
 				value={state.core.name_en}
 				onChange={set("name_en")}
-				vis={vis("name_en", "영문 성명")}
 			/>
 			<Field>
-				<FieldHeader label="성별" vis={vis("gender", "성별")} />
+				<FieldHeader label="성별" />
 				<FieldSelect
 					value={state.core.gender}
 					onValueChange={set("gender")}
@@ -1211,7 +1274,6 @@ function BasicInfoSection({
 				value={state.core.birth_date}
 				onChange={set("birth_date")}
 				placeholder="YYYY-MM-DD"
-				vis={vis("birth_date", "생년월일")}
 			/>
 			<PrimaryDepartmentField state={state} dispatch={dispatch} />
 			<TextField
@@ -1219,48 +1281,41 @@ function BasicInfoSection({
 				value={state.core.headline}
 				onChange={set("headline")}
 				placeholder="예: 대표원장 · 소화기내과 전문의"
-				vis={vis("headline", "헤드라인")}
 			/>
 			<SpecialtyTagsField state={state} dispatch={dispatch} />
 			<TextAreaField
 				label="자기소개"
 				value={state.core.intro_text}
 				onChange={set("intro_text")}
-				vis={vis("intro_text", "자기소개")}
 			/>
 			<TextAreaField
 				label="방송 출연 및 언론 보도"
 				value={state.core.media_text}
 				onChange={set("media_text")}
-				vis={vis("media_text", "방송 출연 및 언론 보도")}
 			/>
 			<TextField
 				label="연락처 전화"
 				value={state.core.contact_phone}
 				onChange={set("contact_phone")}
 				placeholder="예: 02-123-4567"
-				vis={vis("contact_phone", "연락처 전화")}
 			/>
 			<TextField
 				label="연락처 이메일"
 				value={state.core.contact_email}
 				onChange={set("contact_email")}
 				placeholder="예: doctor@example.com"
-				vis={vis("contact_email", "연락처 이메일")}
 			/>
 			<TextField
 				label="카카오 링크"
 				value={state.core.kakao_url}
 				onChange={set("kakao_url")}
 				placeholder="https://"
-				vis={vis("kakao_url", "카카오 링크")}
 			/>
 			<TextField
 				label="ORCID iD"
 				value={state.core.orcid_id}
 				onChange={set("orcid_id")}
 				placeholder="0000-0000-0000-0000"
-				vis={vis("orcid_id", "ORCID iD")}
 			/>
 		</SectionCard>
 	);
@@ -1334,15 +1389,7 @@ function SpecialtyTagsField({
 
 	return (
 		<Field>
-			<FieldHeader
-				label="주요 전문 진료 분야 (최대 5개)"
-				vis={{
-					on: state.visibility.specialty_tags !== false,
-					onToggle: () =>
-						dispatch({ type: "toggleVisibility", key: "specialty_tags" }),
-					label: "주요 전문 진료 분야",
-				}}
-			/>
+			<FieldHeader label="주요 전문 진료 분야 (최대 5개)" />
 			<div className="flex flex-wrap gap-2">
 				{tags.map((tag) => (
 					<span
@@ -1393,6 +1440,47 @@ function SpecialtyTagsField({
 	);
 }
 
+/** 접힌 항목의 한 줄 요약(제목 · 부제). 기본은 부제를 줄이고 제목을 끝까지
+ *  보여주지만, truncate="title"이면 제목을 줄이고(…) 부제를 끝까지 보여준다
+ *  — 논문처럼 제목이 길고 나머지 정보를 더 봐야 할 때. */
+function RowSummary({
+	title,
+	subtitle,
+	truncate = "subtitle",
+}: {
+	title: string;
+	subtitle: string;
+	truncate?: "title" | "subtitle";
+}) {
+	const titleTrunc = truncate === "title";
+	return (
+		<span className="flex min-w-0 flex-1 items-baseline gap-2 pr-2">
+			<span
+				className={cn(
+					"text-[16px] font-semibold text-ink sm:text-[17px]",
+					// 잘리는 쪽은 flex-1+min-w-0로 남은 공간만 차지해 …로 줄이고,
+					// 고정 쪽은 shrink-0로 끝까지 보여준다.
+					titleTrunc ? "min-w-0 flex-1 truncate" : "shrink-0 whitespace-nowrap",
+				)}
+			>
+				{title}
+			</span>
+			{subtitle ? (
+				<span
+					className={cn(
+						"text-[15px] text-muted-fg",
+						titleTrunc
+							? "shrink-0 whitespace-nowrap"
+							: "min-w-0 flex-1 truncate",
+					)}
+				>
+					{subtitle}
+				</span>
+			) : null}
+		</span>
+	);
+}
+
 /** 일반 컬렉션(학력/면허/수련/경력/학회/논문) 반복 에디터. */
 function CollectionSection({
 	config,
@@ -1404,6 +1492,42 @@ function CollectionSection({
 	dispatch: React.Dispatch<EditAction>;
 }) {
 	const visible = rows.filter((r) => !r.deleted);
+	// 평소엔 접어 한 줄 요약만 보여주고, 항목을 수정할 때만 펼친다.
+	const [openItems, setOpenItems] = useState<string[]>([]);
+	// 마운트 시점의 행 id를 "이미 본 행"으로 기록(렌더용 값이 아니라 ref). 초기 행은
+	// 접힌 채로 두고, 이후 새로 나타난 행만 펼침 대상으로 가려내는 데 쓴다.
+	const seenIdsRef = useRef<Set<string> | null>(null);
+	if (seenIdsRef.current === null) {
+		seenIdsRef.current = new Set(visible.map((r) => r.id));
+	}
+	const seenIds = seenIdsRef.current;
+
+	// 렌더 중 상태 보정(공식 패턴): 새로 추가한(isNew) 행만 자동으로 펼쳐 바로
+	// 입력하게 한다. 서버에서 불러온 기존 행은 seenIds에 있어 접힌 채 유지된다.
+	const fresh: string[] = [];
+	for (const r of visible) {
+		if (r.isNew && !seenIds.has(r.id)) fresh.push(r.id);
+	}
+	if (fresh.length > 0) {
+		for (const id of fresh) seenIds.add(id);
+		setOpenItems((prev) => [...prev, ...fresh]);
+	}
+
+	// 학력은 학사 → 석사 → 박사 순서로 다음 미입력 학위만 추가하도록 안내하고,
+	// 박사까지 모두 입력되면 추가 버튼을 숨긴다. 그 외 컬렉션은 일반 추가.
+	const isEducation = config.key === "education";
+	const presentDegrees = new Set(
+		visible.map((r) => asString(r.values.degree_type)),
+	);
+	const nextDegree = isEducation
+		? DEGREE_ORDER.find((d) => !presentDegrees.has(d))
+		: undefined;
+	const showAdd = !isEducation || nextDegree !== undefined;
+	const addLabel =
+		isEducation && nextDegree
+			? `${optionLabel(SELECT.degree, nextDegree)} 추가`
+			: config.addLabel;
+	const addValues = nextDegree ? { degree_type: nextDegree } : undefined;
 
 	return (
 		<SectionCard className="flex flex-col gap-5">
@@ -1412,75 +1536,86 @@ function CollectionSection({
 				<p className="text-sm text-muted-fg">
 					추가 버튼을 눌러 {config.title} 정보를 입력하세요.
 				</p>
-			) : null}
-			<div className="flex flex-col gap-4">
-				{visible.map((row) => (
-					<div
-						key={row.id}
-						className="flex flex-col gap-3 rounded-xl border border-line p-4"
-					>
-						<div className="grid gap-3">
-							{config.fields.map((f) =>
-								f.showWhen && !f.showWhen(row.values) ? null : (
-									<CollField
-										key={f.name}
-										field={f}
-										label={f.labelOf ? f.labelOf(row.values) : f.label}
-										value={row.values[f.name]}
-										setField={(field, value) =>
-											dispatch({
-												type: "updateRow",
-												coll: config.key,
-												id: row.id,
-												field,
-												value,
-											})
-										}
-									/>
-								),
-							)}
-						</div>
-						<div className="flex items-center justify-between gap-4 border-t border-line-soft pt-3">
-							<div className="flex flex-wrap items-center gap-4">
-								<RowToggle
-									label="공개"
-									checked={row.values.is_public !== false}
-									onChange={(v) =>
-										dispatch({
-											type: "updateRow",
-											coll: config.key,
-											id: row.id,
-											field: "is_public",
-											value: v,
-										})
-									}
-								/>
-							</div>
-							<Button
-								type="button"
-								variant="ghost"
-								size="icon"
-								aria-label={`${config.title} 삭제`}
-								onClick={() =>
-									dispatch({ type: "removeRow", coll: config.key, id: row.id })
-								}
+			) : (
+				<Accordion
+					value={openItems}
+					onValueChange={(value) => setOpenItems(value as string[])}
+					className="flex flex-col gap-4"
+				>
+					{visible.map((row) => {
+						const { title, subtitle } = summarizeRow(config.key, row.values);
+						return (
+							<AccordionItem
+								key={row.id}
+								value={row.id}
+								className="rounded-xl border border-line"
 							>
-								<Trash2 className="size-4 text-danger-strong" />
-							</Button>
-						</div>
-					</div>
-				))}
-			</div>
-			<Button
-				type="button"
-				variant="neutral-outline"
-				size="xl"
-				className="self-start"
-				onClick={() => dispatch({ type: "addRow", coll: config.key })}
-			>
-				<Plus className="size-4" />
-				{config.addLabel}
-			</Button>
+								<AccordionTrigger className="items-center px-4 py-3.5 hover:no-underline">
+									<RowSummary
+										title={title}
+										subtitle={subtitle}
+										truncate={config.key === "paper" ? "title" : "subtitle"}
+									/>
+								</AccordionTrigger>
+								<AccordionContent className="px-4">
+									<div className="grid gap-3">
+										{config.fields.map((f) =>
+											f.showWhen && !f.showWhen(row.values) ? null : (
+												<CollField
+													key={f.name}
+													field={f}
+													label={f.labelOf ? f.labelOf(row.values) : f.label}
+													value={row.values[f.name]}
+													setField={(field, value) =>
+														dispatch({
+															type: "updateRow",
+															coll: config.key,
+															id: row.id,
+															field,
+															value,
+														})
+													}
+												/>
+											),
+										)}
+									</div>
+									<div className="mt-3 flex items-center justify-end border-t border-line-soft pt-3">
+										<Button
+											type="button"
+											variant="ghost"
+											size="icon"
+											aria-label={`${config.title} 삭제`}
+											onClick={() =>
+												dispatch({
+													type: "removeRow",
+													coll: config.key,
+													id: row.id,
+												})
+											}
+										>
+											<Trash2 className="size-4 text-danger-strong" />
+										</Button>
+									</div>
+								</AccordionContent>
+							</AccordionItem>
+						);
+					})}
+				</Accordion>
+			)}
+			{showAdd ? (
+				<Button
+					type="button"
+					variant="neutral-outline"
+					size="xl"
+					className="w-full"
+					onClick={() =>
+						dispatch({ type: "addRow", coll: config.key, values: addValues })
+					}
+				>
+					<Plus className="size-4" />
+					{addLabel}
+				</Button>
+			) : null}
 		</SectionCard>
 	);
 }
@@ -1641,6 +1776,25 @@ function AffiliationsSection({
 	dispatch: React.Dispatch<EditAction>;
 }) {
 	const visible = rows.filter((r) => !r.deleted);
+	// 평소엔 접어 한 줄 요약만 보여주고, 항목을 수정할 때만 펼친다.
+	const [openItems, setOpenItems] = useState<string[]>([]);
+	// 마운트 시점의 행 id를 기록(렌더용 값이 아니라 ref). 새로 추가된 행만 자동으로
+	// 펼치고, 서버에서 불러온 기존 행은 접힌 채 유지한다.
+	const seenIdsRef = useRef<Set<string> | null>(null);
+	if (seenIdsRef.current === null) {
+		seenIdsRef.current = new Set(visible.map((r) => r.id));
+	}
+	const seenIds = seenIdsRef.current;
+
+	const fresh: string[] = [];
+	for (const r of visible) {
+		if (r.isNew && !seenIds.has(r.id)) fresh.push(r.id);
+	}
+	if (fresh.length > 0) {
+		for (const id of fresh) seenIds.add(id);
+		setOpenItems((prev) => [...prev, ...fresh]);
+	}
+
 	return (
 		<SectionCard className="flex flex-col gap-5">
 			<SectionTitle>소속 병원 · 진료 일정</SectionTitle>
@@ -1648,74 +1802,78 @@ function AffiliationsSection({
 				<p className="text-sm text-muted-fg">
 					근무 중인 병원과 진료 일정을 추가하세요.
 				</p>
-			) : null}
-			<div className="flex flex-col gap-6">
-				{visible.map((row) => (
-					<div
-						key={row.id}
-						className="flex flex-col gap-4 rounded-xl border border-line p-4"
-					>
-						<AffiliationInstitutionField row={row} dispatch={dispatch} />
-						<div className="grid gap-3">
-							<AffField
-								row={row}
-								field="title"
-								label="직함"
-								dispatch={dispatch}
-							/>
-							<AffField
-								row={row}
-								field="department"
-								label="진료과"
-								dispatch={dispatch}
-							/>
-							<AffField
-								row={row}
-								field="role"
-								label="역할"
-								placeholder="예: 본원"
-								dispatch={dispatch}
-							/>
-						</div>
-						<ScheduleGrid row={row} dispatch={dispatch} />
-						<div className="flex items-center justify-between gap-4 border-t border-line-soft pt-3">
-							<RowToggle
-								label="공개"
-								checked={row.values.is_public !== false}
-								onChange={(v) =>
-									dispatch({
-										type: "updateRow",
-										coll: "affiliations",
-										id: row.id,
-										field: "is_public",
-										value: v,
-									})
-								}
-							/>
-							<Button
-								type="button"
-								variant="ghost"
-								size="icon"
-								aria-label="소속 병원 삭제"
-								onClick={() =>
-									dispatch({
-										type: "removeRow",
-										coll: "affiliations",
-										id: row.id,
-									})
-								}
+			) : (
+				<Accordion
+					value={openItems}
+					onValueChange={(value) => setOpenItems(value as string[])}
+					className="flex flex-col gap-4"
+				>
+					{visible.map((row) => {
+						const { title, subtitle } = summarizeRow(
+							"affiliations",
+							row.values,
+						);
+						return (
+							<AccordionItem
+								key={row.id}
+								value={row.id}
+								className="rounded-xl border border-line"
 							>
-								<Trash2 className="size-4 text-danger-strong" />
-							</Button>
-						</div>
-					</div>
-				))}
-			</div>
+								<AccordionTrigger className="items-center px-4 py-3.5 hover:no-underline">
+									<RowSummary title={title} subtitle={subtitle} />
+								</AccordionTrigger>
+								<AccordionContent className="flex flex-col gap-4 px-4">
+									<AffiliationInstitutionField row={row} dispatch={dispatch} />
+									<div className="grid gap-3">
+										<AffField
+											row={row}
+											field="title"
+											label="직함"
+											dispatch={dispatch}
+										/>
+										<AffField
+											row={row}
+											field="department"
+											label="진료과"
+											dispatch={dispatch}
+										/>
+										<AffField
+											row={row}
+											field="role"
+											label="역할"
+											placeholder="예: 본원"
+											dispatch={dispatch}
+										/>
+									</div>
+									<ScheduleGrid row={row} dispatch={dispatch} />
+									<div className="flex items-center justify-end border-t border-line-soft pt-3">
+										<Button
+											type="button"
+											variant="ghost"
+											size="icon"
+											aria-label="소속 병원 삭제"
+											onClick={() =>
+												dispatch({
+													type: "removeRow",
+													coll: "affiliations",
+													id: row.id,
+												})
+											}
+										>
+											<Trash2 className="size-4 text-danger-strong" />
+										</Button>
+									</div>
+								</AccordionContent>
+							</AccordionItem>
+						);
+					})}
+				</Accordion>
+			)}
 			<Button
 				type="button"
 				variant="neutral-outline"
 				size="xl"
-				className="self-start"
+				className="w-full"
 				onClick={() => dispatch({ type: "addRow", coll: "affiliations" })}
 			>
 				<Plus className="size-4" />
@@ -2129,20 +2287,338 @@ function TextAreaField({
 	);
 }
 
-function RowToggle({
-	label,
-	checked,
-	onChange,
-}: {
-	label: string;
+// ─────────────────────────────────────────────────────────────────────
+// 공개(노출) 설정 dialog — 폼에 흩어져 있던 항목별 공개 토글을 한 곳에 모은다.
+// 기본정보 필드(field_visibility)와 컬렉션·소속 항목(is_public)을 그룹별로 선택.
+// 토글은 편집 상태에 즉시 반영되고, 실제 저장은 하단 "프로필 저장"이 수행한다.
+// ─────────────────────────────────────────────────────────────────────
+
+type VisRowItem = {
+	id: string;
+	title: string;
+	subtitle: string;
 	checked: boolean;
-	onChange: (v: boolean) => void;
+	onToggle: () => void;
+};
+type VisGroup = { key: string; title: string; items: VisRowItem[] };
+
+/** select value → 한글 라벨(없으면 원문). */
+function optionLabel(
+	options: readonly { value: string; label: string }[],
+	value: unknown,
+): string {
+	const v = asString(value);
+	return options.find((o) => o.value === v)?.label ?? v;
+}
+
+/** 연도 범위 표기("2007 – 2009", 한쪽만 있으면 "2007 –"). */
+function yearRange(start: unknown, end: unknown): string {
+	const a = asString(start);
+	const b = asString(end);
+	if (a && b) return `${a} – ${b}`;
+	if (a) return `${a} –`;
+	if (b) return `– ${b}`;
+	return "";
+}
+
+/** 컬렉션/소속 한 행을 "제목 · 부제"로 요약(dialog 목록 표시용). */
+function summarizeRow(
+	coll: CollKey | "affiliations",
+	values: Record<string, unknown>,
+): { title: string; subtitle: string } {
+	const s = (k: string) => asString(values[k]);
+	const join = (...parts: string[]) => parts.filter(Boolean).join(" · ");
+	switch (coll) {
+		case "education":
+			return {
+				title: optionLabel(SELECT.degree, values.degree_type) || "학력",
+				subtitle: join(
+					s("school_name_text"),
+					s("major"),
+					yearRange(values.start_year, values.graduation_year),
+				),
+			};
+		case "license":
+			return {
+				title: optionLabel(SELECT.license, values.license_type) || "면허·자격",
+				subtitle: join(
+					s("license_number"),
+					s("issuing_society"),
+					s("acquired_year") && `${s("acquired_year")} 취득`,
+				),
+			};
+		case "training":
+			return {
+				title: optionLabel(SELECT.training, values.training_type) || "수련",
+				subtitle: join(
+					s("hospital_name"),
+					s("department"),
+					s("subspecialty"),
+					yearRange(values.start_year, values.end_year),
+				),
+			};
+		case "career":
+			return {
+				title: s("org_name") || "경력",
+				subtitle: join(
+					s("title"),
+					s("department"),
+					yearRange(values.start_year, values.end_year),
+				),
+			};
+		case "society":
+			return {
+				title: s("name_text") || "학회",
+				subtitle: join(
+					s("grade"),
+					s("position"),
+					s("since_year") && `${s("since_year")} 가입`,
+				),
+			};
+		case "paper":
+			return {
+				title: s("title") || "논문",
+				subtitle: join(s("journal"), s("pub_year")),
+			};
+		case "affiliations":
+			return {
+				title: s("institution_name") || "근무 기관",
+				subtitle: join(s("title"), s("department"), s("role")),
+			};
+	}
+}
+
+/** 기본정보 필드의 현재 값 요약(dialog 부제용). */
+function basicFieldSummary(state: EditState, key: string): string {
+	if (key === "photo_url") return state.core.photo_url ? "등록됨" : "미등록";
+	if (key === "specialty_tags")
+		return state.specialtyTags.length
+			? state.specialtyTags.join(", ")
+			: "미입력";
+	const v = (state.core as Record<string, string>)[key];
+	if (!v?.trim()) return "미입력";
+	// select 기반 필드는 저장값(예: male) 대신 라벨(예: 남성)로 표시.
+	if (key === "gender") return optionLabel(GENDER_OPTIONS, v);
+	return v;
+}
+
+function buildVisibilityGroups(
+	state: EditState,
+	dispatch: React.Dispatch<EditAction>,
+): VisGroup[] {
+	const groups: VisGroup[] = [];
+
+	groups.push({
+		key: "basic",
+		title: "기본 정보",
+		items: VISIBILITY_FIELDS.map((f) => ({
+			id: `basic:${f.key}`,
+			title: f.label,
+			subtitle: basicFieldSummary(state, f.key),
+			checked: state.visibility[f.key] !== false,
+			onToggle: () => dispatch({ type: "toggleVisibility", key: f.key }),
+		})),
+	});
+
+	for (const config of COLLECTIONS) {
+		const rows = state.colls[config.key].filter((r) => !r.deleted);
+		if (rows.length === 0) continue;
+		groups.push({
+			key: config.key,
+			title: config.title,
+			items: rows.map((row) => {
+				const checked = row.values.is_public !== false;
+				const { title, subtitle } = summarizeRow(config.key, row.values);
+				return {
+					id: `${config.key}:${row.id}`,
+					title,
+					subtitle,
+					checked,
+					onToggle: () =>
+						dispatch({
+							type: "updateRow",
+							coll: config.key,
+							id: row.id,
+							field: "is_public",
+							value: !checked,
+						}),
+				};
+			}),
+		});
+	}
+
+	const affRows = state.affiliations.filter((r) => !r.deleted);
+	if (affRows.length > 0) {
+		groups.push({
+			key: "affiliations",
+			title: "소속 병원 · 진료 일정",
+			items: affRows.map((row) => {
+				const checked = row.values.is_public !== false;
+				const { title, subtitle } = summarizeRow("affiliations", row.values);
+				return {
+					id: `affiliations:${row.id}`,
+					title,
+					subtitle,
+					checked,
+					onToggle: () =>
+						dispatch({
+							type: "updateRow",
+							coll: "affiliations",
+							id: row.id,
+							field: "is_public",
+							value: !checked,
+						}),
+				};
+			}),
+		});
+	}
+
+	return groups;
+}
+
+function VisibilityDialog({
+	open,
+	onOpenChange,
+	state,
+	dispatch,
+	onSave,
+	saving,
+}: {
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	state: EditState;
+	dispatch: React.Dispatch<EditAction>;
+	onSave: () => void;
+	saving: boolean;
 }) {
+	const groups = buildVisibilityGroups(state, dispatch);
+	const items = groups.flatMap((g) => g.items);
+	const total = items.length;
+	const exposed = items.filter((i) => i.checked).length;
+
 	return (
-		<span className="flex items-center gap-2 text-sm text-ink">
-			<Switch checked={checked} onCheckedChange={onChange} aria-label={label} />
-			{label}
-		</span>
+		<Dialog open={open} onOpenChange={onOpenChange}>
+			<DialogContent className="overflow-y-hidden sm:max-w-5xl" showCloseButton>
+				<DialogHeader className="relative z-10 shrink-0 border-line bg-surface shadow-[0_0.1px_0_0_var(--color-line)]">
+					<DialogTitle>공개 프로필 노출 정보 선택</DialogTitle>
+					<DialogDescription>
+						공개 프로필 페이지에 표시(노출)할 정보를 직접 선택해 주세요. 체크된
+						항목만 페이지에 안전하게 노출됩니다.
+					</DialogDescription>
+					<span className="border border-brand/40 mt-1 inline-flex w-fit items-center gap-1.5 rounded-full bg-brand-50 px-4 py-2 text-sm font-semibold text-brand">
+						<span className="size-2 rounded-full bg-brand" />
+						{exposed} / {total} 항목 노출 선택됨
+					</span>
+				</DialogHeader>
+
+				<ScrollArea
+					className="min-h-0 flex-1"
+					viewportClassName="max-h-[55vh] sm:max-h-[60vh]"
+				>
+					<DialogBody className="gap-6">
+						{groups.map((group) => (
+							<div key={group.key} className="flex flex-col gap-2.5">
+								<div className="flex items-center gap-5 rounded-r-md border-l-[3px] border-brand bg-muted/50 px-5 py-4">
+									<span className="text-base font-bold text-ink">
+										{group.title}
+									</span>
+									<span className="text-sm text-muted-fg">
+										{group.items.length}개 항목
+									</span>
+								</div>
+								{group.items.map((item) => (
+									<VisibilityRow key={item.id} item={item} />
+								))}
+							</div>
+						))}
+					</DialogBody>
+				</ScrollArea>
+
+				<DialogFooter className="shrink-0 sm:items-center sm:justify-between">
+					<div className="flex items-center gap-3 text-left">
+						<span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-brand-50">
+							<Eye className="size-5 text-brand" />
+						</span>
+						<div className="flex flex-col">
+							<p className="text-sm font-semibold text-brand">
+								총 {exposed}개 항목이 공개 프로필에 노출됩니다
+							</p>
+							<p className="text-xs text-muted-fg">
+								{total - exposed}개 항목은 비공개 상태 · 언제든 변경 가능합니다
+							</p>
+						</div>
+					</div>
+					<div className="flex flex-col-reverse gap-2 *:w-full sm:flex-row sm:*:w-auto">
+						<DialogClose
+							render={<Button variant="neutral-outline" size="2xl" />}
+						>
+							수정하러 돌아가기
+						</DialogClose>
+						<Button
+							variant="brand"
+							size="2xl"
+							className="px-8 font-semibold"
+							disabled={saving}
+							onClick={onSave}
+						>
+							{saving ? (
+								<Loader2 className="size-5 animate-spin" />
+							) : (
+								<Save className="size-5" />
+							)}
+							저장
+						</Button>
+					</div>
+				</DialogFooter>
+			</DialogContent>
+		</Dialog>
+	);
+}
+
+/** dialog 목록의 한 행 — 클릭하면 노출 여부 토글, 우측에 공개/비공개 배지. */
+function VisibilityRow({ item }: { item: VisRowItem }) {
+	return (
+		<button
+			type="button"
+			onClick={item.onToggle}
+			aria-pressed={item.checked}
+			className={cn(
+				"flex w-full items-center gap-3.5 rounded-xl px-4 py-3.5 text-left transition-colors",
+				item.checked ? "bg-brand-50/70" : "bg-surface hover:bg-muted/40",
+			)}
+		>
+			<span
+				aria-hidden
+				className={cn(
+					"flex size-5 shrink-0 items-center justify-center rounded-[5px] border transition-colors",
+					item.checked
+						? "border-brand bg-brand text-brand-foreground"
+						: "border-line-strong bg-surface",
+				)}
+			>
+				{item.checked ? <Check className="size-3.5" /> : null}
+			</span>
+			<span className="flex min-w-0 flex-1 flex-col">
+				<span className="truncate text-[15px] font-semibold text-ink">
+					{item.title}
+				</span>
+				{item.subtitle ? (
+					<span className="truncate text-sm text-muted-fg">
+						{item.subtitle}
+					</span>
+				) : null}
+			</span>
+			<span
+				className={cn(
+					"shrink-0 rounded-full px-4 py-1.5 text-sm font-semibold",
+					item.checked
+						? "bg-brand text-brand-foreground"
+						: "bg-muted text-muted-fg",
+				)}
+			>
+				{item.checked ? "공개" : "비공개"}
+			</span>
+		</button>
 	);
 }
 
