@@ -61,6 +61,12 @@ export interface PreviewHospital {
 	name?: string;
 	road_address?: string;
 	detail_address?: string;
+	postal_code?: string;
+	// 지도 좌표(네이버). 없으면 미리보기는 "지도 보기" 링크로 폴백(§4.2).
+	lat?: number | string;
+	lng?: number | string;
+	naver_place_url?: string;
+	parking_info?: string;
 	main_phone?: string;
 	email?: string;
 	logo_url?: string;
@@ -68,6 +74,8 @@ export interface PreviewHospital {
 	hero_sub?: string;
 	template_key?: string;
 	description?: string;
+	established_year?: number;
+	representative_name?: string;
 	sns_links?: Record<string, string>;
 	business_hours?: PreviewBusinessHours;
 }
@@ -132,6 +140,9 @@ export interface HospitalPreviewInput {
 	mainPhone?: string;
 	logoUrl?: string;
 	templateKey?: string;
+	// 레지스트리(ref/clinic)에서 고른 병원 좌표(있을 때만 — 지도 표시용).
+	lat?: number | string;
+	lng?: number | string;
 	hoursWeekday?: string;
 	hoursSaturday?: string;
 	hoursSunday?: string;
@@ -168,6 +179,11 @@ export function buildHospitalPreviewPayload(
 	if (mainPhone) hospital.main_phone = mainPhone;
 	const logoUrl = input.logoUrl?.trim();
 	if (logoUrl) hospital.logo_url = logoUrl;
+	// 레지스트리에서 고른 병원이면 좌표가 있어 지도를 띄울 수 있다(없으면 미반영).
+	const lat = asNumber(input.lat);
+	if (lat !== undefined) hospital.lat = lat;
+	const lng = asNumber(input.lng);
+	if (lng !== undefined) hospital.lng = lng;
 	// template_key는 항상 보낸다(시안 전환이 핵심 — 빈 값이면 t1).
 	hospital.template_key = (input.templateKey || "t1").toLowerCase();
 
@@ -230,12 +246,24 @@ export function buildPreviewPayloadFromDraft(
 		assignStr(hospital, "name", hospitalRaw.name);
 		assignStr(hospital, "road_address", hospitalRaw.road_address);
 		assignStr(hospital, "detail_address", hospitalRaw.detail_address);
+		assignStr(hospital, "postal_code", hospitalRaw.postal_code);
+		assignStr(hospital, "naver_place_url", hospitalRaw.naver_place_url);
+		assignStr(hospital, "parking_info", hospitalRaw.parking_info);
 		assignStr(hospital, "main_phone", hospitalRaw.main_phone);
 		assignStr(hospital, "email", hospitalRaw.email);
 		assignStr(hospital, "logo_url", hospitalRaw.logo_url);
 		assignStr(hospital, "hero_headline", hospitalRaw.hero_headline);
 		assignStr(hospital, "hero_sub", hospitalRaw.hero_sub);
 		assignStr(hospital, "description", hospitalRaw.description);
+		assignStr(hospital, "representative_name", hospitalRaw.representative_name);
+		// 지도 좌표 — 숫자/숫자문자열만 통과(없으면 미반영 → 미리보기 "지도 보기" 폴백).
+		const lat = asNumber(hospitalRaw.lat);
+		if (lat !== undefined) hospital.lat = lat;
+		const lng = asNumber(hospitalRaw.lng);
+		if (lng !== undefined) hospital.lng = lng;
+		const establishedYear = asNumber(hospitalRaw.established_year);
+		if (establishedYear !== undefined)
+			hospital.established_year = establishedYear;
 		const sns = asObject(hospitalRaw.sns_links);
 		if (sns) {
 			const compact = onlyStringValues(sns);
@@ -357,6 +385,17 @@ function asObject(value: unknown): Record<string, unknown> | null {
 /** unknown → trim된 문자열(비었으면 ""). */
 function strOrEmpty(value: unknown): string {
 	return typeof value === "string" ? value.trim() : "";
+}
+
+/** unknown → 유한 숫자(숫자 또는 숫자문자열). 아니면 undefined. 좌표/연도용. */
+function asNumber(value: unknown): number | undefined {
+	if (typeof value === "number")
+		return Number.isFinite(value) ? value : undefined;
+	if (typeof value === "string" && value.trim() !== "") {
+		const n = Number(value);
+		return Number.isFinite(n) ? n : undefined;
+	}
+	return undefined;
 }
 
 /** target[key]에 trim된 문자열 값을 채운다(빈 값은 건너뜀). 문자열 필드 전용. */

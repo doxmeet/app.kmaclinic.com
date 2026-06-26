@@ -187,6 +187,9 @@ type FieldsState = {
 	hospitalName: string;
 	/** ref_clinic 레지스트리에서 선택한 병원 no(문자열, ""=직접입력/미선택). */
 	refClinicNo: string;
+	/** 레지스트리 선택 병원 좌표(미리보기 지도용, 문자열, ""=없음). 생성은 ref_clinic_no로 자동채움. */
+	lat: string;
+	lng: string;
 	roadAddress: string;
 	mainPhone: string;
 	hoursWeekday: string;
@@ -208,6 +211,8 @@ type FieldsState = {
 const INITIAL_FIELDS: FieldsState = {
 	hospitalName: "",
 	refClinicNo: "",
+	lat: "",
+	lng: "",
 	roadAddress: "",
 	mainPhone: "",
 	hoursWeekday: "",
@@ -388,6 +393,8 @@ function toPreviewInput(input: FormInput): HospitalPreviewInput {
 		name: fields.hospitalName,
 		roadAddress: fields.roadAddress,
 		mainPhone: fields.mainPhone,
+		lat: fields.lat,
+		lng: fields.lng,
 		logoUrl,
 		templateKey: fields.templateKey,
 		hoursWeekday: fields.hoursWeekday,
@@ -1035,14 +1042,19 @@ function HospitalInfoSection({
 					name={fields.hospitalName}
 					onNameChange={(v) => {
 						setField("hospitalName", v);
-						// 직접 편집하면 레지스트리 선택을 해제(자동채움 끔).
+						// 직접 편집하면 레지스트리 선택을 해제(자동채움·좌표 끔).
 						setField("refClinicNo", "");
+						setField("lat", "");
+						setField("lng", "");
 					}}
 					onPick={(c) => {
 						setField("hospitalName", c.name ?? "");
 						setField("refClinicNo", c.no != null ? String(c.no) : "");
 						if (c.address) setField("roadAddress", c.address);
 						if (c.phone) setField("mainPhone", c.phone);
+						// 레지스트리 좌표 → 미리보기 지도용(생성은 ref_clinic_no로 자동채움).
+						setField("lat", c.lat != null ? String(c.lat) : "");
+						setField("lng", c.lng != null ? String(c.lng) : "");
 					}}
 				/>
 				<FieldDescription>
