@@ -64,20 +64,22 @@ import { uploadFileToStorage } from "#/lib/upload.ts";
 import { cn } from "#/lib/utils.ts";
 
 /**
- * 의사 프로필 관리 — 실연동(문서 §6.10 / §8.11).
- * `GET /profile/me`로 단일 doc(코어 + id-키 컬렉션)을 로드해 폼에 바인딩하고,
+ * 의사 프로필 관리 — 실연동(profile-frontend-guide.md).
+ * `GET /profile/me`로 단일 doc(코어 + 컬렉션)을 로드해 폼에 바인딩하고,
  * "전체 저장" 시 편집 상태를 **JSON Merge Patch**로 `PATCH /profile/me` 한다.
- *  - 컬렉션 항목: 유지=전체 전송(order/is_public 포함), 삭제=`{id:null}`, 추가=새 id.
+ *  - 컬렉션 읽기=정렬된 배열(+id), 쓰기=id-키 객체. `order` 필드는 없다(서버 자동 정렬).
+ *  - 컬렉션 항목: 유지=전체 전송(is_public 포함), 삭제=`{id:null}`, 추가=새 id.
+ *  - 기본정보 공개여부는 `field_visibility`(키=코어 필드명). display_name·대표 진료과는 항상 공개.
  *  - 미설정 컬렉션 필드는 보내지 않으므로(merge-patch) 서버의 다른 필드는 보존된다.
  */
 
 // ─────────────────────────────────────────────────────────────────────
-// 컬렉션 설정 — 문서 §6.10.3~6.10.9 필드명(ASCII 계약)에 맞춤.
+// 컬렉션 설정 — profile-frontend-guide.md §3.2 필드명(ASCII 계약)에 맞춤.
 // ─────────────────────────────────────────────────────────────────────
 
-type FieldKind = "text" | "year" | "date" | "select" | "bool" | "ref";
+type FieldKind = "text" | "year" | "select" | "ref";
 /** ref 자동완성 소스(레지스트리 엔드포인트가 있는 것만). */
-type RefSourceKey = "medical_school" | "society";
+type RefSourceKey = "medical_school" | "society" | "clinic";
 type ColField = {
 	name: string;
 	label: string;
@@ -86,6 +88,10 @@ type ColField = {
 	placeholder?: string;
 	/** kind:"ref"일 때 — 선택 시 표시 텍스트(name)와 FK(noField)를 함께 저장. */
 	ref?: { source: RefSourceKey; noField: string };
+	/** 행 값에 따라 표시/숨김(예: license issuing_society는 subspecialist/certified만). */
+	showWhen?: (values: Record<string, unknown>) => boolean;
+	/** 행 값에 따라 라벨 변경(예: license_number는 구분별 라벨). */
+	labelOf?: (values: Record<string, unknown>) => string;
 };
 
 /** 컬렉션 키(affiliations는 전용 에디터라 제외). */
@@ -99,52 +105,42 @@ type CollKey =
 
 const SELECT = {
 	degree: [
-		{ value: "high_school", label: "고등학교" },
 		{ value: "bachelor", label: "학사" },
 		{ value: "master", label: "석사" },
 		{ value: "doctorate", label: "박사" },
-	],
-	eduPath: [
-		{ value: "direct", label: "정시/수시" },
-		{ value: "transfer", label: "편입" },
-		{ value: "graduate_school", label: "의전원" },
-		{ value: "foreign", label: "외국/북한" },
-	],
-	highSchool: [
-		{ value: "graduated", label: "졸업" },
-		{ value: "ged", label: "검정고시" },
-	],
-	eduStatus: [
-		{ value: "graduated", label: "졸업" },
-		{ value: "attending", label: "재학" },
-		{ value: "completed", label: "수료" },
-		{ value: "dropped", label: "중퇴" },
 	],
 	license: [
 		{ value: "doctor", label: "의사면허" },
 		{ value: "specialist", label: "전문의" },
 		{ value: "subspecialist", label: "분과/세부전문의" },
+		{ value: "certified", label: "인증의" },
 	],
 	training: [
 		{ value: "intern", label: "인턴" },
 		{ value: "resident", label: "레지던트" },
 		{ value: "fellow", label: "펠로우" },
 	],
-	career: [
-		{ value: "hospital", label: "병원" },
-		{ value: "postdoc", label: "포닥" },
-	],
-	membership: [
-		{ value: "general", label: "일반" },
-		{ value: "board", label: "임원" },
-	],
 	authorship: [
 		{ value: "first", label: "제1저자" },
 		{ value: "second", label: "제2저자" },
-		{ value: "co", label: "공동" },
-		{ value: "corresponding", label: "교신" },
+		{ value: "co", label: "공동저자" },
+		{ value: "corresponding", label: "교신저자" },
 	],
 } as const;
+
+/** license_number 라벨 분기(§3.2): doctor=의사면허, specialist=전문의, subspecialist/certified=인증번호. */
+const LICENSE_NUMBER_LABEL: Record<string, string> = {
+	doctor: "의사면허번호",
+	specialist: "전문의면허번호",
+	subspecialist: "인증번호",
+	certified: "인증번호",
+};
+
+/** issuing_society 노출/ department·subspecialty 노출 분기. */
+const isSubOrCertified = (v: Record<string, unknown>) =>
+	v.license_type === "subspecialist" || v.license_type === "certified";
+const isResidentOrFellow = (v: Record<string, unknown>) =>
+	v.training_type === "resident" || v.training_type === "fellow";
 
 type CollConfig = {
 	key: CollKey;
@@ -166,18 +162,6 @@ const COLLECTIONS: CollConfig[] = [
 				options: [...SELECT.degree],
 			},
 			{
-				name: "education_path",
-				label: "진학 경로",
-				kind: "select",
-				options: [...SELECT.eduPath],
-			},
-			{
-				name: "high_school_type",
-				label: "고교 구분",
-				kind: "select",
-				options: [...SELECT.highSchool],
-			},
-			{
 				name: "school_name_text",
 				label: "학교명",
 				kind: "ref",
@@ -185,20 +169,8 @@ const COLLECTIONS: CollConfig[] = [
 				placeholder: "의과대학을 검색하세요",
 			},
 			{ name: "major", label: "전공", placeholder: "예: 의학과" },
-			{
-				name: "official_degree",
-				label: "공식 학위",
-				placeholder: "예: 의학박사",
-			},
 			{ name: "start_year", label: "입학연도", kind: "year" },
 			{ name: "graduation_year", label: "졸업연도", kind: "year" },
-			{
-				name: "status",
-				label: "상태",
-				kind: "select",
-				options: [...SELECT.eduStatus],
-			},
-			{ name: "is_transfer", label: "편입", kind: "bool" },
 		],
 	},
 	{
@@ -213,20 +185,18 @@ const COLLECTIONS: CollConfig[] = [
 				options: [...SELECT.license],
 			},
 			{
-				name: "specialty",
-				label: "진료과/분과",
-				placeholder: "예: 소화기내과",
+				name: "license_number",
+				label: "면허번호",
+				labelOf: (v) =>
+					LICENSE_NUMBER_LABEL[String(v.license_type)] ?? "면허번호",
 			},
-			{ name: "license_number", label: "면허번호" },
-			{ name: "acquired_at", label: "취득일", kind: "date" },
-			{ name: "specialist_number", label: "전문의 번호" },
+			{ name: "acquired_year", label: "취득연도", kind: "year" },
 			{
-				name: "cert_name",
-				label: "인증서명",
-				placeholder: "예: 내시경 인증의",
+				name: "issuing_society",
+				label: "발급 학회",
+				placeholder: "예: 대한소화기내시경학회",
+				showWhen: isSubOrCertified,
 			},
-			{ name: "cert_number", label: "인증 번호" },
-			{ name: "issuing_society", label: "발급 학회" },
 		],
 	},
 	{
@@ -243,13 +213,22 @@ const COLLECTIONS: CollConfig[] = [
 			{
 				name: "hospital_name",
 				label: "병원명",
-				placeholder: "예: 서울아산병원",
+				kind: "ref",
+				ref: { source: "clinic", noField: "ref_clinic_no" },
+				placeholder: "병원을 검색하세요",
 			},
-			{ name: "department", label: "진료과" },
-			{ name: "subspecialty", label: "세부 전공" },
-			{ name: "start_date", label: "시작일", kind: "date" },
-			{ name: "end_date", label: "종료일", kind: "date" },
-			{ name: "is_current", label: "수련 중", kind: "bool" },
+			{
+				name: "department",
+				label: "진료과",
+				showWhen: isResidentOrFellow,
+			},
+			{
+				name: "subspecialty",
+				label: "세부 전공",
+				showWhen: isResidentOrFellow,
+			},
+			{ name: "start_year", label: "시작연도", kind: "year" },
+			{ name: "end_year", label: "종료연도", kind: "year" },
 		],
 	},
 	{
@@ -257,18 +236,15 @@ const COLLECTIONS: CollConfig[] = [
 		title: "경력",
 		addLabel: "경력 추가",
 		fields: [
-			{
-				name: "career_type",
-				label: "구분",
-				kind: "select",
-				options: [...SELECT.career],
-			},
 			{ name: "org_name", label: "기관명", placeholder: "예: 서울대학교병원" },
 			{ name: "title", label: "직위", placeholder: "예: 대표원장" },
 			{ name: "department", label: "진료과" },
-			{ name: "start_date", label: "시작일", kind: "date" },
-			{ name: "end_date", label: "종료일", kind: "date" },
-			{ name: "is_current", label: "재직 중", kind: "bool" },
+			{ name: "start_year", label: "시작연도", kind: "year" },
+			{
+				name: "end_year",
+				label: "종료연도(현재 재직 중이면 비움)",
+				kind: "year",
+			},
 		],
 	},
 	{
@@ -283,24 +259,9 @@ const COLLECTIONS: CollConfig[] = [
 				ref: { source: "society", noField: "society_no" },
 				placeholder: "학회를 검색하세요",
 			},
-			{
-				name: "membership_type",
-				label: "회원 구분",
-				kind: "select",
-				options: [...SELECT.membership],
-			},
-			{ name: "grade", label: "회원 등급", placeholder: "예: 정회원" },
-			{ name: "role", label: "역할" },
-			{ name: "position", label: "직위/직책", placeholder: "예: 이사" },
-			{
-				name: "research_group",
-				label: "연구회/분과",
-				placeholder: "예: 췌담도 연구회",
-			},
+			{ name: "grade", label: "회원 구분", placeholder: "예: 정회원" },
+			{ name: "position", label: "직위/직책", placeholder: "예: 학술 이사" },
 			{ name: "since_year", label: "가입연도", kind: "year" },
-			{ name: "term_start_year", label: "임기 시작연도", kind: "year" },
-			{ name: "term_end_year", label: "임기 종료연도", kind: "year" },
-			{ name: "is_current", label: "활동 중", kind: "bool" },
 		],
 	},
 	{
@@ -342,8 +303,10 @@ const GRID_BANDS = [
 	{ key: "am", label: "오전" },
 	{ key: "pm", label: "오후" },
 ] as const;
+/** 진료 주기 — 비어 있으면 매주, 선택 시 해당 주차만(§3.2 schedule.week_recurrence). */
+const WEEK_OPTIONS = ["1", "2", "3", "4", "5"] as const;
 
-/** 코어 스칼라 키 — 저장 시 항상 전송하는 사용자 편집 필드. */
+/** 코어 스칼라 키 — 저장 시 항상 전송하는 사용자 편집 필드(§3.1). */
 const CORE_KEYS = [
 	"display_name",
 	"name_en",
@@ -351,29 +314,36 @@ const CORE_KEYS = [
 	"birth_date",
 	"headline",
 	"primary_department_text",
-	"specialty_text",
 	"intro_text",
 	"media_text",
-	"etc_text",
+	"photo_url",
+	"kakao_url",
 	"contact_phone",
 	"contact_email",
-	"naver_url",
-	"kakao_url",
 	"orcid_id",
 	"template_key",
-	"photo_url",
 ] as const;
 type CoreKey = (typeof CORE_KEYS)[number];
 
-// 각 토글이 가리는 섹션/필드 라벨과 일치시킨다(문서 §6.10.1 field_visibility 매핑).
-const VISIBILITY_KEYS: { key: string; label: string }[] = [
-	{ key: "specialty", label: "전문 진료 분야" },
-	{ key: "etc", label: "기타" },
-	{ key: "photo", label: "프로필 사진" },
-	{ key: "contact", label: "연락처" },
-	{ key: "media", label: "방송 출연 및 언론 보도" },
-	{ key: "schedule", label: "소속 병원·진료 일정" },
+/**
+ * field_visibility 토글 가능한 기본정보 필드(§3.3). 키 = 코어 필드명.
+ * display_name·primary_department는 **항상 공개**라 토글 대상에서 제외한다.
+ */
+const VISIBILITY_FIELDS: { key: string; label: string }[] = [
+	{ key: "photo_url", label: "프로필 사진" },
+	{ key: "name_en", label: "영문 성명" },
+	{ key: "gender", label: "성별" },
+	{ key: "birth_date", label: "생년월일" },
+	{ key: "headline", label: "헤드라인" },
+	{ key: "specialty_tags", label: "주요 전문 진료 분야" },
+	{ key: "intro_text", label: "자기소개" },
+	{ key: "media_text", label: "방송 출연 및 언론 보도" },
+	{ key: "contact_phone", label: "연락처 전화" },
+	{ key: "contact_email", label: "연락처 이메일" },
+	{ key: "kakao_url", label: "카카오 링크" },
+	{ key: "orcid_id", label: "ORCID iD" },
 ];
+const VISIBILITY_FIELD_KEYS = VISIBILITY_FIELDS.map((v) => v.key);
 
 // ─────────────────────────────────────────────────────────────────────
 // 편집 상태
@@ -418,6 +388,8 @@ type EditAction =
 			band: string;
 			value: boolean;
 	  }
+	| { type: "setBand"; id: string; band: "am" | "pm"; value: string }
+	| { type: "setWeeks"; id: string; weeks: string[] }
 	| { type: "setScheduleNote"; id: string; value: string };
 
 const EMPTY_STATE: EditState = {
@@ -440,7 +412,7 @@ const EMPTY_STATE: EditState = {
 };
 
 function defaultVisibility(): Record<string, boolean> {
-	return Object.fromEntries(VISIBILITY_KEYS.map((v) => [v.key, true]));
+	return Object.fromEntries(VISIBILITY_FIELD_KEYS.map((k) => [k, true]));
 }
 
 function editReducer(state: EditState, action: EditAction): EditState {
@@ -462,7 +434,7 @@ function editReducer(state: EditState, action: EditAction): EditState {
 				...state,
 				visibility: {
 					...state.visibility,
-					[action.key]: !state.visibility[action.key],
+					[action.key]: state.visibility[action.key] === false,
 				},
 			};
 		case "addRow":
@@ -496,6 +468,20 @@ function editReducer(state: EditState, action: EditAction): EditState {
 		case "setGrid":
 			return withRows(state, "affiliations", (rows) =>
 				rows.map((r) => (r.id === action.id ? setGridCell(r, action) : r)),
+			);
+		case "setBand":
+			return withRows(state, "affiliations", (rows) =>
+				rows.map((r) =>
+					r.id === action.id ? setTimeBand(r, action.band, action.value) : r,
+				),
+			);
+		case "setWeeks":
+			return withRows(state, "affiliations", (rows) =>
+				rows.map((r) =>
+					r.id === action.id
+						? setScheduleField(r, "week_recurrence", action.weeks)
+						: r,
+				),
 			);
 		case "setScheduleNote":
 			return withRows(state, "affiliations", (rows) =>
@@ -537,7 +523,20 @@ function setGridCell(
 	};
 }
 
-/** schedule 하위 스칼라 필드(note 등) 설정. */
+/** schedule.time_bands[am|pm] 시간대 라벨 설정. */
+function setTimeBand(row: Row, band: "am" | "pm", value: string): Row {
+	const schedule = asObject(row.values.schedule) ?? {};
+	const bands = asObject(schedule.time_bands) ?? {};
+	return {
+		...row,
+		values: {
+			...row.values,
+			schedule: { ...schedule, time_bands: { ...bands, [band]: value } },
+		},
+	};
+}
+
+/** schedule 하위 스칼라 필드(note·week_recurrence 등) 설정. */
 function setScheduleField(row: Row, field: string, value: unknown): Row {
 	const schedule = asObject(row.values.schedule) ?? {};
 	return {
@@ -546,7 +545,7 @@ function setScheduleField(row: Row, field: string, value: unknown): Row {
 	};
 }
 
-/** doc → 편집 상태(컬렉션은 order 정렬한 행 배열로 평탄화). */
+/** doc → 편집 상태(컬렉션은 서버 정렬 순서를 그대로 보존). */
 function loadState(doc: ProfileDoc): EditState {
 	const core = Object.fromEntries(
 		CORE_KEYS.map((k) => [k, asString((doc as Record<string, unknown>)[k])]),
@@ -573,8 +572,19 @@ function loadState(doc: ProfileDoc): EditState {
 	};
 }
 
-/** id-키 컬렉션 객체 → order 정렬 행 배열. */
+/**
+ * 컬렉션(읽기) → 행 배열. GET 응답은 **정렬된 배열(+id)**이 정상이며, 과거 id-키 객체
+ * 형태도 함께 수용한다(객체일 때만 order 폴백 정렬).
+ */
 function rowsOf(coll: unknown): Row[] {
+	if (Array.isArray(coll)) {
+		return coll.map((raw, i) => {
+			const values = asObject(raw) ?? {};
+			// 서버 항목의 id(문자열/숫자)를 그대로 보존해야 PATCH 수정/삭제가 정확히 타겟된다.
+			const id = values.id != null ? String(values.id) : `srv_${i}`;
+			return { id, isNew: false, deleted: false, values };
+		});
+	}
 	const obj = asObject(coll);
 	if (!obj) return [];
 	return Object.entries(obj)
@@ -621,58 +631,84 @@ function numOrNull(v: unknown): number | null {
 	return Number.isFinite(n) ? n : null;
 }
 
+/** field_visibility 맵 — 알려진 토글 키만(레거시 섹션 키 유출 방지). */
+function buildVisibility(
+	vis: Record<string, boolean>,
+): Record<string, boolean> {
+	return Object.fromEntries(
+		VISIBILITY_FIELD_KEYS.map((k) => [k, vis[k] !== false]),
+	);
+}
+
 /** 설정된 필드가 모두 비어 있는 신규 행인지(빈 행 생성 방지). */
 function isRowEmpty(row: Row, fields: ColField[]): boolean {
 	return fields.every((f) => {
-		if (f.kind === "bool") return true;
 		const v = row.values[f.name];
 		return v == null || (typeof v === "string" && v.trim() === "");
 	});
 }
 
-/** 컬렉션 행 → 저장 항목(설정 필드 + order + is_public[+is_confirmed]). */
-function buildItem(
-	row: Row,
-	index: number,
-	config: CollConfig,
-): Record<string, unknown> {
+/** 컬렉션 행 → 저장 항목(설정 필드 + is_public). 숨긴(showWhen=false) 필드는 null로 비운다. */
+function buildItem(row: Row, config: CollConfig): Record<string, unknown> {
 	const item: Record<string, unknown> = {
-		order: index,
 		is_public: row.values.is_public !== false,
 	};
 	for (const f of config.fields) {
+		const ref = f.kind === "ref" ? f.ref : undefined;
+		if (f.showWhen && !f.showWhen(row.values)) {
+			item[f.name] = null;
+			if (ref) item[ref.noField] = null;
+			continue;
+		}
 		item[f.name] =
 			f.kind === "year"
 				? numOrNull(row.values[f.name])
-				: f.kind === "bool"
-					? row.values[f.name] === true
-					: textOrNull(row.values[f.name]);
+				: textOrNull(row.values[f.name]);
 		// ref 필드는 표시 텍스트와 함께 FK(noField)도 전송(미선택/직접입력 시 null).
-		if (f.kind === "ref" && f.ref) {
-			item[f.ref.noField] = numOrNull(row.values[f.ref.noField]);
-		}
+		if (ref) item[ref.noField] = numOrNull(row.values[ref.noField]);
 	}
 	return item;
 }
 
 /** 소속병원 행 → 저장 항목(institution/ref_clinic_no/일정 포함). */
-function buildAffiliation(row: Row, index: number): Record<string, unknown> {
+function buildAffiliation(row: Row): Record<string, unknown> {
 	const schedule = asObject(row.values.schedule) ?? {};
 	return {
-		order: index,
 		is_public: row.values.is_public !== false,
 		institution_name: textOrNull(row.values.institution_name),
 		ref_clinic_no: numOrNull(row.values.ref_clinic_no),
 		title: textOrNull(row.values.title),
 		department: textOrNull(row.values.department),
-		join_date: textOrNull(row.values.join_date),
 		role: textOrNull(row.values.role),
-		// schedule.grid는 요일×{am,pm} boolean, note는 일정 전체 비고(문서 모델).
+		// schedule: 진료 주기 + 시간대 라벨 + 요일×{am,pm} boolean grid + 비고(§3.2).
 		schedule: {
+			week_recurrence: normalizeWeeks(schedule.week_recurrence),
+			time_bands: normalizeTimeBands(schedule.time_bands),
 			grid: normalizeGrid(schedule.grid),
 			note: textOrNull(schedule.note),
 		},
 	};
+}
+
+/** week_recurrence: 빈 배열/비배열은 null(매주), 그 외는 주차 문자열 배열. */
+function normalizeWeeks(raw: unknown): string[] | null {
+	if (!Array.isArray(raw)) return null;
+	const weeks = raw.filter(
+		(w): w is string => typeof w === "string" && w !== "",
+	);
+	return weeks.length ? weeks : null;
+}
+
+/** time_bands: { am, pm } 시간대 라벨. 둘 다 비면 null. */
+function normalizeTimeBands(raw: unknown): { am?: string; pm?: string } | null {
+	const o = asObject(raw);
+	if (!o) return null;
+	const out: { am?: string; pm?: string } = {};
+	const am = textOrNull(o.am);
+	const pm = textOrNull(o.pm);
+	if (am != null) out.am = am;
+	if (pm != null) out.pm = pm;
+	return am == null && pm == null ? null : out;
 }
 
 /** grid를 요일×{am,pm} boolean으로 정규화(레거시 enum/야간 값은 제거). */
@@ -696,35 +732,37 @@ function normalizeGrid(
 /** 컬렉션 patch 조각: 유지 행=전체 전송, 삭제 행=null. */
 function collectionPatch(
 	rows: Row[],
-	build: (row: Row, index: number) => Record<string, unknown>,
+	build: (row: Row) => Record<string, unknown>,
 	isEmpty: (row: Row) => boolean,
 ): Record<string, unknown> {
 	const sub: Record<string, unknown> = {};
-	let index = 0;
 	for (const row of rows) {
 		if (row.deleted) {
 			if (!row.isNew) sub[row.id] = null;
 			continue;
 		}
 		if (row.isNew && isEmpty(row)) continue;
-		sub[row.id] = build(row, index);
-		index += 1;
+		sub[row.id] = build(row);
 	}
 	return sub;
 }
 
-/** 편집 상태 → JSON Merge Patch(문서 §8.11.1). */
+const affiliationIsEmpty = (row: Row) =>
+	textOrNull(row.values.institution_name) == null &&
+	numOrNull(row.values.ref_clinic_no) == null;
+
+/** 편집 상태 → JSON Merge Patch(§4). */
 function buildPatch(state: EditState): ProfilePatch {
 	const patch: ProfilePatch = {};
 	for (const key of CORE_KEYS) patch[key] = textOrNull(state.core[key]);
 	patch.primary_department_no = numOrNull(state.primaryDepartmentNo);
 	patch.specialty_tags = state.specialtyTags;
-	patch.field_visibility = state.visibility;
+	patch.field_visibility = buildVisibility(state.visibility);
 
 	for (const config of COLLECTIONS) {
 		const sub = collectionPatch(
 			state.colls[config.key],
-			(row, index) => buildItem(row, index, config),
+			(row) => buildItem(row, config),
 			(row) => isRowEmpty(row, config.fields),
 		);
 		if (Object.keys(sub).length > 0) patch[config.key] = sub;
@@ -733,9 +771,7 @@ function buildPatch(state: EditState): ProfilePatch {
 	const aff = collectionPatch(
 		state.affiliations,
 		buildAffiliation,
-		(row) =>
-			textOrNull(row.values.institution_name) == null &&
-			numOrNull(row.values.ref_clinic_no) == null,
+		affiliationIsEmpty,
 	);
 	if (Object.keys(aff).length > 0) patch.affiliations = aff;
 
@@ -745,7 +781,6 @@ function buildPatch(state: EditState): ProfilePatch {
 /**
  * 편집 상태 → 미리보기 번들(`/profile/me` 형태, 컬렉션은 배열). buildPatch와 같은 행 빌더를
  * 재사용하되 id-키 대신 배열로 모은다. `templateOverride`로 스와치 실시간 선택을 반영.
- * (editor-preview-integration.md §3)
  */
 function buildProfilePreviewBundle(
 	state: EditState,
@@ -764,28 +799,21 @@ function buildProfilePreviewBundle(
 	const deptNo = numOrNull(state.primaryDepartmentNo);
 	if (deptNo != null) profile.primary_department_no = deptNo;
 	profile.specialty_tags = state.specialtyTags;
-	profile.field_visibility = state.visibility;
+	profile.field_visibility = buildVisibility(state.visibility);
 
 	const bundle: ProfilePreviewBundle = { profile };
 	for (const config of COLLECTIONS) {
 		const items: Record<string, unknown>[] = [];
 		for (const r of state.colls[config.key]) {
 			if (r.deleted || (r.isNew && isRowEmpty(r, config.fields))) continue;
-			// order는 보존 행들 사이의 순번(필터 후 인덱스)이라 items.length로 매긴다.
-			items.push(buildItem(r, items.length, config));
+			items.push(buildItem(r, config));
 		}
 		bundle[config.key] = items;
 	}
 	const affiliations: Record<string, unknown>[] = [];
 	for (const r of state.affiliations) {
-		if (
-			r.deleted ||
-			(textOrNull(r.values.institution_name) == null &&
-				numOrNull(r.values.ref_clinic_no) == null)
-		) {
-			continue;
-		}
-		affiliations.push(buildAffiliation(r, affiliations.length));
+		if (r.deleted || affiliationIsEmpty(r)) continue;
+		affiliations.push(buildAffiliation(r));
 	}
 	bundle.affiliations = affiliations;
 	return bundle;
@@ -961,7 +989,6 @@ function ProfileEditor() {
 
 				<PhotoSection state={state} dispatch={dispatch} />
 				<BasicInfoSection state={state} dispatch={dispatch} />
-				<VisibilitySection state={state} dispatch={dispatch} />
 
 				{COLLECTIONS.map((config) => (
 					<CollectionSection
@@ -1045,7 +1072,16 @@ function PhotoSection({
 
 	return (
 		<SectionCard className="flex flex-col gap-8">
-			<SectionTitle>프로필 사진</SectionTitle>
+			<div className="flex items-center justify-between gap-3">
+				<SectionTitle>프로필 사진</SectionTitle>
+				<VisibilityToggle
+					on={state.visibility.photo_url !== false}
+					onToggle={() =>
+						dispatch({ type: "toggleVisibility", key: "photo_url" })
+					}
+					label="프로필 사진"
+				/>
+			</div>
 
 			{/* 프로필 사진 — 전체폭, 원본은 contain으로 보이고 양옆 여백은 블러로 채움 */}
 			<div className="flex flex-col gap-3">
@@ -1137,9 +1173,19 @@ function BasicInfoSection({
 }) {
 	const set = (key: CoreKey) => (v: string) =>
 		dispatch({ type: "setCore", key, value: v });
+	// 토글 가능한 필드의 공개여부 props(§3.3). display_name·대표 진료과는 항상 공개라 vis 없음.
+	const vis = (key: string, label: string): VisProps => ({
+		on: state.visibility[key] !== false,
+		onToggle: () => dispatch({ type: "toggleVisibility", key }),
+		label,
+	});
 	return (
 		<SectionCard className="flex flex-col gap-6">
 			<SectionTitle>기본 정보</SectionTitle>
+			<FieldDescription>
+				오른쪽 토글로 공개 프로필(kmadoc.com)에 항목을 노출할지 정할 수 있어요.
+				성명·대표 진료과는 항상 공개됩니다.
+			</FieldDescription>
 			<TextField
 				label="성명"
 				value={state.core.display_name}
@@ -1149,9 +1195,10 @@ function BasicInfoSection({
 				label="영문 성명"
 				value={state.core.name_en}
 				onChange={set("name_en")}
+				vis={vis("name_en", "영문 성명")}
 			/>
 			<Field>
-				<FieldLabel>성별</FieldLabel>
+				<FieldHeader label="성별" vis={vis("gender", "성별")} />
 				<FieldSelect
 					value={state.core.gender}
 					onValueChange={set("gender")}
@@ -1164,71 +1211,62 @@ function BasicInfoSection({
 				value={state.core.birth_date}
 				onChange={set("birth_date")}
 				placeholder="YYYY-MM-DD"
+				vis={vis("birth_date", "생년월일")}
 			/>
+			<PrimaryDepartmentField state={state} dispatch={dispatch} />
 			<TextField
 				label="한 줄 소개(헤드라인)"
 				value={state.core.headline}
 				onChange={set("headline")}
 				placeholder="예: 대표원장 · 소화기내과 전문의"
-			/>
-			<PrimaryDepartmentField state={state} dispatch={dispatch} />
-			<TextField
-				label="전문 진료 분야(설명)"
-				value={state.core.specialty_text}
-				onChange={set("specialty_text")}
-				placeholder="예: 내시경, 위·대장 질환"
+				vis={vis("headline", "헤드라인")}
 			/>
 			<SpecialtyTagsField state={state} dispatch={dispatch} />
 			<TextAreaField
 				label="자기소개"
 				value={state.core.intro_text}
 				onChange={set("intro_text")}
+				vis={vis("intro_text", "자기소개")}
 			/>
 			<TextAreaField
 				label="방송 출연 및 언론 보도"
 				value={state.core.media_text}
 				onChange={set("media_text")}
-			/>
-			<TextAreaField
-				label="기타"
-				value={state.core.etc_text}
-				onChange={set("etc_text")}
+				vis={vis("media_text", "방송 출연 및 언론 보도")}
 			/>
 			<TextField
 				label="연락처 전화"
 				value={state.core.contact_phone}
 				onChange={set("contact_phone")}
 				placeholder="예: 02-123-4567"
+				vis={vis("contact_phone", "연락처 전화")}
 			/>
 			<TextField
 				label="연락처 이메일"
 				value={state.core.contact_email}
 				onChange={set("contact_email")}
 				placeholder="예: doctor@example.com"
-			/>
-			<TextField
-				label="네이버 링크"
-				value={state.core.naver_url}
-				onChange={set("naver_url")}
-				placeholder="https://"
+				vis={vis("contact_email", "연락처 이메일")}
 			/>
 			<TextField
 				label="카카오 링크"
 				value={state.core.kakao_url}
 				onChange={set("kakao_url")}
 				placeholder="https://"
+				vis={vis("kakao_url", "카카오 링크")}
 			/>
 			<TextField
 				label="ORCID iD"
 				value={state.core.orcid_id}
 				onChange={set("orcid_id")}
 				placeholder="0000-0000-0000-0000"
+				vis={vis("orcid_id", "ORCID iD")}
 			/>
 		</SectionCard>
 	);
 }
 
-/** 대표 진료과 — /ref/department 자동완성(선택 시 no, 자유입력 시 text만). */
+/** 대표 진료과 — /ref/department 자동완성(선택 시 no, 자유입력 시 text만). 항상 공개. */
 function PrimaryDepartmentField({
 	state,
 	dispatch,
@@ -1268,7 +1306,8 @@ function PrimaryDepartmentField({
 				placeholder="진료과를 검색하세요 (예: 소화기내과)"
 			/>
 			<FieldDescription>
-				목록에서 고르면 표준 진료과로 저장되고, 없으면 직접 입력됩니다.
+				목록에서 고르면 표준 진료과로 저장되고, 없으면 직접 입력됩니다. 항상
+				공개됩니다.
 			</FieldDescription>
 		</Field>
 	);
@@ -1295,7 +1334,15 @@ function SpecialtyTagsField({
 
 	return (
 		<Field>
-			<FieldLabel>주요 전문 진료 분야 (최대 5개)</FieldLabel>
+			<FieldHeader
+				label="주요 전문 진료 분야 (최대 5개)"
+				vis={{
+					on: state.visibility.specialty_tags !== false,
+					onToggle: () =>
+						dispatch({ type: "toggleVisibility", key: "specialty_tags" }),
+					label: "주요 전문 진료 분야",
+				}}
+			/>
 			<div className="flex flex-wrap gap-2">
 				{tags.map((tag) => (
 					<span
@@ -1346,40 +1393,6 @@ function SpecialtyTagsField({
 	);
 }
 
-function VisibilitySection({
-	state,
-	dispatch,
-}: {
-	state: EditState;
-	dispatch: React.Dispatch<EditAction>;
-}) {
-	return (
-		<SectionCard className="flex flex-col gap-5">
-			<SectionTitle>공개 항목 설정</SectionTitle>
-			<FieldDescription>
-				끄면 공개 프로필(kmadoc.com)에서 해당 항목이 숨겨집니다.
-			</FieldDescription>
-			<div className="grid gap-3">
-				{VISIBILITY_KEYS.map((v) => (
-					<div
-						key={v.key}
-						className="flex items-center justify-between gap-3 rounded-xl border border-line px-4 py-3 text-base text-ink"
-					>
-						<span>{v.label}</span>
-						<Switch
-							checked={state.visibility[v.key] !== false}
-							onCheckedChange={() =>
-								dispatch({ type: "toggleVisibility", key: v.key })
-							}
-							aria-label={`${v.label} 공개`}
-						/>
-					</div>
-				))}
-			</div>
-		</SectionCard>
-	);
-}
-
 /** 일반 컬렉션(학력/면허/수련/경력/학회/논문) 반복 에디터. */
 function CollectionSection({
 	config,
@@ -1407,22 +1420,25 @@ function CollectionSection({
 						className="flex flex-col gap-3 rounded-xl border border-line p-4"
 					>
 						<div className="grid gap-3">
-							{config.fields.map((f) => (
-								<CollField
-									key={f.name}
-									field={f}
-									value={row.values[f.name]}
-									setField={(field, value) =>
-										dispatch({
-											type: "updateRow",
-											coll: config.key,
-											id: row.id,
-											field,
-											value,
-										})
-									}
-								/>
-							))}
+							{config.fields.map((f) =>
+								f.showWhen && !f.showWhen(row.values) ? null : (
+									<CollField
+										key={f.name}
+										field={f}
+										label={f.labelOf ? f.labelOf(row.values) : f.label}
+										value={row.values[f.name]}
+										setField={(field, value) =>
+											dispatch({
+												type: "updateRow",
+												coll: config.key,
+												id: row.id,
+												field,
+												value,
+											})
+										}
+									/>
+								),
+							)}
 						</div>
 						<div className="flex items-center justify-between gap-4 border-t border-line-soft pt-3">
 							<div className="flex flex-wrap items-center gap-4">
@@ -1506,6 +1522,13 @@ const REF_SOURCES: Record<RefSourceKey, RefSource> = {
 			[i.category, i.is_official ? "공식" : null].filter(Boolean).join(" · ") ||
 			undefined,
 	},
+	clinic: {
+		minLen: 1,
+		placeholder: "병원을 검색하세요",
+		search: (keyword) => searchClinics({ keyword, limit: 20 }),
+		describe: (i) =>
+			[i.type_name, i.address].filter(Boolean).join(" · ") || undefined,
+	},
 };
 
 const refIdOf = (item: RefRow) => String(item.no ?? item.name ?? "");
@@ -1529,6 +1552,7 @@ function RefAutocomplete({
 		queryFn: () => src.search(keyword),
 		enabled: keyword.length >= src.minLen,
 		staleTime: 60_000,
+		placeholderData: keepPreviousData,
 	});
 	const items = data?.items ?? [];
 	const options: AutocompleteOption[] = items.map((it) => ({
@@ -1556,33 +1580,21 @@ function RefAutocomplete({
 
 function CollField({
 	field,
+	label,
 	value,
 	setField,
 }: {
 	field: ColField;
+	label: string;
 	value: unknown;
 	setField: (name: string, value: unknown) => void;
 }) {
 	const str = asString(value);
-	if (field.kind === "bool") {
-		return (
-			<Field>
-				<FieldLabel>{field.label}</FieldLabel>
-				<div className="flex h-10 items-center">
-					<Switch
-						checked={value === true}
-						onCheckedChange={(v) => setField(field.name, v === true)}
-						aria-label={field.label}
-					/>
-				</div>
-			</Field>
-		);
-	}
 	if (field.kind === "ref" && field.ref) {
 		const ref = field.ref;
 		return (
 			<Field>
-				<FieldLabel>{field.label}</FieldLabel>
+				<FieldLabel>{label}</FieldLabel>
 				<RefAutocomplete
 					source={ref.source}
 					value={str}
@@ -1597,7 +1609,7 @@ function CollField({
 	}
 	return (
 		<Field>
-			<FieldLabel>{field.label}</FieldLabel>
+			<FieldLabel>{label}</FieldLabel>
 			{field.kind === "select" ? (
 				<FieldSelect
 					value={str}
@@ -1611,11 +1623,7 @@ function CollField({
 					onChange={(e) => setField(field.name, e.target.value)}
 					placeholder={
 						field.placeholder ??
-						(field.kind === "date"
-							? "YYYY-MM-DD"
-							: field.kind === "year"
-								? "예: 2020"
-								: undefined)
+						(field.kind === "year" ? "예: 2020" : undefined)
 					}
 					inputMode={field.kind === "year" ? "numeric" : undefined}
 				/>
@@ -1624,7 +1632,7 @@ function CollField({
 	);
 }
 
-/** 소속병원(affiliations) — 병원 검색 + 진료 일정 그리드. */
+/** 소속병원(affiliations) — 병원 검색 + 진료 일정. */
 function AffiliationsSection({
 	rows,
 	dispatch,
@@ -1659,13 +1667,6 @@ function AffiliationsSection({
 								row={row}
 								field="department"
 								label="진료과"
-								dispatch={dispatch}
-							/>
-							<AffField
-								row={row}
-								field="join_date"
-								label="입사일"
-								placeholder="YYYY-MM-DD"
 								dispatch={dispatch}
 							/>
 							<AffField
@@ -1826,14 +1827,77 @@ function ScheduleGrid({
 	const schedule = asObject(row.values.schedule) ?? {};
 	const grid = asObject(schedule.grid) ?? {};
 	const note = asString(schedule.note);
+	const bands = asObject(schedule.time_bands) ?? {};
+	const weeks = Array.isArray(schedule.week_recurrence)
+		? schedule.week_recurrence.filter((w): w is string => typeof w === "string")
+		: [];
 	const isOn = (day: string, band: string) =>
 		asObject(grid[day])?.[band] === true;
 	const toggle = (day: string, band: string, value: boolean) =>
 		dispatch({ type: "setGrid", id: row.id, day, band, value });
+	const setWeeks = (next: string[]) =>
+		dispatch({ type: "setWeeks", id: row.id, weeks: next });
+	const toggleWeek = (w: string) =>
+		setWeeks(
+			weeks.includes(w) ? weeks.filter((x) => x !== w) : [...weeks, w].sort(),
+		);
 
 	return (
-		<div className="flex flex-col gap-3">
+		<div className="flex flex-col gap-4">
 			<span className="text-sm font-medium text-body">진료 일정</span>
+
+			{/* 진료 주기 — 비어 있으면 매주, 선택 시 해당 주차만 */}
+			<div className="flex flex-col gap-2">
+				<span className="text-xs text-body-soft">진료 주기</span>
+				<div className="flex flex-wrap gap-2">
+					<ToggleChip active={weeks.length === 0} onClick={() => setWeeks([])}>
+						매주
+					</ToggleChip>
+					{WEEK_OPTIONS.map((w) => (
+						<ToggleChip
+							key={w}
+							active={weeks.includes(w)}
+							onClick={() => toggleWeek(w)}
+						>
+							{w}주차
+						</ToggleChip>
+					))}
+				</div>
+			</div>
+
+			{/* 시간대 라벨(오전/오후) */}
+			<div className="grid gap-3 sm:grid-cols-2">
+				<Field>
+					<FieldLabel>오전 시간대</FieldLabel>
+					<FieldInput
+						value={asString(bands.am)}
+						onChange={(e) =>
+							dispatch({
+								type: "setBand",
+								id: row.id,
+								band: "am",
+								value: e.target.value,
+							})
+						}
+						placeholder="예: 09:00-13:00"
+					/>
+				</Field>
+				<Field>
+					<FieldLabel>오후 시간대</FieldLabel>
+					<FieldInput
+						value={asString(bands.pm)}
+						onChange={(e) =>
+							dispatch({
+								type: "setBand",
+								id: row.id,
+								band: "pm",
+								value: e.target.value,
+							})
+						}
+						placeholder="예: 14:00-18:00"
+					/>
+				</Field>
+			</div>
 
 			{/* 데스크탑/태블릿: 보더 테이블 + 진료가능/휴진 알약 토글 */}
 			<div className="hidden overflow-hidden rounded-xl border border-line-soft md:block">
@@ -1959,20 +2023,78 @@ function ScheduleGrid({
 // 소품
 // ─────────────────────────────────────────────────────────────────────
 
+type VisProps = { on: boolean; onToggle: () => void; label: string };
+
+/** 라벨 + (선택) 공개/비공개 토글을 한 줄에 배치. */
+function FieldHeader({ label, vis }: { label: string; vis?: VisProps }) {
+	return (
+		<div className="flex items-center justify-between gap-3">
+			<FieldLabel>{label}</FieldLabel>
+			{vis ? <VisibilityToggle {...vis} /> : null}
+		</div>
+	);
+}
+
+/** 기본정보 필드별 공개/비공개 토글(field_visibility). */
+function VisibilityToggle({ on, onToggle, label }: VisProps) {
+	return (
+		<span className="flex shrink-0 items-center gap-1.5 text-xs font-medium">
+			<span className={on ? "text-brand" : "text-muted-fg"}>
+				{on ? "공개" : "비공개"}
+			</span>
+			<Switch
+				size="sm"
+				checked={on}
+				onCheckedChange={onToggle}
+				aria-label={`${label} 공개`}
+			/>
+		</span>
+	);
+}
+
+/** 진료 주기 주차 선택용 알약 토글. */
+function ToggleChip({
+	active,
+	onClick,
+	children,
+}: {
+	active: boolean;
+	onClick: () => void;
+	children: React.ReactNode;
+}) {
+	return (
+		<button
+			type="button"
+			onClick={onClick}
+			aria-pressed={active}
+			className={cn(
+				"rounded-full px-3 py-1.5 text-xs font-semibold transition-colors",
+				active
+					? "bg-brand text-brand-foreground"
+					: "bg-muted text-body-soft hover:bg-line-soft",
+			)}
+		>
+			{children}
+		</button>
+	);
+}
+
 function TextField({
 	label,
 	value,
 	onChange,
 	placeholder,
+	vis,
 }: {
 	label: string;
 	value: string;
 	onChange: (v: string) => void;
 	placeholder?: string;
+	vis?: VisProps;
 }) {
 	return (
 		<Field>
-			<FieldLabel>{label}</FieldLabel>
+			<FieldHeader label={label} vis={vis} />
 			<FieldInput
 				value={value}
 				onChange={(e) => onChange(e.target.value)}
@@ -1986,14 +2108,16 @@ function TextAreaField({
 	label,
 	value,
 	onChange,
+	vis,
 }: {
 	label: string;
 	value: string;
 	onChange: (v: string) => void;
+	vis?: VisProps;
 }) {
 	return (
 		<Field>
-			<FieldLabel>{label}</FieldLabel>
+			<FieldHeader label={label} vis={vis} />
 			<textarea
 				value={value}
 				onChange={(e) => onChange(e.target.value)}

@@ -4,24 +4,28 @@ import { http, parse } from "#/lib/api";
 /**
  * 의사 프로필 관리 — 문서 §6.10 / §8.11.
  *
- * 프로필은 **단일 JSON 문서**다(코어 필드 + id-키 컬렉션). 모든 수정은 하나의
+ * 프로필은 **단일 JSON 문서**다(코어 필드 + 컬렉션). 모든 수정은 하나의
  * `PATCH /profile/me`(RFC 7386 **JSON Merge Patch**)로 한다:
  *  - 보낸 키만 반영, 명시적 `null`인 키는 삭제, 생략한 키는 유지.
  *  - 객체는 깊은 병합, 배열/스칼라는 통째 교체.
- *  - 컬렉션(education/license/training/career/society/paper/affiliations)은 id-키 객체:
+ *  - 컬렉션(education/license/training/career/society/paper/affiliations) **쓰기**는 id-키 객체:
  *      추가 = `{coll:{<새 id>:{...}}}`, 수정 = `{coll:{<id>:{변경필드}}}`, 삭제 = `{coll:{<id>:null}}`.
- *  - 각 항목 공통: `order`(정렬), `is_public`(공개 여부). education만 `is_confirmed`(미설정=미확정).
+ *  - 컬렉션 **읽기**(GET 응답)는 서버가 **정렬한 배열**(각 항목에 `id` 포함)로 내려준다.
+ *  - 각 항목 공통: `is_public`(공개 여부, 기본 true). **`order` 필드는 없다 — 서버가 자동 정렬한다.**
+ *  - 기본정보 공개여부는 `field_visibility` 맵(키=코어 필드명, 값=boolean). display_name·
+ *    primary_department는 항상 공개라 토글 대상이 아니다.
  *
- * 구 per-엔티티 CRUD 라우트는 제거됨(§8.11.2). 자동완성 ref는 `#/lib/api/ref.ts`.
+ * 자동완성 ref는 `#/lib/api/ref.ts`.
  */
 
 /** 컬렉션 항목(공통 메타 + 자유 필드). 서버 계약은 컬렉션별로 다르나 경계는 loose. */
 export type ProfileItem = Record<string, unknown> & {
-	order?: number;
+	/** 읽기(GET 응답) 항목에는 id가 포함된다. 쓰기(PATCH)는 id를 키로 쓴다. */
+	id?: string;
 	is_public?: boolean;
 };
 
-/** id-키 컬렉션(예: { e_a1: {...}, e_a2: {...} }). */
+/** 쓰기용 id-키 컬렉션(예: { e_a1: {...}, e_a2: {...} }). */
 export type ProfileCollection = Record<string, ProfileItem>;
 
 /**
@@ -42,26 +46,25 @@ export type ProfileDoc = Record<string, unknown> & {
 	headline?: string | null;
 	primary_department_no?: number | string | null;
 	primary_department_text?: string | null;
-	specialty_text?: string | null;
 	specialty_tags?: string[] | null;
-	etc_text?: string | null;
 	intro_text?: string | null;
 	media_text?: string | null;
 	photo_url?: string | null;
-	naver_url?: string | null;
 	kakao_url?: string | null;
 	contact_phone?: string | null;
 	contact_email?: string | null;
 	orcid_id?: string | null;
 	template_key?: string | null;
+	/** 코어 필드명→공개여부 맵. 키 부재=공개(true). false면 공개 프로필에서 제거. */
 	field_visibility?: Record<string, boolean> | null;
-	education?: ProfileCollection;
-	license?: ProfileCollection;
-	training?: ProfileCollection;
-	career?: ProfileCollection;
-	society?: ProfileCollection;
-	paper?: ProfileCollection;
-	affiliations?: ProfileCollection;
+	// 컬렉션은 GET 응답에선 배열(+id), PATCH 본문에선 id-키 객체.
+	education?: ProfileCollection | ProfileItem[];
+	license?: ProfileCollection | ProfileItem[];
+	training?: ProfileCollection | ProfileItem[];
+	career?: ProfileCollection | ProfileItem[];
+	society?: ProfileCollection | ProfileItem[];
+	paper?: ProfileCollection | ProfileItem[];
+	affiliations?: ProfileCollection | ProfileItem[];
 };
 
 /** GET/PATCH 응답은 loose — 서버가 코어+doc을 한 객체로 병합해 내려준다(§8.11.1). */
