@@ -833,12 +833,19 @@ function ProfileEditor() {
 		if (doc) dispatch({ type: "load", doc });
 	}, [doc]);
 
+	// 전체 프로필 저장(PATCH). templateOverride를 주면 그 시안으로 template_key를 덮어쓴다
+	// (디자인 화면의 "이 디자인 선택"이 저장과 동일 동작을 하도록 — 선택 시안 포함 전체 저장).
 	const saveMutation = useMutation({
-		mutationFn: () => patchProfile(buildPatch(state)),
+		mutationFn: (templateOverride?: string) => {
+			const patch = buildPatch(state);
+			if (templateOverride) patch.template_key = templateOverride;
+			return patchProfile(patch);
+		},
 		onSuccess: (updated) => {
 			queryClient.setQueryData(["profile", "me"], updated);
 			queryClient.invalidateQueries({ queryKey: ["profile", "completion"] });
 			toast.success("프로필을 저장했어요.");
+			setDesignOpen(false); // 디자인 화면에서 저장한 경우 닫고 편집기로 복귀
 		},
 		onError: (err) => toastApiError(err),
 	});
@@ -880,7 +887,7 @@ function ProfileEditor() {
 	const completionPercent = completion?.completion_percent;
 
 	// 전체화면 디자인 시안 선택 — 현재 편집 내용 그대로 미리보며 시안 고르기.
-	// "이 디자인 선택" → 편집 상태에 반영(저장은 하단 "프로필 저장"으로).
+	// "이 디자인 선택" → "프로필 저장"과 동일하게 선택 시안을 포함해 전체 프로필을 저장.
 	if (designOpen) {
 		return (
 			<DesignPreviewScreen
@@ -894,13 +901,15 @@ function ProfileEditor() {
 				onTemplateChange={setSelectedTemplate}
 				onBack={() => setDesignOpen(false)}
 				onConfirm={() => {
+					// 편집 상태에 시안 반영 + 전체 저장(저장 성공 시 onSuccess가 화면을 닫음).
 					dispatch({
 						type: "setCore",
 						key: "template_key",
 						value: selectedTemplate,
 					});
-					setDesignOpen(false);
+					saveMutation.mutate(selectedTemplate);
 				}}
+				confirming={saveMutation.isPending}
 				confirmLabel="이 디자인 선택"
 			/>
 		);
@@ -933,7 +942,7 @@ function ProfileEditor() {
 								size="2xl"
 								className="px-8 font-semibold"
 								disabled={saveMutation.isPending}
-								onClick={() => saveMutation.mutate()}
+								onClick={() => saveMutation.mutate(undefined)}
 							>
 								{saveMutation.isPending ? (
 									<Loader2 className="size-5 animate-spin" />

@@ -145,6 +145,6 @@ export const PROFILE_TEMPLATE_SWATCHES: {
 }[] = [
 	{ key: "blue", color: "#2a64f6", label: "블루 · 신뢰감 있는 정통" },
 	{ key: "green", color: "#22c55e", label: "그린 · 친근하고 편안한" },
-	{ key: "purple", color: "#8b5cf6", label: "퍼플 · 세련된 전문가형" },
+	{ key: "purple", color: "#422af6", label: "퍼플 · 세련된 전문가형" },
 	{ key: "mono", color: "#64748b", label: "모노 · 미니멀하고 정돈된" },
 ];
