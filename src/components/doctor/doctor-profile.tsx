@@ -23,6 +23,7 @@ import {
 import { useEffect, useId, useReducer, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AuthGuard } from "#/components/auth/auth-guard.tsx";
+import { KakaoSupportLink } from "#/components/common/kakao-support-link.tsx";
 import {
 	SectionCard,
 	SectionTitle,
@@ -82,7 +83,7 @@ import {
 	searchMedicalSchools,
 	searchSocieties,
 } from "#/lib/api/ref.ts";
-import { toastApiError } from "#/lib/api-error-message.ts";
+import { toastApiError, toastSupport } from "#/lib/api-error-message.ts";
 import {
 	PROFILE_TEMPLATE_SWATCHES,
 	type ProfilePreviewBundle,
@@ -392,8 +393,8 @@ function clearPendingAnalyzeJob() {
 function handleAnalyzeError(err: unknown) {
 	if (err instanceof DOMException && err.name === "AbortError") return;
 	clearPendingAnalyzeJob();
-	if (err instanceof ApiError) toastApiError(err);
-	else toast.error(String((err as Error)?.message ?? err));
+	if (err instanceof ApiError) toastApiError(err, undefined, { support: true });
+	else toastSupport(String((err as Error)?.message ?? err));
 }
 
 /** 분석 컬렉션(코어 외) — 표시/적용 대상. affiliations 포함. */
@@ -1181,7 +1182,7 @@ function ProfileEditor() {
 			toast.success("프로필을 저장했어요.");
 			setDesignOpen(false); // 디자인 화면에서 저장한 경우 닫고 편집기로 복귀
 		},
-		onError: (err) => toastApiError(err),
+		onError: (err) => toastApiError(err, undefined, { support: true }),
 	});
 
 	const userName = state.core.display_name?.trim() || "원장님";
@@ -1202,17 +1203,20 @@ function ProfileEditor() {
 				<SectionCard className="flex flex-col items-center gap-4 py-16 text-center">
 					<AlertCircle className="size-8 text-danger" />
 					<p className="text-base text-ink">프로필을 불러오지 못했습니다.</p>
-					<Button
-						variant="neutral-outline"
-						size="lg"
-						onClick={() => {
-							toastApiError(error);
-							refetch();
-						}}
-					>
-						<RotateCcw className="size-4" />
-						다시 시도
-					</Button>
+					<div className="flex flex-col items-center gap-2">
+						<Button
+							variant="neutral-outline"
+							size="lg"
+							onClick={() => {
+								toastApiError(error);
+								refetch();
+							}}
+						>
+							<RotateCcw className="size-4" />
+							다시 시도
+						</Button>
+						<KakaoSupportLink variant="inline" className="text-sm" />
+					</div>
 				</SectionCard>
 			</AppShell>
 		);
@@ -1395,7 +1399,7 @@ function PhotoSection({
 			const url = await uploadFileToStorage(file, "profile");
 			dispatch({ type: "setCore", key, value: url });
 		} catch {
-			toast.error("이미지 업로드에 실패했습니다.");
+			toastSupport("이미지 업로드에 실패했습니다.");
 		} finally {
 			setUploading(null);
 		}

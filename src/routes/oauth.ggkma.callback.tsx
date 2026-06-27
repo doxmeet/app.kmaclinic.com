@@ -29,12 +29,17 @@ function GgkmaCallbackPage() {
 	const { code, state, error } = Route.useSearch();
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
-	// 동기적으로 판정되는 실패(인가 오류 / 코드 없음)는 렌더 중 파생한다(state 미보관).
-	const staticFailureReason = error
-		? "GGKMA 인증이 취소되었습니다."
-		: !code
-			? "인증 코드가 없습니다."
-			: null;
+	// 동기적으로 판정되는 실패(인가 오류 / 코드 없음)는 마운트 시점에 한 번만 확정한다.
+	// 렌더마다 재파생하면 안 되는 이유: 아래 .finally가 code·state를 지우려 호출하는
+	// history.replaceState를 TanStack Router가 가로채 search를 재계산 → code가 undefined가
+	// 되면서 이 값이 "인증 코드가 없습니다."로 되살아나 실제 교환 실패 메시지를 덮어쓴다.
+	const [staticFailureReason] = useState<string | null>(() =>
+		error
+			? "GGKMA 인증이 취소되었습니다."
+			: !code
+				? "인증 코드가 없습니다."
+				: null,
+	);
 	// state 불일치(sessionStorage 소비)·토큰 교환 실패만 state로 보관한다.
 	const [asyncError, setAsyncError] = useState<string | null>(null);
 	const reason = staticFailureReason ?? asyncError;

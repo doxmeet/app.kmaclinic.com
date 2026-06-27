@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { CardShell } from "#/components/common/card-shell.tsx";
 import { InfoCallout } from "#/components/common/info-callout.tsx";
 import { InfoRows } from "#/components/common/info-rows.tsx";
+import { KakaoSupportLink } from "#/components/common/kakao-support-link.tsx";
 import { SectionCard } from "#/components/common/section-card.tsx";
 import { ProfileLivePreview } from "#/components/doctor/profile-live-preview.tsx";
 import { DesignPreviewScreen } from "#/components/onboarding/design-preview.tsx";
@@ -172,27 +173,7 @@ export function OnboardingDashboard({
 									<p className="px-3 pt-0.5 pb-1 text-xs font-medium text-muted-fg">
 										의사 프로필
 									</p>
-									{/* 대화형 프로필 작성은 프로필이 아직 없을 때만(있으면 409 PROFILE_ALREADY_EXISTS). */}
-									{profile == null ? (
-										<button
-											type="button"
-											onClick={() => {
-												setMenuOpen(false);
-												onStartConversation("profile");
-											}}
-											className="flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-brand-50"
-										>
-											<MessageSquareText className="mt-0.5 size-5 shrink-0 text-brand" />
-											<span className="flex flex-col">
-												<span className="text-sm font-semibold text-ink">
-													대화형으로 만들기
-												</span>
-												<span className="text-xs text-body-soft">
-													질문에 답하며 차근차근 입력
-												</span>
-											</span>
-										</button>
-									) : null}
+									{/* 의사 프로필은 대화형 작성을 노출하지 않고 직접 입력만 제공. */}
 									<button
 										type="button"
 										onClick={() => {
@@ -268,7 +249,8 @@ export function OnboardingDashboard({
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// 빈 상태 카드 — 무엇(병원/프로필)을 만들지 고른 뒤 방식(대화형/직접입력)을 고른다.
+// 빈 상태 카드 — 병원은 대화형, 프로필은 직접 입력으로 바로 시작한다.
+// (의사 프로필 대화형 작성은 노출하지 않음.)
 // ─────────────────────────────────────────────────────────────────────
 
 function EmptyStateCard({
@@ -277,91 +259,39 @@ function EmptyStateCard({
 	onStartConversation: (mode: OnboardingMode) => void;
 }) {
 	const navigate = useNavigate();
-	// null=무엇을 만들지 선택 / 'hospital'|'profile'=방식(대화형/직접입력) 선택.
-	const [pick, setPick] = useState<OnboardingMode | null>(null);
 
 	return (
 		<SectionCard className="flex flex-col items-center gap-5 py-12 text-center">
 			<div className="flex size-14 items-center justify-center rounded-full bg-brand-50">
 				<Plus className="size-7 text-brand" />
 			</div>
-			{pick === null ? (
-				<>
-					<div className="flex flex-col gap-1.5">
-						<p className="text-lg font-semibold text-ink">
-							아직 만든 항목이 없어요
-						</p>
-						<p className="text-sm text-body-soft">
-							병원 홈페이지와 의사 프로필을 만들 수 있어요. 무엇을 만들지 선택해
-							주세요.
-						</p>
-					</div>
-					<div className="flex w-full flex-col flex-wrap justify-center gap-2 sm:w-auto sm:flex-row">
-						<Button
-							variant="brand"
-							size="2xl"
-							className="w-full sm:w-auto"
-							onClick={() => setPick("hospital")}
-						>
-							<Building2 className="size-5" />
-							병원 만들기
-						</Button>
-						<Button
-							variant="neutral-outline"
-							size="2xl"
-							className="w-full sm:w-auto"
-							onClick={() => setPick("profile")}
-						>
-							<IdCard className="size-5" />
-							프로필 만들기
-						</Button>
-					</div>
-				</>
-			) : (
-				<>
-					<div className="flex flex-col gap-1.5">
-						<p className="text-lg font-semibold text-ink">
-							{pick === "hospital"
-								? "병원 홈페이지를 어떻게 만들까요?"
-								: "의사 프로필을 어떻게 만들까요?"}
-						</p>
-						<p className="text-sm text-body-soft">
-							{pick === "hospital"
-								? "질문에 답하며 차근차근 만들어 드려요."
-								: "질문에 답하며 만드는 대화형, 한 폼에 입력하는 직접 입력 중 선택하세요."}
-						</p>
-					</div>
-					<div className="flex w-full flex-col flex-wrap justify-center gap-2 sm:w-auto sm:flex-row">
-						<Button
-							variant="brand"
-							size="2xl"
-							className="w-full sm:w-auto"
-							onClick={() => onStartConversation(pick)}
-						>
-							<MessageSquareText className="size-5" />
-							대화형으로 만들기
-						</Button>
-						{pick === "profile" && (
-							<Button
-								variant="neutral-outline"
-								size="2xl"
-								className="w-full sm:w-auto"
-								onClick={() => navigate({ to: "/doctor/profile" })}
-							>
-								<PenLine className="size-5" />
-								직접 입력
-							</Button>
-						)}
-					</div>
-					<button
-						type="button"
-						onClick={() => setPick(null)}
-						className="text-sm font-medium text-body-soft transition-colors hover:text-brand"
-					>
-						← 뒤로
-					</button>
-				</>
-			)}
+			<div className="flex flex-col gap-1.5">
+				<p className="text-lg font-semibold text-ink">아직 만든 항목이 없어요</p>
+				<p className="text-sm text-body-soft">
+					병원 홈페이지와 의사 프로필을 만들 수 있어요. 무엇을 만들지 선택해
+					주세요.
+				</p>
+			</div>
+			<div className="flex w-full flex-col flex-wrap justify-center gap-2 sm:w-auto sm:flex-row">
+				<Button
+					variant="brand"
+					size="2xl"
+					className="w-full sm:w-auto"
+					onClick={() => onStartConversation("hospital")}
+				>
+					<Building2 className="size-5" />
+					병원 만들기
+				</Button>
+				<Button
+					variant="neutral-outline"
+					size="2xl"
+					className="w-full sm:w-auto"
+					onClick={() => navigate({ to: "/doctor/profile" })}
+				>
+					<IdCard className="size-5" />
+					프로필 만들기
+				</Button>
+			</div>
 		</SectionCard>
 	);
 }
@@ -747,6 +677,11 @@ function HospitalCard({
 									아직 결제 전이에요. 정기 결제 카드를 등록하면 병원 홈페이지를
 									공개할 수 있습니다.
 								</p>
+								<KakaoSupportLink
+									variant="inline"
+									className="mt-1.5 text-sm"
+									label="결제가 안 되면 카카오톡으로 문의하기"
+								/>
 							</InfoCallout>
 							<div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
 								<Button
@@ -805,6 +740,11 @@ function HospitalCard({
 										정기 결제가 연체된 상태입니다. 구독 관리에서 결제수단을
 										갱신해 주세요.
 									</p>
+									<KakaoSupportLink
+										variant="inline"
+										className="mt-1.5 text-sm"
+										label="결제가 안 되면 카카오톡으로 문의하기"
+									/>
 								</InfoCallout>
 							) : (
 								<InfoCallout tone="success">

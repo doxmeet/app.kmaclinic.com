@@ -26,7 +26,10 @@ import {
 	type NotificationLog,
 	type Paginated,
 } from "#/lib/api/admin.ts";
-import { toastApiError } from "#/lib/api-error-message.ts";
+import {
+	ADMIN_ERROR_OVERRIDES,
+	toastApiError,
+} from "#/lib/api-error-message.ts";
 
 const PAGE_SIZE = 10;
 
@@ -257,7 +260,7 @@ function NotificationsPage() {
 											variant="neutral-outline"
 											size="sm"
 											onClick={() => {
-												toastApiError(error);
+												toastApiError(error, ADMIN_ERROR_OVERRIDES);
 												refetch();
 											}}
 										>

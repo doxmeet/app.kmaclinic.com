@@ -3,6 +3,7 @@ import { ArrowLeft, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { AuthGuard } from "#/components/auth/auth-guard.tsx";
 import { InfoCallout } from "#/components/common/info-callout.tsx";
+import { KakaoSupportLink } from "#/components/common/kakao-support-link.tsx";
 import {
 	SectionCard,
 	SectionTitle,
@@ -26,7 +27,7 @@ import {
 	type OverviewHospital,
 	type PaymentIntent,
 } from "#/lib/api/onboarding.ts";
-import { toastApiError } from "#/lib/api-error-message.ts";
+import { apiErrorMessage, toastApiError } from "#/lib/api-error-message.ts";
 import { useSession } from "#/lib/auth/use-session.ts";
 
 const OVERVIEW_KEY = ["onboarding", "overview"] as const;
@@ -148,12 +149,13 @@ function OnboardingOrchestrator() {
 					</p>
 					<p className="text-sm text-body">
 						{error instanceof ApiError
-							? error.message
+							? apiErrorMessage(error)
 							: "네트워크 상태를 확인한 뒤 다시 시도해 주세요."}
 					</p>
 					<Button variant="brand" size="2xl" onClick={() => refetch()}>
 						다시 시도
 					</Button>
+					<KakaoSupportLink variant="button" size="xl" />
 				</SectionCard>
 			) : overview ? (
 				<OnboardingDashboard

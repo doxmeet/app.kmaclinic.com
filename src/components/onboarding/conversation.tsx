@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useEffect, useId, useMemo, useReducer, useRef, useState } from "react";
 import { toast } from "sonner";
+import { KakaoSupportLink } from "#/components/common/kakao-support-link.tsx";
 import { SectionCard } from "#/components/common/section-card.tsx";
 import {
 	Autocomplete,
@@ -48,7 +49,7 @@ import {
 	startSession,
 } from "#/lib/api/onboarding.ts";
 import { type RefSearchItem, searchRef } from "#/lib/api/ref.ts";
-import { toastApiError } from "#/lib/api-error-message.ts";
+import { apiErrorMessage, toastApiError } from "#/lib/api-error-message.ts";
 import { buildPreviewPayloadFromDraft } from "#/lib/preview.ts";
 import { uploadFileToStorage } from "#/lib/upload.ts";
 import { cn } from "#/lib/utils.ts";
@@ -839,12 +840,13 @@ function StartErrorState({
 				</p>
 				<p className="text-sm text-body">
 					{error instanceof ApiError
-						? error.message
+						? apiErrorMessage(error)
 						: "네트워크 상태를 확인한 뒤 다시 시도해 주세요."}
 				</p>
 				<Button variant="brand" size="2xl" onClick={onRetry}>
 					다시 시도
 				</Button>
+				<KakaoSupportLink variant="button" size="xl" />
 			</SectionCard>
 		</div>
 	);
@@ -1034,16 +1036,23 @@ function ChatScroll({
 						</div>
 					) : null}
 
-					{/* 대기 폴링이 안전장치(최대 시간)에 걸려 멈춘 경우: 수동 새로고침 */}
+					{/* 대기 폴링이 안전장치(최대 시간)에 걸려 멈춘 경우: 수동 새로고침 + 문의 */}
 					{pollExpired ? (
-						<button
-							type="button"
-							onClick={onManualRefresh}
-							className="mr-auto inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-2 text-xs font-medium text-body transition-colors hover:bg-muted"
-						>
-							<Loader2 className="size-3.5 shrink-0" />
-							아직 처리 중이에요. 새로고침해서 확인하기
-						</button>
+						<div className="mr-auto flex flex-col items-start gap-1.5">
+							<button
+								type="button"
+								onClick={onManualRefresh}
+								className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-2 text-xs font-medium text-body transition-colors hover:bg-muted"
+							>
+								<Loader2 className="size-3.5 shrink-0" />
+								아직 처리 중이에요. 새로고침해서 확인하기
+							</button>
+							<KakaoSupportLink
+								variant="inline"
+								className="text-xs"
+								label="계속 안 되면 카카오톡으로 문의하기"
+							/>
+						</div>
 					) : null}
 				</>
 			)}

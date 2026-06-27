@@ -1,3 +1,4 @@
+import { KakaoSupportLink } from "#/components/common/kakao-support-link.tsx";
 import { cn } from "#/lib/utils.ts";
 import { BrandLogo } from "./brand-logo.tsx";
 
@@ -17,11 +18,21 @@ function SiteFooter({ className }: { className?: string }) {
 					<p className="max-w-[320px] text-sm leading-relaxed text-muted-fg">
 						의료진을 위한 프로필·병원 홈페이지 자동 생성 서비스.
 					</p>
+					<address className="text-sm not-italic leading-relaxed text-muted-fg">
+						주식회사 닥스밋(Doxmeet)
+						<br />
+						사업자등록번호 385-88-02455
+					</address>
+					<KakaoSupportLink
+						variant="inline"
+						className="text-sm"
+						label="문의: 카카오톡 채널"
+					/>
 				</div>
 			</div>
 			<div className="border-t border-line">
 				<p className="mx-auto w-full max-w-[1120px] px-4 py-4 text-sm text-muted-fg sm:px-6">
-					COPYRIGHT {COPYRIGHT_YEAR} ALL RIGHTS RESERVED BY KMA CLINIC
+					COPYRIGHT {COPYRIGHT_YEAR} ALL RIGHTS RESERVED BY DOXMEET
 				</p>
 			</div>
 		</footer>
