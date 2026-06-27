@@ -158,9 +158,9 @@ function OnboardingOrchestrator() {
 			) : overview ? (
 				<OnboardingDashboard
 					overview={overview}
-					onStartConversation={() => {
-						// 대화형 "새로 만들기"는 병원 홈페이지 전용(프로필은 /doctor/profile).
-						setConversationMode("hospital");
+					onStartConversation={(conversationStartMode) => {
+						// 대화형 "새로 만들기" — 병원/프로필 모두 지원(대화 엔진은 mode로 분기).
+						setConversationMode(conversationStartMode);
 						setMode("conversation");
 					}}
 					onContinueDraft={() => {

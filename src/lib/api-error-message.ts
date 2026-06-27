@@ -22,6 +22,10 @@ const MESSAGES: Record<string, string> = {
 	ERROR_409_ONBOARDING_FILES_PROCESSING:
 		"업로드한 파일을 분석 중입니다. 분석이 끝나면 완료할 수 있어요.",
 	ERROR_400_ADMIN_LOGIN_ID_REQUIRED: "관리자 아이디를 입력해 주세요.",
+	// 문서 분석으로 자동 채우기(profile/me/analyze)
+	ERROR_400_FILE_URL_REQUIRED: "분석할 파일을 먼저 업로드해 주세요.",
+	ERROR_503_AI_DISABLED:
+		"자동 분석을 일시적으로 사용할 수 없습니다. 직접 입력해 주세요.",
 	ERROR_400_INVALID_LOGIN_ID:
 		"관리자 아이디는 영문 소문자·숫자 4~20자만 가능합니다.",
 	ERROR_400_ADMIN_PASSWORD_REQUIRED: "병원 관리자 비밀번호를 입력해 주세요.",

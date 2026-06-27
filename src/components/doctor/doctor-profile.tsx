@@ -9,12 +9,15 @@ import {
 	Camera,
 	Check,
 	Eye,
+	FileText,
 	Loader2,
 	Palette,
 	Plus,
 	RotateCcw,
 	Save,
+	Sparkles,
 	Trash2,
+	Upload,
 	X,
 } from "lucide-react";
 import { useEffect, useId, useReducer, useRef, useState } from "react";
@@ -61,8 +64,10 @@ import { ScrollArea } from "#/components/ui/scroll-area.tsx";
 import { Switch } from "#/components/ui/switch.tsx";
 import { useDebouncedValue } from "#/hooks/use-debounced-value.ts";
 import {
+	analyzeProfileDocuments,
 	getCompletion,
 	getProfile,
+	type ProfileAnalyzeResult,
 	type ProfileDoc,
 	type ProfilePatch,
 	patchProfile,
@@ -286,7 +291,11 @@ const COLLECTIONS: CollConfig[] = [
 				placeholder: "학회를 검색하세요",
 			},
 			{ name: "grade", label: "회원 구분", placeholder: "예: 정회원" },
-			{ name: "position", label: "직위/직책", placeholder: "예: 학술 이사" },
+			{
+				name: "position",
+				label: "임원 여부 및 학회 활동",
+				placeholder: "예: 회장 2009-2011",
+			},
 			{ name: "since_year", label: "가입연도", kind: "year" },
 		],
 	},
@@ -314,6 +323,47 @@ const GENDER_OPTIONS = [
 	{ value: "male", label: "남성" },
 	{ value: "female", label: "여성" },
 ];
+
+// ─────────────────────────────────────────────────────────────────────
+// 문서 분석으로 자동 채우기 — profile-frontend-guide.md §3~§6.
+// 업로드한 이력서·경력기술서·논문목록 등을 AI가 분석해 merge-patch를 돌려주면,
+// 사용자가 채울 항목만 골라 편집 상태에 반영한다(저장은 기존 "프로필 저장").
+// ─────────────────────────────────────────────────────────────────────
+
+/** 분석 patch에서 코어 스칼라로 인식할 필드(표시 순서·라벨). §3.1 */
+const ANALYZE_CORE_FIELDS: { key: string; label: string }[] = [
+	{ key: "display_name", label: "성명" },
+	{ key: "name_en", label: "영문 성명" },
+	{ key: "gender", label: "성별" },
+	{ key: "birth_date", label: "생년월일" },
+	{ key: "headline", label: "한 줄 소개(헤드라인)" },
+	{ key: "primary_department_text", label: "대표 진료과" },
+	{ key: "specialty_tags", label: "주요 전문 진료 분야" },
+	{ key: "intro_text", label: "자기소개" },
+	{ key: "media_text", label: "방송 출연 및 언론 보도" },
+	{ key: "contact_phone", label: "연락처 전화" },
+	{ key: "contact_email", label: "연락처 이메일" },
+	{ key: "kakao_url", label: "카카오 링크" },
+	{ key: "orcid_id", label: "ORCID iD" },
+];
+
+/** 업로드 허용 확장자(문서·압축만, 이미지 제외). */
+const ANALYZE_ACCEPT = ".pdf,.doc,.docx,.hwp,.hwpx,.ppt,.pptx,.xls,.xlsx,.zip";
+
+/** 파일 용량 상한(§3 limits_mb 참고, 서버가 막기 전 클라이언트 사전 체크). */
+const MAX_FILE_MB = 20;
+
+/** 분석 컬렉션(코어 외) — 표시/적용 대상. affiliations 포함. */
+const ANALYZE_COLL_KEYS: (CollKey | "affiliations")[] = [
+	...COLLECTIONS.map((c) => c.key),
+	"affiliations",
+];
+
+/** 컬렉션 키 → 표시 제목(루프 밖에서 1회 구성). */
+const COLL_TITLES: Record<string, string> = {
+	...Object.fromEntries(COLLECTIONS.map((c) => [c.key, c.title])),
+	affiliations: "소속 병원 · 진료 일정",
+};
 
 /** 진료 일정 그리드 — 요일 × 시간대(am/pm) boolean(true=진료가능, false=휴진) + schedule.note. */
 const GRID_DAYS = [
@@ -873,6 +923,153 @@ function buildProfilePreviewBundle(
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// 문서 분석 결과 → 적용 후보 빌드 / 편집 상태 반영
+// ─────────────────────────────────────────────────────────────────────
+
+/** 코어 스칼라 후보(현재 값 vs 분석 값). */
+type CoreCand = { key: string; label: string; current: string; next: string };
+/** 컬렉션 항목 후보(추가 대상). dup=중복 가능 경고 문구. */
+type ItemCand = {
+	id: string; // `${coll}:${origId}` — 선택 식별자
+	coll: CollKey | "affiliations";
+	origId: string;
+	title: string;
+	subtitle: string;
+	values: Record<string, unknown>;
+	dup?: string;
+};
+
+/** 코어 값 표시용(gender=라벨, specialty_tags=콤마, 그 외=문자열). */
+function coreValueDisplay(key: string, value: unknown): string {
+	if (key === "specialty_tags")
+		return Array.isArray(value)
+			? value.filter((t) => typeof t === "string").join(", ")
+			: "";
+	if (key === "gender") return optionLabel(GENDER_OPTIONS, value);
+	return asString(value);
+}
+
+/** 분석 patch + 현재 편집 상태 → 코어 후보(분석 값이 비어 있으면 제외). */
+function buildCoreCands(
+	result: ProfileAnalyzeResult,
+	state: EditState,
+): CoreCand[] {
+	const patch = result.patch ?? {};
+	const out: CoreCand[] = [];
+	for (const f of ANALYZE_CORE_FIELDS) {
+		if (!(f.key in patch)) continue;
+		const next = coreValueDisplay(f.key, patch[f.key]);
+		if (!next) continue;
+		const current =
+			f.key === "specialty_tags"
+				? state.specialtyTags.join(", ")
+				: coreValueDisplay(
+						f.key,
+						(state.core as Record<string, string>)[f.key],
+					);
+		out.push({ key: f.key, label: f.label, current, next });
+	}
+	return out;
+}
+
+/** summarizeRow 결과를 중복 비교용 시그니처로(부제 없으면 빈 문자열=비교 제외). */
+function summarizeSig(
+	coll: CollKey | "affiliations",
+	values: Record<string, unknown>,
+): string {
+	const { title, subtitle } = summarizeRow(coll, values);
+	return subtitle ? `${title}|${subtitle}` : "";
+}
+
+/** 분석 항목이 기존 편집 상태와 겹치는지 — 학력은 학위 중복(저장 시 1건 제한)도 본다. */
+function findDuplicateNote(
+	state: EditState,
+	coll: CollKey | "affiliations",
+	values: Record<string, unknown>,
+): string | undefined {
+	const rows = (
+		coll === "affiliations" ? state.affiliations : state.colls[coll]
+	).filter((r) => !r.deleted);
+	if (coll === "education") {
+		const dt = asString(values.degree_type);
+		if (dt && rows.some((r) => asString(r.values.degree_type) === dt))
+			return "같은 학위가 이미 있어요 · 저장 시 1건만 반영됩니다";
+	}
+	const sig = summarizeSig(coll, values);
+	if (sig && rows.some((r) => summarizeSig(coll, r.values) === sig))
+		return "이미 등록된 항목과 비슷해요";
+	return undefined;
+}
+
+/** 분석 patch + 현재 상태 → 컬렉션 항목 후보(컬렉션별 묶음). */
+function buildItemGroups(
+	result: ProfileAnalyzeResult,
+	state: EditState,
+): { coll: CollKey | "affiliations"; title: string; items: ItemCand[] }[] {
+	const patch = result.patch ?? {};
+	const groups: {
+		coll: CollKey | "affiliations";
+		title: string;
+		items: ItemCand[];
+	}[] = [];
+	for (const coll of ANALYZE_COLL_KEYS) {
+		const obj = asObject(patch[coll]);
+		if (!obj) continue;
+		const items: ItemCand[] = [];
+		for (const [origId, raw] of Object.entries(obj)) {
+			const values = asObject(raw) ?? {};
+			const { title, subtitle } = summarizeRow(coll, values);
+			items.push({
+				id: `${coll}:${origId}`,
+				coll,
+				origId,
+				title,
+				subtitle,
+				values,
+				dup: findDuplicateNote(state, coll, values),
+			});
+		}
+		if (items.length === 0) continue;
+		groups.push({ coll, title: COLL_TITLES[coll] ?? coll, items });
+	}
+	return groups;
+}
+
+/** 선택한 코어/항목을 편집 상태에 반영(dispatch). 저장은 하지 않는다. */
+function applyAnalysis(
+	result: ProfileAnalyzeResult,
+	selCore: Set<string>,
+	selItems: Set<string>,
+	dispatch: React.Dispatch<EditAction>,
+): void {
+	const patch = result.patch ?? {};
+	for (const f of ANALYZE_CORE_FIELDS) {
+		if (!selCore.has(f.key)) continue;
+		const v = patch[f.key];
+		if (f.key === "specialty_tags") {
+			const tags = Array.isArray(v)
+				? v.filter((t): t is string => typeof t === "string").slice(0, 5)
+				: [];
+			dispatch({ type: "setSpecialtyTags", tags });
+		} else if (f.key === "primary_department_text") {
+			// 문서에서 진료과 FK(no)는 추출되지 않으므로 자유 텍스트로만 채운다.
+			dispatch({ type: "setPrimaryDept", no: "", text: asString(v) });
+		} else {
+			dispatch({ type: "setCore", key: f.key as CoreKey, value: asString(v) });
+		}
+	}
+	for (const coll of ANALYZE_COLL_KEYS) {
+		const obj = asObject(patch[coll]);
+		if (!obj) continue;
+		for (const [origId, raw] of Object.entries(obj)) {
+			if (!selItems.has(`${coll}:${origId}`)) continue;
+			// 컬렉션은 항상 새 행으로 추가(append) — 기존 항목을 덮어쓰지 않는다(§6.1).
+			dispatch({ type: "addRow", coll, values: asObject(raw) ?? {} });
+		}
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // 페이지
 // ─────────────────────────────────────────────────────────────────────
 
@@ -1053,6 +1250,7 @@ function ProfileEditor() {
 			<div className="flex flex-col gap-6">
 				<ProfileHeader completion={completionPercent} />
 
+				<DocumentAnalysisSection state={state} dispatch={dispatch} />
 				<PhotoSection state={state} dispatch={dispatch} />
 				<BasicInfoSection state={state} dispatch={dispatch} />
 
@@ -1231,6 +1429,483 @@ function PhotoUploadButton({
 				{label}
 			</Button>
 		</>
+	);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// 문서로 자동 채우기 — 파일 업로드 → 분석 → 채울 항목 선택(profile-frontend-guide.md).
+// ─────────────────────────────────────────────────────────────────────
+
+/** 같은 파일(이름+크기) 중복 추가 방지. */
+function dedupeFiles(files: File[]): File[] {
+	const seen = new Set<string>();
+	const out: File[] = [];
+	for (const f of files) {
+		const key = `${f.name}:${f.size}`;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		out.push(f);
+	}
+	return out;
+}
+
+function DocumentAnalysisSection({
+	state,
+	dispatch,
+}: {
+	state: EditState;
+	dispatch: React.Dispatch<EditAction>;
+}) {
+	const inputId = useId();
+	const [files, setFiles] = useState<File[]>([]);
+	const [result, setResult] = useState<ProfileAnalyzeResult | null>(null);
+	// 분석할 때마다 증가 — 결과 dialog를 remount해 선택 상태를 새 결과로 초기화한다.
+	// setResult가 재렌더를 일으키므로 ref로 충분(추가 렌더 불필요).
+	const resultKeyRef = useRef(0);
+	const [dialogOpen, setDialogOpen] = useState(false);
+
+	// analyze는 서버 상태를 바꾸지 않고(저장 X) 분석 patch만 돌려주므로 캐시 무효화가 필요 없다.
+	// react-doctor-disable-next-line query-mutation-missing-invalidation
+	const analyzeMutation = useMutation({
+		// 파일들을 스토리지에 올린 뒤(presign) file_url로 분석 요청(저장 X).
+		mutationFn: async (toAnalyze: File[]) => {
+			const urls = await Promise.all(
+				toAnalyze.map((f) => uploadFileToStorage(f, "profile")),
+			);
+			return analyzeProfileDocuments(urls);
+		},
+		onSuccess: (res) => {
+			const hasAny = res.patch && Object.keys(res.patch).length > 0;
+			if (hasAny) {
+				resultKeyRef.current += 1;
+				setResult(res);
+				setFiles([]); // 분석 완료 — 업로드 목록 비움
+				setDialogOpen(true);
+			} else {
+				toast.message("문서에서 추출된 내용이 없습니다. 직접 입력해 주세요.");
+			}
+		},
+		onError: (err) => toastApiError(err),
+	});
+
+	const busy = analyzeMutation.isPending;
+
+	function addFiles(e: React.ChangeEvent<HTMLInputElement>) {
+		const picked = Array.from(e.target.files ?? []);
+		e.target.value = "";
+		const valid: File[] = [];
+		for (const f of picked) {
+			if (f.size > MAX_FILE_MB * 1024 * 1024) {
+				toast.error(`${f.name}: 파일이 너무 큽니다 (최대 ${MAX_FILE_MB}MB)`);
+				continue;
+			}
+			valid.push(f);
+		}
+		if (valid.length) setFiles((prev) => dedupeFiles([...prev, ...valid]));
+	}
+
+	return (
+		<SectionCard className="flex flex-col gap-5">
+			<SectionTitle>문서로 자동 채우기</SectionTitle>
+			<FieldDescription>
+				이력서·경력기술서·논문 목록 등을 올리면 AI가 분석해 채울 항목을 추천해
+				드려요. 분석 후 원하는 항목만 골라 반영하고, 하단 “프로필 저장”으로
+				저장하면 됩니다.
+				<br />
+				지원 형식: pdf · doc · docx · hwp · hwpx · ppt · pptx · xls · xlsx · zip
+			</FieldDescription>
+
+			{busy ? (
+				<div className="flex flex-col items-center gap-3 rounded-xl border border-line-soft bg-muted/40 py-12 text-center">
+					<Loader2 className="size-7 animate-spin text-brand" />
+					<p className="text-base font-semibold text-ink">
+						문서를 분석하고 있어요
+					</p>
+					<p className="text-sm text-muted-fg">
+						문서 분량에 따라 최대 2분 정도 걸릴 수 있어요. 잠시만 기다려 주세요.
+					</p>
+				</div>
+			) : (
+				<div className="flex flex-col gap-4">
+					{/* 업로드 영역 */}
+					<input
+						id={inputId}
+						type="file"
+						accept={ANALYZE_ACCEPT}
+						multiple
+						className="hidden"
+						aria-label="분석할 문서 선택"
+						onChange={addFiles}
+					/>
+					<button
+						type="button"
+						onClick={() => document.getElementById(inputId)?.click()}
+						className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-line-strong bg-muted/30 px-4 py-8 text-center transition-colors hover:border-brand hover:bg-brand-50/40"
+					>
+						<Upload className="size-7 text-brand" />
+						<span className="text-base font-semibold text-ink">
+							문서 선택 (여러 개 가능)
+						</span>
+						<span className="text-sm text-muted-fg">
+							클릭해서 이력서·경력기술서·논문 목록 등을 올려 주세요
+						</span>
+					</button>
+
+					{/* 선택된 파일 목록 */}
+					{files.length > 0 ? (
+						<ul className="flex flex-col gap-2">
+							{files.map((f, i) => (
+								<li
+									key={`${f.name}:${f.size}`}
+									className="flex items-center gap-3 rounded-lg border border-line-soft bg-surface px-4 py-3"
+								>
+									<FileText className="size-5 shrink-0 text-body-soft" />
+									<span className="min-w-0 flex-1 truncate text-sm text-ink">
+										{f.name}
+									</span>
+									<span className="shrink-0 text-xs text-muted-fg">
+										{formatFileSize(f.size)}
+									</span>
+									<button
+										type="button"
+										onClick={() =>
+											setFiles((prev) => prev.filter((_, idx) => idx !== i))
+										}
+										aria-label={`${f.name} 제거`}
+										className="shrink-0 rounded-md p-1 text-muted-fg transition-colors hover:bg-muted hover:text-ink"
+									>
+										<X className="size-4" />
+									</button>
+								</li>
+							))}
+						</ul>
+					) : null}
+
+					<Button
+						variant="brand"
+						size="2xl"
+						className="font-semibold sm:self-end"
+						disabled={files.length === 0}
+						onClick={() => analyzeMutation.mutate(files)}
+					>
+						<Sparkles className="size-5" />
+						{files.length > 0
+							? `문서 ${files.length}개 분석하기`
+							: "문서 분석하기"}
+					</Button>
+				</div>
+			)}
+
+			<AnalysisResultDialog
+				open={dialogOpen}
+				onOpenChange={setDialogOpen}
+				result={result}
+				resultKey={resultKeyRef.current}
+				state={state}
+				onApply={(selCore, selItems) => {
+					if (result) applyAnalysis(result, selCore, selItems, dispatch);
+					setDialogOpen(false);
+					toast.success(
+						"선택한 내용을 폼에 반영했어요. 확인 후 저장해 주세요.",
+					);
+				}}
+			/>
+		</SectionCard>
+	);
+}
+
+/** 바이트 → 읽기 쉬운 크기(KB/MB). */
+function formatFileSize(bytes: number): string {
+	if (bytes < 1024) return `${bytes} B`;
+	if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * 분석 결과 미리보기 + 채울 항목 선택 dialog(VisibilityDialog와 같은 시각 문법).
+ * 선택 상태는 분석 결과마다 새로 시작해야 하므로, 내용은 `key={resultKey}`로 remount되는
+ * 내부 컴포넌트에 두어 useState 초기값으로 깔끔하게 초기화한다(파생 상태 effect 회피).
+ */
+function AnalysisResultDialog({
+	open,
+	onOpenChange,
+	result,
+	resultKey,
+	state,
+	onApply,
+}: {
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	result: ProfileAnalyzeResult | null;
+	resultKey: number;
+	state: EditState;
+	onApply: (selCore: Set<string>, selItems: Set<string>) => void;
+}) {
+	return (
+		<Dialog open={open} onOpenChange={onOpenChange}>
+			<DialogContent className="overflow-y-hidden sm:max-w-5xl" showCloseButton>
+				{result ? (
+					<AnalysisSelection
+						key={resultKey}
+						result={result}
+						state={state}
+						onApply={onApply}
+					/>
+				) : null}
+			</DialogContent>
+		</Dialog>
+	);
+}
+
+/** dialog 본문 — 결과별로 remount되어 선택 상태를 초기화한다. */
+function AnalysisSelection({
+	result,
+	state,
+	onApply,
+}: {
+	result: ProfileAnalyzeResult;
+	state: EditState;
+	onApply: (selCore: Set<string>, selItems: Set<string>) => void;
+}) {
+	const coreCands = buildCoreCands(result, state);
+	const itemGroups = buildItemGroups(result, state);
+	const allItems = itemGroups.flatMap((g) => g.items);
+
+	// 초기 선택: 코어는 전부, 항목은 중복 경고 없는 것만(중복 의심은 사용자가 직접 켜도록).
+	const [selCore, setSelCore] = useState<Set<string>>(
+		() => new Set(coreCands.map((c) => c.key)),
+	);
+	const [selItems, setSelItems] = useState<Set<string>>(() => {
+		const ids = new Set<string>();
+		for (const it of allItems) if (!it.dup) ids.add(it.id);
+		return ids;
+	});
+
+	const selectedCount = selCore.size + selItems.size;
+	const totalCount = coreCands.length + allItems.length;
+
+	function toggleCore(key: string) {
+		setSelCore((prev) => {
+			const next = new Set(prev);
+			if (next.has(key)) next.delete(key);
+			else next.add(key);
+			return next;
+		});
+	}
+	function toggleItem(id: string) {
+		setSelItems((prev) => {
+			const next = new Set(prev);
+			if (next.has(id)) next.delete(id);
+			else next.add(id);
+			return next;
+		});
+	}
+
+	return (
+		<>
+			<DialogHeader className="relative z-10 shrink-0 border-line bg-surface shadow-[0_0.1px_0_0_var(--color-line)]">
+				<DialogTitle>문서 분석 결과 · 채울 항목 선택</DialogTitle>
+				<DialogDescription>
+					분석으로 찾은 내용입니다. 프로필에 반영할 항목을 선택해 주세요. 선택한
+					내용은 폼에 채워지며, 하단 “프로필 저장”을 눌러야 실제로 저장됩니다.
+				</DialogDescription>
+				<span className="border border-brand/40 mt-1 inline-flex w-fit items-center gap-1.5 rounded-full bg-brand-50 px-4 py-2 text-sm font-semibold text-brand">
+					<span className="size-2 rounded-full bg-brand" />
+					{selectedCount} / {totalCount} 항목 선택됨
+				</span>
+			</DialogHeader>
+
+			<ScrollArea
+				className="min-h-0 flex-1"
+				viewportClassName="max-h-[55vh] sm:max-h-[60vh]"
+			>
+				<DialogBody className="gap-6">
+					{totalCount === 0 ? (
+						<div className="flex flex-col items-center gap-2 py-12 text-center">
+							<AlertCircle className="size-7 text-muted-fg" />
+							<p className="text-base text-ink">
+								문서에서 추출된 내용이 없습니다.
+							</p>
+							<p className="text-sm text-muted-fg">
+								다른 파일로 시도하거나 직접 입력해 주세요.
+							</p>
+						</div>
+					) : null}
+
+					{coreCands.length > 0 ? (
+						<div className="flex flex-col gap-2.5">
+							<AnalysisGroupHeader title="기본 정보" count={coreCands.length} />
+							{coreCands.map((cand) => (
+								<AnalysisCoreRow
+									key={cand.key}
+									cand={cand}
+									checked={selCore.has(cand.key)}
+									onToggle={() => toggleCore(cand.key)}
+								/>
+							))}
+						</div>
+					) : null}
+
+					{itemGroups.map((group) => (
+						<div key={group.coll} className="flex flex-col gap-2.5">
+							<AnalysisGroupHeader
+								title={group.title}
+								count={group.items.length}
+							/>
+							{group.items.map((item) => (
+								<AnalysisItemRow
+									key={item.id}
+									item={item}
+									checked={selItems.has(item.id)}
+									onToggle={() => toggleItem(item.id)}
+								/>
+							))}
+						</div>
+					))}
+				</DialogBody>
+			</ScrollArea>
+
+			<DialogFooter className="shrink-0 sm:items-center sm:justify-between">
+				<div className="flex items-center gap-3 text-left">
+					<span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-brand-50">
+						<Sparkles className="size-5 text-brand" />
+					</span>
+					<div className="flex flex-col">
+						<p className="text-sm font-semibold text-brand">
+							선택한 {selectedCount}개 항목이 폼에 채워집니다
+						</p>
+						<p className="text-xs text-muted-fg">
+							반영 후 내용을 확인하고 “프로필 저장”을 눌러 주세요
+						</p>
+					</div>
+				</div>
+				<div className="flex flex-col-reverse gap-2 *:w-full sm:flex-row sm:*:w-auto">
+					<DialogClose render={<Button variant="neutral-outline" size="2xl" />}>
+						취소
+					</DialogClose>
+					<Button
+						variant="brand"
+						size="2xl"
+						className="px-8 font-semibold"
+						disabled={selectedCount === 0}
+						onClick={() => onApply(selCore, selItems)}
+					>
+						<Check className="size-5" />
+						선택 항목 반영
+					</Button>
+				</div>
+			</DialogFooter>
+		</>
+	);
+}
+
+function AnalysisGroupHeader({
+	title,
+	count,
+}: {
+	title: string;
+	count: number;
+}) {
+	return (
+		<div className="flex items-center gap-5 rounded-r-md border-l-[3px] border-brand bg-muted/50 px-5 py-4">
+			<span className="text-base font-bold text-ink">{title}</span>
+			<span className="text-sm text-muted-fg">{count}개 항목</span>
+		</div>
+	);
+}
+
+/** 코어 필드 후보 행 — 현재 값 → 분석 값. */
+function AnalysisCoreRow({
+	cand,
+	checked,
+	onToggle,
+}: {
+	cand: CoreCand;
+	checked: boolean;
+	onToggle: () => void;
+}) {
+	return (
+		<button
+			type="button"
+			onClick={onToggle}
+			aria-pressed={checked}
+			className={cn(
+				"flex w-full items-start gap-3.5 rounded-xl px-4 py-3.5 text-left transition-colors",
+				checked ? "bg-brand-50/70" : "bg-surface hover:bg-muted/40",
+			)}
+		>
+			<SelectBox checked={checked} />
+			<span className="flex min-w-0 flex-1 flex-col gap-0.5">
+				<span className="text-[15px] font-semibold text-ink">{cand.label}</span>
+				<span className="flex flex-wrap items-center gap-1.5 text-sm">
+					{cand.current ? (
+						<span className="text-muted-fg line-through">{cand.current}</span>
+					) : (
+						<span className="text-muted-fg">미입력</span>
+					)}
+					<span className="text-muted-fg">→</span>
+					<span className="font-medium text-ink">{cand.next}</span>
+				</span>
+			</span>
+		</button>
+	);
+}
+
+/** 컬렉션 항목 후보 행 — 제목·부제 + 중복 경고 배지. */
+function AnalysisItemRow({
+	item,
+	checked,
+	onToggle,
+}: {
+	item: ItemCand;
+	checked: boolean;
+	onToggle: () => void;
+}) {
+	return (
+		<button
+			type="button"
+			onClick={onToggle}
+			aria-pressed={checked}
+			className={cn(
+				"flex w-full items-start gap-3.5 rounded-xl px-4 py-3.5 text-left transition-colors",
+				checked ? "bg-brand-50/70" : "bg-surface hover:bg-muted/40",
+			)}
+		>
+			<SelectBox checked={checked} />
+			<span className="flex min-w-0 flex-1 flex-col gap-0.5">
+				<span className="truncate text-[15px] font-semibold text-ink">
+					{item.title}
+				</span>
+				{item.subtitle ? (
+					<span className="truncate text-sm text-muted-fg">
+						{item.subtitle}
+					</span>
+				) : null}
+				{item.dup ? (
+					<span className="mt-1 inline-flex w-fit items-center gap-1 rounded-full bg-warning-50 px-2.5 py-0.5 text-xs font-medium text-warning-strong">
+						<AlertCircle className="size-3" />
+						{item.dup}
+					</span>
+				) : null}
+			</span>
+		</button>
+	);
+}
+
+/** 선택 체크박스 표시(VisibilityRow와 동일 스타일). */
+function SelectBox({ checked }: { checked: boolean }) {
+	return (
+		<span
+			aria-hidden
+			className={cn(
+				"mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-[5px] border transition-colors",
+				checked
+					? "border-brand bg-brand text-brand-foreground"
+					: "border-line-strong bg-surface",
+			)}
+		>
+			{checked ? <Check className="size-3.5" /> : null}
+		</span>
 	);
 }
 

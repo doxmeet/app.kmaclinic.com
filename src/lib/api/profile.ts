@@ -88,6 +88,47 @@ export async function patchProfile(patch: ProfilePatch): Promise<ProfileDoc> {
 	return parse(res?.profile ?? res, ProfileDocSchema) as ProfileDoc;
 }
 
+// ── 문서 분석으로 자동 채우기(§8.11 analyze) ─────────────────────────────
+//
+// 이력서·경력기술서·논문목록 등을 업로드하면 AI가 분석해 **프로필에 바로 적용 가능한
+// merge-patch(JSON)** 를 돌려준다. 이 호출은 **저장하지 않는다** — 돌려받은 patch를
+// 미리보기로 보여주고, 사용자가 고른 항목만 편집 상태에 반영한 뒤 별도로 PATCH 한다.
+//  - 파일은 먼저 `uploadFileToStorage`(presign)로 올려 file_url을 확보한다.
+//  - 단일=`{ file_url }`, 여러 개=`{ file_urls }`.
+//  - 동기 처리이며 보통 30~120초 걸린다 → per-call 타임아웃을 길게 둔다.
+//  - 에러: ERROR_400_FILE_URL_REQUIRED / ERROR_503_AI_DISABLED / 5xx(분석 실패).
+
+/** 분석 결과 — `patch`는 PATCH /profile/me에 그대로 넣을 수 있는 merge-patch. */
+export type ProfileAnalyzeResult = {
+	/** 코어 스칼라 + 컬렉션(id-키 객체). 비어 있으면 추출된 내용이 없다는 뜻. */
+	patch: ProfilePatch;
+	/** 컬렉션별 추출 건수(요약 표시용). */
+	counts?: Record<string, number>;
+	/** AI 원본 추출(디버깅/검증용). */
+	raw?: unknown;
+};
+
+/** 업로드된 문서를 분석해 적용 가능한 patch를 받는다(저장 X). file_url 1개 이상 필요. */
+export async function analyzeProfileDocuments(
+	fileUrls: string[],
+): Promise<ProfileAnalyzeResult> {
+	const body =
+		fileUrls.length === 1 ? { file_url: fileUrls[0] } : { file_urls: fileUrls };
+	const res = await http.post<ProfileAnalyzeResult>(
+		"profile/me/analyze",
+		body,
+		{
+			// AI 분석은 길게 걸린다(문서 §4 보통 30~120초). 기본 60초 타임아웃을 늘린다.
+			timeout: 180_000,
+		},
+	);
+	return {
+		patch: (res?.patch ?? {}) as ProfilePatch,
+		counts: res?.counts,
+		raw: res?.raw,
+	};
+}
+
 /** 완성도(%) + 섹션별 충족(§6.10.1 가중치). */
 export type ProfileCompletion = {
 	completion_percent?: number;

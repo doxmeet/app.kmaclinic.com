@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
 	ArrowRight,
+	Building2,
 	CreditCard,
 	ExternalLink,
 	IdCard,
@@ -26,6 +27,7 @@ import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { setProfileSlug } from "#/lib/api/billing.ts";
 import type {
+	OnboardingMode,
 	Overview,
 	OverviewDraft,
 	OverviewHospital,
@@ -60,8 +62,8 @@ export function OnboardingDashboard({
 	onRefetch,
 }: {
 	overview: Overview;
-	/** 대화형으로 새로 시작 → conversation 모드. */
-	onStartConversation: () => void;
+	/** 대화형으로 새로 시작 → conversation 모드(병원/프로필). */
+	onStartConversation: (mode: OnboardingMode) => void;
 	/** draft "이어서 작성" → conversation 모드. */
 	onContinueDraft: () => void;
 	/** 병원 카드 "결제하기" → payment 모드. */
@@ -152,7 +154,7 @@ export function OnboardingDashboard({
 										type="button"
 										onClick={() => {
 											setMenuOpen(false);
-											onStartConversation();
+											onStartConversation("hospital");
 										}}
 										className="flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-brand-50"
 									>
@@ -188,6 +190,27 @@ export function OnboardingDashboard({
 									<p className="px-3 pt-0.5 pb-1 text-xs font-medium text-muted-fg">
 										의사 프로필
 									</p>
+									{/* 대화형 프로필 작성은 프로필이 아직 없을 때만(있으면 409 PROFILE_ALREADY_EXISTS). */}
+									{profile == null ? (
+										<button
+											type="button"
+											onClick={() => {
+												setMenuOpen(false);
+												onStartConversation("profile");
+											}}
+											className="flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-brand-50"
+										>
+											<MessageSquareText className="mt-0.5 size-5 shrink-0 text-brand" />
+											<span className="flex flex-col">
+												<span className="text-sm font-semibold text-ink">
+													대화형으로 만들기
+												</span>
+												<span className="text-xs text-body-soft">
+													질문에 답하며 차근차근 입력
+												</span>
+											</span>
+										</button>
+									) : null}
 									<button
 										type="button"
 										onClick={() => {
@@ -196,13 +219,21 @@ export function OnboardingDashboard({
 										}}
 										className="flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-brand-50"
 									>
-										<IdCard className="mt-0.5 size-5 shrink-0 text-brand" />
+										{profile == null ? (
+											<PenLine className="mt-0.5 size-5 shrink-0 text-brand" />
+										) : (
+											<IdCard className="mt-0.5 size-5 shrink-0 text-brand" />
+										)}
 										<span className="flex flex-col">
 											<span className="text-sm font-semibold text-ink">
-												프로필 작성·관리
+												{profile == null
+													? "프로필 직접 입력"
+													: "프로필 작성·관리"}
 											</span>
 											<span className="text-xs text-body-soft">
-												의사 프로필을 직접 작성·수정
+												{profile == null
+													? "프로필 정보를 한 폼에 입력"
+													: "의사 프로필을 직접 작성·수정"}
 											</span>
 										</span>
 									</button>
@@ -220,42 +251,7 @@ export function OnboardingDashboard({
 
 			{/* 빈 상태 */}
 			{isEmpty ? (
-				<SectionCard className="flex flex-col items-center gap-5 py-12 text-center">
-					<div className="flex size-14 items-center justify-center rounded-full bg-brand-50">
-						<Plus className="size-7 text-brand" />
-					</div>
-					<div className="flex flex-col gap-1.5">
-						<p className="text-lg font-semibold text-ink">
-							아직 만든 항목이 없어요
-						</p>
-						<p className="text-sm text-body-soft">
-							병원 홈페이지는 대화형·직접 입력으로, 의사 프로필은 프로필
-							관리에서 따로 만들 수 있어요.
-						</p>
-					</div>
-					<div className="flex flex-col flex-wrap justify-center gap-2 sm:flex-row">
-						<Button variant="brand" size="2xl" onClick={onStartConversation}>
-							<MessageSquareText className="size-5" />
-							대화형으로 병원 만들기
-						</Button>
-						<Button
-							variant="neutral-outline"
-							size="2xl"
-							onClick={() => navigate({ to: "/onboarding/direct" })}
-						>
-							<PenLine className="size-5" />
-							병원 직접 입력
-						</Button>
-						<Button
-							variant="neutral-outline"
-							size="2xl"
-							onClick={() => navigate({ to: "/doctor/profile" })}
-						>
-							<IdCard className="size-5" />
-							의사 프로필 작성
-						</Button>
-					</div>
-				</SectionCard>
+				<EmptyStateCard onStartConversation={onStartConversation} />
 			) : null}
 
 			{/* draft 카드 */}
@@ -286,6 +282,102 @@ export function OnboardingDashboard({
 				</div>
 			) : null}
 		</div>
+	);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// 빈 상태 카드 — 무엇(병원/프로필)을 만들지 고른 뒤 방식(대화형/직접입력)을 고른다.
+// ─────────────────────────────────────────────────────────────────────
+
+function EmptyStateCard({
+	onStartConversation,
+}: {
+	onStartConversation: (mode: OnboardingMode) => void;
+}) {
+	const navigate = useNavigate();
+	// null=무엇을 만들지 선택 / 'hospital'|'profile'=방식(대화형/직접입력) 선택.
+	const [pick, setPick] = useState<OnboardingMode | null>(null);
+
+	return (
+		<SectionCard className="flex flex-col items-center gap-5 py-12 text-center">
+			<div className="flex size-14 items-center justify-center rounded-full bg-brand-50">
+				<Plus className="size-7 text-brand" />
+			</div>
+			{pick === null ? (
+				<>
+					<div className="flex flex-col gap-1.5">
+						<p className="text-lg font-semibold text-ink">
+							아직 만든 항목이 없어요
+						</p>
+						<p className="text-sm text-body-soft">
+							병원 홈페이지와 의사 프로필을 만들 수 있어요. 무엇을 만들지 선택해
+							주세요.
+						</p>
+					</div>
+					<div className="flex flex-col flex-wrap justify-center gap-2 sm:flex-row">
+						<Button
+							variant="brand"
+							size="2xl"
+							onClick={() => setPick("hospital")}
+						>
+							<Building2 className="size-5" />
+							병원 만들기
+						</Button>
+						<Button
+							variant="neutral-outline"
+							size="2xl"
+							onClick={() => setPick("profile")}
+						>
+							<IdCard className="size-5" />
+							프로필 만들기
+						</Button>
+					</div>
+				</>
+			) : (
+				<>
+					<div className="flex flex-col gap-1.5">
+						<p className="text-lg font-semibold text-ink">
+							{pick === "hospital"
+								? "병원 홈페이지를 어떻게 만들까요?"
+								: "의사 프로필을 어떻게 만들까요?"}
+						</p>
+						<p className="text-sm text-body-soft">
+							질문에 답하며 만드는 대화형, 한 폼에 입력하는 직접 입력 중
+							선택하세요.
+						</p>
+					</div>
+					<div className="flex flex-col flex-wrap justify-center gap-2 sm:flex-row">
+						<Button
+							variant="brand"
+							size="2xl"
+							onClick={() => onStartConversation(pick)}
+						>
+							<MessageSquareText className="size-5" />
+							대화형으로 만들기
+						</Button>
+						<Button
+							variant="neutral-outline"
+							size="2xl"
+							onClick={() =>
+								pick === "hospital"
+									? navigate({ to: "/onboarding/direct" })
+									: navigate({ to: "/doctor/profile" })
+							}
+						>
+							<PenLine className="size-5" />
+							직접 입력
+						</Button>
+					</div>
+					<button
+						type="button"
+						onClick={() => setPick(null)}
+						className="text-sm font-medium text-body-soft transition-colors hover:text-brand"
+					>
+						← 뒤로
+					</button>
+				</>
+			)}
+		</SectionCard>
 	);
 }
 
