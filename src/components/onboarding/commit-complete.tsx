@@ -305,8 +305,12 @@ function PaymentStep({
 				</p>
 			</div>
 
-			{/* 결제 주기 선택 — Figma 1:11958. 백엔드 billing_cycle(monthly/annual/one_time). */}
-			<CycleSelect value={cycle} onChange={(c) => setCycle(c)} />
+			{/* 결제 주기 선택 — Figma 1:11958. 월간·연간만 노출(1개월 이용권 제외). */}
+			<CycleSelect
+				value={cycle}
+				onChange={(c) => setCycle(c)}
+				cycles={["monthly", "annual"]}
+			/>
 
 			{/* 저장된 카드 — 카드 재입력 없이 바로 결제(가이드 2-A). 글씨/여백을 결제 주기 카드와 맞춤. */}
 			{showSavedCard && savedCard ? (
