@@ -22,7 +22,7 @@ function OAuthCallbackPage() {
 	const staticFailureReason = error
 		? `인가 서버 오류: ${error}`
 		: !code
-			? "인증 코드(code)가 없습니다."
+			? "인증 코드가 없습니다."
 			: null;
 	// 토큰 교환(비동기) 실패만 state로 보관한다.
 	const [exchangeError, setExchangeError] = useState<string | null>(null);

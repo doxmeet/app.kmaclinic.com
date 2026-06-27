@@ -33,7 +33,7 @@ function GgkmaCallbackPage() {
 	const staticFailureReason = error
 		? "GGKMA 인증이 취소되었습니다."
 		: !code
-			? "인증 코드(code)가 없습니다."
+			? "인증 코드가 없습니다."
 			: null;
 	// state 불일치(sessionStorage 소비)·토큰 교환 실패만 state로 보관한다.
 	const [asyncError, setAsyncError] = useState<string | null>(null);
