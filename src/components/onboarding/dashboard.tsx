@@ -296,10 +296,11 @@ function EmptyStateCard({
 							주세요.
 						</p>
 					</div>
-					<div className="flex flex-col flex-wrap justify-center gap-2 sm:flex-row">
+					<div className="flex w-full flex-col flex-wrap justify-center gap-2 sm:w-auto sm:flex-row">
 						<Button
 							variant="brand"
 							size="2xl"
+							className="w-full sm:w-auto"
 							onClick={() => setPick("hospital")}
 						>
 							<Building2 className="size-5" />
@@ -308,6 +309,7 @@ function EmptyStateCard({
 						<Button
 							variant="neutral-outline"
 							size="2xl"
+							className="w-full sm:w-auto"
 							onClick={() => setPick("profile")}
 						>
 							<IdCard className="size-5" />
@@ -329,10 +331,11 @@ function EmptyStateCard({
 								: "질문에 답하며 만드는 대화형, 한 폼에 입력하는 직접 입력 중 선택하세요."}
 						</p>
 					</div>
-					<div className="flex flex-col flex-wrap justify-center gap-2 sm:flex-row">
+					<div className="flex w-full flex-col flex-wrap justify-center gap-2 sm:w-auto sm:flex-row">
 						<Button
 							variant="brand"
 							size="2xl"
+							className="w-full sm:w-auto"
 							onClick={() => onStartConversation(pick)}
 						>
 							<MessageSquareText className="size-5" />
@@ -342,6 +345,7 @@ function EmptyStateCard({
 							<Button
 								variant="neutral-outline"
 								size="2xl"
+								className="w-full sm:w-auto"
 								onClick={() => navigate({ to: "/doctor/profile" })}
 							>
 								<PenLine className="size-5" />
