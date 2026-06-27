@@ -24,6 +24,10 @@ const MESSAGES: Record<string, string> = {
 	ERROR_400_ADMIN_LOGIN_ID_REQUIRED: "관리자 아이디를 입력해 주세요.",
 	// 문서 분석으로 자동 채우기(profile/me/analyze)
 	ERROR_400_FILE_URL_REQUIRED: "분석할 파일을 먼저 업로드해 주세요.",
+	ERROR_400_ZIP_MUST_BE_EXPANDED_CLIENT_SIDE:
+		"압축 파일은 풀어서 올려야 합니다. 잠시 후 다시 시도해 주세요.",
+	ERROR_415_UNSUPPORTED_FILE_TYPE:
+		"지원하지 않는 형식의 파일이 있습니다. pdf·doc·docx·hwp·ppt·xls 등 문서만 올려 주세요.",
 	ERROR_503_AI_DISABLED:
 		"자동 분석을 일시적으로 사용할 수 없습니다. 직접 입력해 주세요.",
 	ERROR_400_INVALID_LOGIN_ID:

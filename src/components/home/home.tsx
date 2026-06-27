@@ -67,7 +67,7 @@ function Hero() {
 				<div className="flex flex-col items-start gap-6">
 					<Badge variant="soft" size="lg" className="rounded-full">
 						<Sparkles className="size-3.5" />
-						의료진 전용 · 닥스밋 연동
+						의료진 전용
 					</Badge>
 					<h1 className="text-[26px] font-extrabold leading-tight tracking-tight text-ink sm:text-[44px] sm:leading-[1.18]">
 						의사 프로필도 병원 홈페이지도,

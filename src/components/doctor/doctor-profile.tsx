@@ -63,6 +63,7 @@ import {
 import { ScrollArea } from "#/components/ui/scroll-area.tsx";
 import { Switch } from "#/components/ui/switch.tsx";
 import { useDebouncedValue } from "#/hooks/use-debounced-value.ts";
+import { ApiError } from "#/lib/api";
 import {
 	analyzeProfileDocuments,
 	getCompletion,
@@ -84,7 +85,11 @@ import {
 	PROFILE_TEMPLATE_SWATCHES,
 	type ProfilePreviewBundle,
 } from "#/lib/profile-preview.ts";
-import { uploadFileToStorage } from "#/lib/upload.ts";
+import {
+	expandFilesToUpload,
+	uploadFilesToStorage,
+	uploadFileToStorage,
+} from "#/lib/upload.ts";
 import { cn } from "#/lib/utils.ts";
 
 /**
@@ -1471,15 +1476,40 @@ function DocumentAnalysisSection({
 	// setResult가 재렌더를 일으키므로 ref로 충분(추가 렌더 불필요).
 	const resultKeyRef = useRef(0);
 	const [dialogOpen, setDialogOpen] = useState(false);
+	// 진행 단계 표시(압축 해제 → 업로드 n/total → 분석). null이면 busy 아님.
+	const [progress, setProgress] = useState<{
+		stage: "expand" | "upload" | "analyze";
+		done?: number;
+		total?: number;
+	} | null>(null);
 
 	// analyze는 서버 상태를 바꾸지 않고(저장 X) 분석 patch만 돌려주므로 캐시 무효화가 필요 없다.
 	// react-doctor-disable-next-line query-mutation-missing-invalidation
 	const analyzeMutation = useMutation({
-		// 파일들을 스토리지에 올린 뒤(presign) file_url로 분석 요청(저장 X).
-		mutationFn: async (toAnalyze: File[]) => {
-			const urls = await Promise.all(
-				toAnalyze.map((f) => uploadFileToStorage(f, "profile")),
-			);
+		// ZIP은 브라우저에서 풀어 개별 파일로 업로드(presign) → file_url 목록으로 분석(저장 X).
+		// paper-zip-bulk-analyze-guide §1·§6: 해제 → 동시 업로드(부분 실패 허용) → 1회 분석.
+		mutationFn: async (picked: File[]) => {
+			setProgress({ stage: "expand" });
+			const docs = await expandFilesToUpload(picked);
+			if (docs.length === 0) {
+				throw new Error("분석 가능한 문서가 없습니다 (pdf·doc·hwp 등).");
+			}
+
+			setProgress({ stage: "upload", done: 0, total: docs.length });
+			const { urls, failed } = await uploadFilesToStorage(docs, "profile", {
+				onProgress: (done, total) =>
+					setProgress({ stage: "upload", done, total }),
+			});
+			if (urls.length === 0) {
+				throw new Error("모든 파일 업로드에 실패했습니다. 다시 시도해 주세요.");
+			}
+			if (failed.length > 0) {
+				toast.warning(
+					`${failed.length}개 파일 업로드에 실패해 ${urls.length}개만 분석합니다.`,
+				);
+			}
+
+			setProgress({ stage: "analyze" });
 			return analyzeProfileDocuments(urls);
 		},
 		onSuccess: (res) => {
@@ -1493,7 +1523,11 @@ function DocumentAnalysisSection({
 				toast.message("문서에서 추출된 내용이 없습니다. 직접 입력해 주세요.");
 			}
 		},
-		onError: (err) => toastApiError(err),
+		onError: (err) =>
+			err instanceof ApiError
+				? toastApiError(err)
+				: toast.error(String((err as Error)?.message ?? err)),
+		onSettled: () => setProgress(null),
 	});
 
 	const busy = analyzeMutation.isPending;
@@ -1527,10 +1561,26 @@ function DocumentAnalysisSection({
 				<div className="flex flex-col items-center gap-3 rounded-xl border border-line-soft bg-muted/40 py-12 text-center">
 					<Loader2 className="size-7 animate-spin text-brand" />
 					<p className="text-base font-semibold text-ink">
-						문서를 분석하고 있어요
+						{progress?.stage === "expand"
+							? "압축 파일을 풀고 있어요"
+							: progress?.stage === "upload"
+								? `문서를 업로드하고 있어요 (${progress.done ?? 0}/${progress.total ?? 0})`
+								: "문서를 분석하고 있어요"}
 					</p>
+					{progress?.stage === "upload" && progress.total ? (
+						<div className="h-1.5 w-48 overflow-hidden rounded-full bg-line-soft">
+							<div
+								className="h-full rounded-full bg-brand transition-all duration-300"
+								style={{
+									width: `${Math.round(((progress.done ?? 0) / progress.total) * 100)}%`,
+								}}
+							/>
+						</div>
+					) : null}
 					<p className="text-sm text-muted-fg">
-						문서 분량에 따라 최대 2분 정도 걸릴 수 있어요. 잠시만 기다려 주세요.
+						{progress?.stage === "analyze"
+							? "문서 분량에 따라 최대 2분 정도 걸릴 수 있어요. 잠시만 기다려 주세요."
+							: "잠시만 기다려 주세요."}
 					</p>
 				</div>
 			) : (

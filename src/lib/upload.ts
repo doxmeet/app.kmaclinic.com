@@ -1,3 +1,4 @@
+import JSZip from "jszip";
 import { http } from "#/lib/api";
 
 /**
@@ -7,6 +8,10 @@ import { http } from "#/lib/api";
  *   ① POST /upload/presign { filename, content_type, subdir } → { upload_url, headers, file_url }
  *   ② PUT <upload_url> (body=파일, headers의 x-amz-acl + Content-Type)
  *   ③ file_url 을 *_url 필드에 저장
+ *
+ * 대량(논문 ZIP) 업로드는 paper-zip-bulk-analyze-guide §1: ZIP은 **백엔드가 풀지 않는다**.
+ * 브라우저에서 ZIP을 풀어 내부 문서를 개별 파일로 업로드한 뒤, file_url 목록을 분석 API에
+ * 넘긴다(`expandFilesToUpload` → `uploadFilesToStorage` → analyzeProfileDocuments).
  */
 
 export type UploadSubdir =
@@ -54,4 +59,126 @@ export async function uploadFileToStorage(
 		throw new Error(`스토리지 업로드 실패 (${res.status})`);
 	}
 	return presign.file_url;
+}
+
+// ── ZIP 클라이언트 해제 + 대량 업로드 (paper-zip-bulk-analyze-guide §1·§3) ──
+//
+// 분석 API는 `.zip` URL을 받으면 400(ERROR_400_ZIP_MUST_BE_EXPANDED_CLIENT_SIDE)으로
+// 거부한다. ZIP은 브라우저에서 풀어 내부 문서를 개별 파일로 업로드해야 한다.
+
+/** 분석 가능한 문서 확장자(이미지·압축 자체는 제외). 서버가 확장자로 파서를 고른다. */
+const ANALYZABLE_EXTS = new Set([
+	".pdf",
+	".doc",
+	".docx",
+	".hwp",
+	".hwpx",
+	".ppt",
+	".pptx",
+	".xls",
+	".xlsx",
+]);
+
+function extOf(name: string): string {
+	const i = name.lastIndexOf(".");
+	return i >= 0 ? name.slice(i).toLowerCase() : "";
+}
+
+/** 압축 메타·숨김·디렉터리 엔트리 거르기(__MACOSX, .DS_Store, dotfile 등). */
+function isJunkEntry(path: string): boolean {
+	const base = path.split("/").pop() ?? "";
+	return (
+		path.includes("__MACOSX/") ||
+		base === ".DS_Store" ||
+		base === "Thumbs.db" ||
+		base.startsWith(".") ||
+		base === ""
+	);
+}
+
+/** ZIP 버퍼를 재귀로 평탄화 → 분석 가능한 File[]만 out에 모은다(중첩 ZIP 포함). */
+async function walkZip(buf: ArrayBuffer, out: File[]): Promise<void> {
+	const zip = await JSZip.loadAsync(buf);
+	const entries = Object.values(zip.files).filter(
+		(e) => !e.dir && !isJunkEntry(e.name),
+	);
+	for (const entry of entries) {
+		const base = entry.name.split("/").pop() ?? entry.name; // 한글 파일명 유지
+		const ext = extOf(base);
+		if (ext === ".zip") {
+			await walkZip(await entry.async("arraybuffer"), out); // 중첩 ZIP 재귀
+		} else if (ANALYZABLE_EXTS.has(ext)) {
+			const blob = await entry.async("blob");
+			if (blob.size > 0) out.push(new File([blob], base, { type: blob.type }));
+		}
+	}
+}
+
+/**
+ * 선택한 파일들을 **실제 업로드할 문서 목록**으로 전개한다.
+ *  - `.zip` → 브라우저에서 풀어 내부 문서를 개별 File로(중첩 ZIP 재귀, 쓰레기 제외).
+ *  - 일반 문서 → 분석 가능한 확장자만 그대로 통과.
+ *  - 그 외(이미지 등) → 제외.
+ */
+export async function expandFilesToUpload(inputs: File[]): Promise<File[]> {
+	const out: File[] = [];
+	for (const input of inputs) {
+		if (extOf(input.name) === ".zip") {
+			await walkZip(await input.arrayBuffer(), out);
+		} else if (ANALYZABLE_EXTS.has(extOf(input.name))) {
+			out.push(input);
+		}
+	}
+	return out;
+}
+
+/** 파일별 업로드 실패(부분 실패는 치명적이지 않다 — 성공분만 분석에 넘긴다). */
+export type UploadFailure = { name: string; error: string };
+
+export type UploadBatchResult = {
+	/** 성공한 파일의 공개 file_url 목록. */
+	urls: string[];
+	/** 실패한 파일과 사유. */
+	failed: UploadFailure[];
+};
+
+/**
+ * 여러 파일을 동시 업로드(기본 동시 6개). 파일별 실패는 건너뛰고 진행률을 보고한다.
+ * paper-zip-bulk-analyze-guide §2: 브라우저 커넥션 한계 고려, 부분 실패 허용.
+ */
+export async function uploadFilesToStorage(
+	files: File[],
+	subdir: UploadSubdir = "profile",
+	options: {
+		concurrency?: number;
+		onProgress?: (done: number, total: number) => void;
+	} = {},
+): Promise<UploadBatchResult> {
+	const concurrency = options.concurrency ?? 6;
+	const total = files.length;
+	const urls: string[] = [];
+	const failed: UploadFailure[] = [];
+	let cursor = 0;
+	let done = 0;
+
+	async function worker() {
+		while (cursor < files.length) {
+			const file = files[cursor++];
+			try {
+				urls.push(await uploadFileToStorage(file, subdir));
+			} catch (e) {
+				failed.push({
+					name: file.name,
+					error: e instanceof Error ? e.message : String(e),
+				});
+			} finally {
+				options.onProgress?.(++done, total);
+			}
+		}
+	}
+
+	await Promise.all(
+		Array.from({ length: Math.min(concurrency, total) }, worker),
+	);
+	return { urls, failed };
 }
