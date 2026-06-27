@@ -12,6 +12,17 @@ const MESSAGES: Record<string, string> = {
 		"로그인 정보가 올바르지 않습니다. 다시 로그인해 주세요.",
 	ERROR_403_FORBIDDEN: "권한이 없습니다.",
 	ERROR_403_USER_WITHDRAWN: "탈퇴한 계정입니다. 로그인할 수 없습니다.",
+	// OAuth 로그인(Doxmeet/GGKMA) — ggkma-oauth-frontend-guide §7
+	ERROR_400_UNSUPPORTED_OAUTH_SITE:
+		"지원하지 않는 로그인 방식입니다. 잠시 후 다시 시도해 주세요.",
+	ERROR_400_GGKMA_TOKEN_NOT_FOUND:
+		"로그인 인증이 만료되었습니다. 다시 로그인해 주세요.",
+	ERROR_400_GGKMA_USER_NOT_FOUND:
+		"경기도의사회 계정 정보를 확인하지 못했습니다. 다시 로그인해 주세요.",
+	ERROR_500_GGKMA_NOT_CONFIGURED:
+		"로그인 서비스 설정에 문제가 있습니다. 운영팀에 문의해 주세요.",
+	ERROR_502_GGKMA_UNREACHABLE:
+		"경기도의사회 로그인 서비스에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.",
 	// 온보딩
 	ERROR_400_ONBOARDING_MODE_REQUIRED:
 		"작성할 유형(병원 또는 프로필)을 선택해 주세요.",

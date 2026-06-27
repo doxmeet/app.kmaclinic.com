@@ -138,13 +138,13 @@ function BillingFlow({
 				await issueBilling({ authKey, customerKey });
 				issuedRef.current = true;
 			}
-			// ② (카드 변경이 아니면) 저장된 빌링키로 구독 생성/재구독 + 즉시 첫 결제.
-			if (!cardOnly) {
-				await createSubscription(hospitalNo, {
-					marketing_consent: marketingConsent,
-					...(billingCycle ? { billing_cycle: billingCycle } : {}),
-				});
-			}
+			// ② 카드 변경이면 빌링키만 교체(구독 생성 없음).
+			if (cardOnly) return null;
+			// ③ 저장된 빌링키로 구독 생성/재구독. 최초면 첫 달 무료(trial), 재구독이면 즉시 청구.
+			return createSubscription(hospitalNo, {
+				marketing_consent: marketingConsent,
+				...(billingCycle ? { billing_cycle: billingCycle } : {}),
+			});
 		},
 		onSuccess: () => {
 			// 결제·구독·빌링키 변경 후 관련 캐시를 무효화해 최신 상태를 반영한다.
@@ -164,6 +164,8 @@ function BillingFlow({
 	const alreadyActive =
 		mutationErrorCode === "ERROR_409_SUBSCRIPTION_ALREADY_ACTIVE";
 	const done = mutation.isSuccess || alreadyActive;
+	// 최초 구독이면 첫 달 무료(trial). 성공 화면 카피를 분기한다(가이드 §4).
+	const trial = mutation.data?.trial ?? false;
 	const error =
 		mutation.isError && !alreadyActive
 			? { code: mutationErrorCode, message: apiErrorMessage(mutation.error) }
@@ -203,7 +205,8 @@ function BillingFlow({
 		);
 	}
 
-	if (done) return <BillingSuccess mode={mode} hospitalNo={hospitalNo} />;
+	if (done)
+		return <BillingSuccess mode={mode} hospitalNo={hospitalNo} trial={trial} />;
 
 	if (error) {
 		return (
@@ -320,9 +323,12 @@ function BillingError({
 function BillingSuccess({
 	mode,
 	hospitalNo,
+	trial = false,
 }: {
 	mode: BillingMode;
 	hospitalNo: number;
+	/** 최초 구독이면 첫 달 무료(trial) — subscribe 모드 카피만 분기한다. */
+	trial?: boolean;
 }) {
 	// 카드 변경: 빌링키만 교체됨 → 구독 관리로 복귀.
 	if (mode === "card") {
@@ -395,7 +401,7 @@ function BillingSuccess({
 		);
 	}
 
-	// 최초 결제(subscribe): 게시 단계로 유도.
+	// 최초 구독(subscribe): 게시 단계로 유도. 첫 달 무료(trial)면 카피를 분기한다.
 	return (
 		<AppShell maxWidth="560px">
 			<SectionCard className="flex flex-col items-center gap-6 text-center">
@@ -403,9 +409,13 @@ function BillingSuccess({
 					<CheckCircle2 className="size-8 text-success" />
 				</div>
 				<div className="flex flex-col gap-2">
-					<h1 className="text-2xl font-bold text-ink">결제가 완료됐어요!</h1>
+					<h1 className="text-2xl font-bold text-ink">
+						{trial ? "첫 달 무료로 시작했어요!" : "결제가 완료됐어요!"}
+					</h1>
 					<p className="text-[15px] leading-7 text-body-soft">
-						정기 결제 카드 등록과 구독이 완료됐습니다.
+						{trial
+							? "카드가 등록됐고 첫 달은 무료예요. 무료 기간이 끝나면 자동으로 첫 결제가 진행됩니다."
+							: "정기 결제 카드 등록과 구독이 완료됐습니다."}
 						<br />
 						이제 <span className="font-semibold text-ink">공개</span>하면 병원
 						홈페이지가 공개됩니다.

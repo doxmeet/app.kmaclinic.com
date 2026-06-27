@@ -132,3 +132,87 @@ export function startDoxmeetLogin(): boolean {
 export function isDoxmeetLoginConfigured(): boolean {
 	return Boolean(env.VITE_DOXMEET_AUTHORIZE_URL && env.VITE_DOXMEET_CLIENT_ID);
 }
+
+/**
+ * GGKMA(경기도의사회) OAuth — ggkma-oauth-frontend-guide.
+ *
+ * Doxmeet과 **같은 콜백/토큰 규약**(POST /oauth/callback, KCLINIC-* 헤더)을 쓰되
+ * site="ggkma"·전용 scope·CSRF `state`만 다르다. code→token 교환과 userinfo 조회는
+ * 전부 백엔드가 처리하므로 프론트는 client_id/redirect_uri/scope/state만 다룬다.
+ */
+const GGKMA_STATE_KEY = "ggkma_oauth_state";
+
+/** CSRF state 값 생성(보안 컨텍스트=crypto, 폴백 포함). */
+function randomState(): string {
+	try {
+		if (typeof crypto !== "undefined") {
+			if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+			if (typeof crypto.getRandomValues === "function") {
+				const bytes = crypto.getRandomValues(new Uint8Array(16));
+				return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join(
+					"",
+				);
+			}
+		}
+	} catch {
+		/* 보안 컨텍스트 아님 → 폴백 */
+	}
+	return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
+/**
+ * GGKMA OAuth 로그인 시작. CSRF `state`를 생성·저장하고 authorize URL로 전체 리다이렉트.
+ * authorize URL/client_id 가 env에 없으면 false(미설정 stub).
+ */
+export function startGgkmaLogin(): boolean {
+	const authorize = env.VITE_GGKMA_AUTHORIZE_URL;
+	const clientId = env.VITE_GGKMA_CLIENT_ID;
+	if (!authorize || !clientId) return false;
+	if (typeof window === "undefined") return false;
+
+	const redirectUri =
+		env.VITE_GGKMA_REDIRECT_URI ??
+		`${window.location.origin}/oauth/ggkma/callback`;
+
+	const state = randomState();
+	try {
+		// 콜백에서 대조할 수 있게 저장(탭 한정 → sessionStorage).
+		sessionStorage.setItem(GGKMA_STATE_KEY, state);
+	} catch {
+		/* sessionStorage 비활성 환경 무시 */
+	}
+
+	const url = new URL(authorize);
+	url.searchParams.set("response_type", "code");
+	url.searchParams.set("client_id", clientId);
+	url.searchParams.set("redirect_uri", redirectUri);
+	url.searchParams.set(
+		"scope",
+		env.VITE_GGKMA_SCOPE ?? "profile license workplace",
+	);
+	url.searchParams.set("state", state);
+	window.location.href = url.toString();
+	return true;
+}
+
+export function isGgkmaLoginConfigured(): boolean {
+	return Boolean(env.VITE_GGKMA_AUTHORIZE_URL && env.VITE_GGKMA_CLIENT_ID);
+}
+
+/**
+ * 콜백에서 CSRF state 일치 확인(저장값을 1회 소비).
+ * 시작 때 저장한 값과 받은 값이 같아야 true. 서버 환경/미저장/불일치는 false.
+ */
+export function consumeGgkmaState(
+	received: string | null | undefined,
+): boolean {
+	if (typeof window === "undefined") return false;
+	let saved: string | null = null;
+	try {
+		saved = sessionStorage.getItem(GGKMA_STATE_KEY);
+		sessionStorage.removeItem(GGKMA_STATE_KEY);
+	} catch {
+		return false;
+	}
+	return Boolean(received && saved && received === saved);
+}

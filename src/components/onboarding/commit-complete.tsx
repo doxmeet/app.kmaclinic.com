@@ -18,6 +18,7 @@ import {
 	type BillingKey,
 	createSubscription,
 	listBilling,
+	type Subscription,
 	setProfileSlug,
 } from "#/lib/api/billing.ts";
 import type { CommitResult } from "#/lib/api/onboarding.ts";
@@ -211,8 +212,12 @@ function PaymentStep({
 	const [cycle, setCycle] = useState<BillingCycle>("annual");
 	// 저장된 카드가 있어도 "다른 카드로 변경"을 누르면 toss 위젯으로 새 카드를 등록한다.
 	const [useNewCard, setUseNewCard] = useState(false);
-	// 저장된 카드로 즉시 결제(toss 리다이렉트 없음)가 끝나면 성공 화면을 보여준다.
-	const [done, setDone] = useState(false);
+	// 저장된 카드로 즉시 처리(toss 리다이렉트 없음)가 끝나면 완료 화면을 보여준다.
+	// null=진행 전. 값이 있으면 완료 — trial(첫 달 무료)/subscription으로 카피를 분기한다(가이드 §4).
+	const [completed, setCompleted] = useState<{
+		trial: boolean;
+		subscription: Subscription | null;
+	} | null>(null);
 
 	const clientKey = payment.toss_client_key;
 	const customerKey = payment.customer_key;
@@ -239,16 +244,19 @@ function PaymentStep({
 			createSubscription(hospitalNo as number, {
 				billing_cycle: cycle,
 			}),
-		onSuccess: () => {
-			setDone(true);
+		onSuccess: (res) => {
+			setCompleted({
+				trial: !!res?.trial,
+				subscription: res?.subscription ?? null,
+			});
 			queryClient.invalidateQueries({ queryKey: ["billing", "list"] });
 			queryClient.invalidateQueries({ queryKey: ["account", "me"] });
 		},
 		onError: (err) => {
 			const code = err instanceof ApiError ? err.errorCode : null;
-			// 이미 활성 구독이면 결제는 끝난 상태 → 성공으로 간주(게시 단계로).
+			// 이미 활성 구독이면 처리는 끝난 상태 → 완료로 간주(게시 단계로).
 			if (code === "ERROR_409_SUBSCRIPTION_ALREADY_ACTIVE") {
-				setDone(true);
+				setCompleted({ trial: false, subscription: null });
 				return;
 			}
 			// 저장된 카드가 사라졌으면(레이스) 새 카드 등록(toss)으로 폴백.
@@ -292,16 +300,24 @@ function PaymentStep({
 		}
 	}
 
-	if (done) return <PaidComplete slug={slug} onComplete={onComplete} />;
+	if (completed)
+		return (
+			<PaidComplete
+				slug={slug}
+				onComplete={onComplete}
+				trial={completed.trial}
+				subscription={completed.subscription}
+			/>
+		);
 
 	return (
 		<SectionCard className="flex flex-col gap-6">
 			<div className="flex flex-col gap-2">
-				<SectionTitle>병원 홈페이지 결제</SectionTitle>
+				<SectionTitle>병원 홈페이지 구독 시작</SectionTitle>
 				<p className="text-[15px] leading-7 text-body-soft">
 					{showSavedCard
-						? "프로필과 병원이 생성됐어요. 저장된 카드로 바로 결제하면 병원 홈페이지를 공개할 수 있어요."
-						: "프로필과 병원이 생성됐어요. 병원 홈페이지를 공개하려면 정기 결제용 카드를 등록해 주세요."}
+						? "프로필과 병원이 생성됐어요. 첫 달은 무료예요 — 저장된 카드로 시작하면 한 달 뒤부터 자동 결제됩니다."
+						: "프로필과 병원이 생성됐어요. 첫 달은 무료로 이용하고, 한 달 뒤부터 자동 결제됩니다. 카드만 먼저 등록해 주세요."}
 				</p>
 			</div>
 
@@ -349,7 +365,7 @@ function PaymentStep({
 					{chargeMutation.isPending ? (
 						<Loader2 className="size-5 animate-spin" />
 					) : null}
-					이 카드로 결제하기
+					이 카드로 무료 시작하기
 				</Button>
 			) : ready ? (
 				<div className="flex flex-col gap-3">
@@ -361,7 +377,7 @@ function PaymentStep({
 						onClick={handlePay}
 					>
 						{loading ? <Loader2 className="size-5 animate-spin" /> : null}
-						카드 등록하고 결제하기
+						카드 등록하고 무료로 시작하기
 					</Button>
 					{/* "다른 카드로 변경"으로 들어왔다면 저장된 카드로 되돌아갈 수 있게 한다. */}
 					{savedCard != null && useNewCard ? (
@@ -384,7 +400,8 @@ function PaymentStep({
 			)}
 
 			<p className="text-center text-sm text-muted-fg">
-				결제가 완료되면 병원 홈페이지가 공개됩니다
+				카드 등록이 끝나면 병원 홈페이지를 공개할 수 있어요. 첫 결제는 한 달
+				뒤예요
 				{slug ? ` (${slug}.kmaclinic.com)` : ""}.
 			</p>
 		</SectionCard>
@@ -392,26 +409,54 @@ function PaymentStep({
 }
 
 /**
- * 저장된 카드로 즉시 결제가 끝난 뒤 성공 화면(toss 콜백의 BillingSuccess(subscribe)와 동형).
+ * 카드 등록/구독 시작이 끝난 뒤 완료 화면(toss 콜백의 BillingSuccess(subscribe)와 동형).
  * onComplete가 있으면(대시보드 오케스트레이터) 그 핸들러로, 없으면 `/onboarding`으로 이동한다.
+ *
+ * `trial`(첫 달 무료)이면 "무료 시작" 카피로, 아니면(재구독 등 즉시 청구) "결제 완료" 카피로 분기한다.
  */
 function PaidComplete({
 	slug,
 	onComplete,
+	trial = false,
+	subscription = null,
 }: {
 	slug: string | null;
 	onComplete?: () => void;
+	/** 첫 달 무료체험으로 시작됐는지(가이드 §4). */
+	trial?: boolean;
+	/** 첫 결제일/금액 안내용(trial일 때 사용). */
+	subscription?: Subscription | null;
 }) {
+	const firstChargeAt =
+		subscription?.trial_end_at ?? subscription?.next_billing_at;
 	return (
 		<SectionCard className="flex flex-col items-center gap-6 text-center">
 			<div className="flex size-16 items-center justify-center rounded-full bg-success-bg">
 				<CheckCircle2 className="size-8 text-success" />
 			</div>
 			<div className="flex flex-col gap-2">
-				<h1 className="text-2xl font-bold text-ink">결제가 완료됐어요!</h1>
+				<h1 className="text-2xl font-bold text-ink">
+					{trial ? "첫 달 무료로 시작했어요!" : "결제가 완료됐어요!"}
+				</h1>
 				<p className="text-[15px] leading-7 text-body-soft">
-					저장된 카드로 정기 결제가 시작됐어요.
-					<br />
+					{trial ? (
+						<>
+							카드가 등록됐고 첫 달은 무료예요.
+							{firstChargeAt
+								? ` 첫 결제는 ${fmtDate(firstChargeAt)}${
+										money(subscription?.amount)
+											? `에 ${money(subscription?.amount)}로`
+											: "에"
+									} 자동 진행돼요.`
+								: " 무료 기간이 끝나면 자동으로 첫 결제가 진행돼요."}
+							<br />
+						</>
+					) : (
+						<>
+							저장된 카드로 정기 결제가 시작됐어요.
+							<br />
+						</>
+					)}
 					이제 <span className="font-semibold text-ink">공개</span>하면 병원
 					홈페이지가 공개됩니다
 					{slug ? ` (${slug}.kmaclinic.com)` : ""}.
@@ -446,6 +491,25 @@ function PaidComplete({
 			)}
 		</SectionCard>
 	);
+}
+
+const dateFormat = new Intl.DateTimeFormat("ko-KR", {
+	year: "numeric",
+	month: "long",
+	day: "numeric",
+});
+
+/** ISO8601 → "2026년 7월 28일". 값이 없거나 잘못되면 빈 문자열. */
+function fmtDate(value: string | null | undefined): string {
+	if (!value) return "";
+	const d = new Date(value);
+	return Number.isNaN(d.getTime()) ? "" : dateFormat.format(d);
+}
+
+/** KRW 정수 → "10,000원". 값이 없으면 빈 문자열. */
+function money(amount: number | null | undefined): string {
+	if (typeof amount !== "number" || Number.isNaN(amount)) return "";
+	return `${amount.toLocaleString("ko-KR")}원`;
 }
 
 /**

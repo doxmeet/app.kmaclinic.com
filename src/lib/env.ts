@@ -15,6 +15,14 @@ const schema = z.object({
 	VITE_DOXMEET_CLIENT_ID: z.string().optional(),
 	VITE_DOXMEET_SCOPE: z.string().optional(),
 	VITE_OAUTH_REDIRECT_URI: z.string().optional(),
+	// GGKMA(경기도의사회) OAuth (로그인 시작용, 선택) — ggkma-oauth-frontend-guide §2.
+	// authorize URL = GGKMA 웹 프론트 화면(예: https://www.ggkma.org/oauth/authorize) 전체 URL.
+	// ⚠ api.ggkma.org/oauth/authorize/session 아님(그건 GGKMA 내부용). token/userinfo·client_secret 은 백엔드 전용.
+	// scope 기본 "profile license workplace".
+	VITE_GGKMA_AUTHORIZE_URL: z.string().optional(),
+	VITE_GGKMA_CLIENT_ID: z.string().optional(),
+	VITE_GGKMA_SCOPE: z.string().optional(),
+	VITE_GGKMA_REDIRECT_URI: z.string().optional(),
 	// 결제 위젯(toss) — payment.toss_client_key가 응답으로 오므로 보통 불필요(선택 폴백)
 	VITE_TOSS_CLIENT_KEY: z.string().optional(),
 	// 병원 홈페이지 실시간 미리보기 앱(preview.kmaclinic.com)의 origin.

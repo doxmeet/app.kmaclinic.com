@@ -30,7 +30,7 @@ export const Route = createFileRoute("/billing/callback")({
 			search.marketing_consent === "1" || search.marketing_consent === 1
 				? true
 				: undefined,
-		// 결제 단계에서 고른 결제 주기(monthly/annual/one_time). toss 리다이렉트로 보존된다.
+		// 결제 단계에서 고른 결제 주기(monthly/annual). toss 리다이렉트로 보존된다.
 		// 유효하지 않거나 없으면 undefined → 백엔드 기본(monthly).
 		billing_cycle: asBillingCycle(search.billing_cycle) ?? undefined,
 		// 흐름 모드(문서 §9.5/§9.6):

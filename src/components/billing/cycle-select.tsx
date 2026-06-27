@@ -1,18 +1,27 @@
-import { amountForCycle, type BillingCycle } from "#/lib/api/billing.ts";
+import {
+	amountForCycle,
+	type BillingCycle,
+	billingCycleMeta,
+	firstAmountForCycle,
+} from "#/lib/api/billing.ts";
 import { cn } from "#/lib/utils.ts";
 
 /**
- * 결제 주기 선택 카드(Figma 1:11958) — 결제 화면(commit-complete)과 구독 관리(주기 변경)에서 공유한다.
- * 금액은 amountForCycle(billing.ts) 단일 출처에서 가져오고, 여기서는 표기 텍스트만 정의한다.
+ * 결제 주기 선택 카드(Figma 1:11958) — 가입 결제(commit-complete)와 구독 관리(주기 변경)에서 공유한다.
+ * 금액은 billing.ts 단일 출처(정가=amountForCycle, 특가=firstAmountForCycle, 앵커=meta.listAmount).
+ *
+ * `pricing`으로 표기를 분기한다(가이드 §2·§7):
+ * - `intro`(가입): 정가 취소선 + 첫 결제 오픈특가 + "첫 달 무료".
+ * - `renewal`(주기 변경): 정가(갱신가)만 — 무료달·특가는 병원당 최초 1회뿐이라 갱신 화면엔 노출 금지.
  */
 const CYCLE_CARDS: ReadonlyArray<{
 	value: BillingCycle;
 	title: string;
-	/** 가격 줄 접두사("연 "/"월 "). 단건은 없음. */
+	/** 가격 줄 접두사("연 "/"월 "). */
 	pricePrefix: string;
-	/** 우측 회색 보조 라벨(월간/단건). */
+	/** 우측 회색 보조 라벨. */
 	note?: string;
-	/** 강조 배지(연간). */
+	/** 강조 배지(연간 할인). */
 	badge?: string;
 	/** 카드 하단 설명 한 줄(연간). */
 	blurb?: string;
@@ -21,7 +30,7 @@ const CYCLE_CARDS: ReadonlyArray<{
 		value: "annual",
 		title: "정기 결제 (연간 구독)",
 		pricePrefix: "연 ",
-		badge: "2개월 무료 혜택",
+		badge: "2개월 할인",
 		blurb: "연 1회 정기적으로 자동 결제되는 알뜰형 플랜입니다.",
 	},
 	{
@@ -30,18 +39,9 @@ const CYCLE_CARDS: ReadonlyArray<{
 		pricePrefix: "월 ",
 		note: "매월 자동 결제",
 	},
-	{
-		value: "one_time",
-		title: "1개월 이용권 결제",
-		pricePrefix: "",
-		note: "1회 결제",
-	},
 ];
 
-/** 카드 가격 표기(예: "연 100,000원 (부가세 포함)"). 금액은 amountForCycle 단일 출처. */
-function cyclePriceText(card: (typeof CYCLE_CARDS)[number]): string {
-	return `${card.pricePrefix}${amountForCycle(card.value).toLocaleString("ko-KR")}원 (부가세 포함)`;
-}
+const won = (amount: number) => `${amount.toLocaleString("ko-KR")}원`;
 
 /**
  * 결제 주기 선택 카드 목록. `cycles`로 노출할 주기를 제한할 수 있다(미지정 시 전체).
@@ -51,13 +51,16 @@ export function CycleSelect({
 	value,
 	onChange,
 	cycles,
+	pricing = "intro",
 	disabled,
 	className,
 }: {
 	value: BillingCycle;
 	onChange: (cycle: BillingCycle) => void;
-	/** 노출할 주기 목록(예: ["monthly","annual"]). 미지정 시 monthly·annual·one_time 전체. */
+	/** 노출할 주기 목록(예: ["monthly","annual"]). 미지정 시 전체. */
 	cycles?: BillingCycle[];
+	/** 가격 표기 모드. `intro`=가입(특가/첫 달 무료), `renewal`=주기 변경(정가만). 기본 `intro`. */
+	pricing?: "intro" | "renewal";
 	disabled?: boolean;
 	className?: string;
 }) {
@@ -69,6 +72,11 @@ export function CycleSelect({
 		<div className={cn("flex flex-col gap-4", className)}>
 			{cards.map((card) => {
 				const selected = value === card.value;
+				const meta = billingCycleMeta(card.value);
+				const regular = amountForCycle(card.value); // 정가(갱신가)
+				const first = firstAmountForCycle(card.value); // 오픈특가(첫 결제 1회)
+				const list = meta.listAmount; // 취소선 앵커(연간 240,000)
+
 				return (
 					<button
 						key={card.value}
@@ -80,9 +88,7 @@ export function CycleSelect({
 							"flex w-full items-start gap-4 rounded-xl p-6 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60",
 							selected
 								? "border-2 border-brand bg-surface"
-								: card.value === "one_time"
-									? "border border-line-soft bg-app-bg hover:border-brand/40"
-									: "border border-line-soft bg-surface hover:border-brand/40",
+								: "border border-line-soft bg-surface hover:border-brand/40",
 						)}
 					>
 						{/* 라디오 */}
@@ -98,7 +104,7 @@ export function CycleSelect({
 						</span>
 
 						{/* 내용 */}
-						<span className="flex min-w-0 flex-1 flex-col gap-0.5">
+						<span className="flex min-w-0 flex-1 flex-col gap-1">
 							<span className="flex items-center justify-between gap-3">
 								<span className="flex flex-wrap items-center gap-x-3 gap-y-1">
 									<span className="text-[16px] font-medium text-ink sm:text-[17px]">
@@ -116,9 +122,44 @@ export function CycleSelect({
 									</span>
 								) : null}
 							</span>
-							<span className="text-[16px] font-semibold text-ink sm:text-[17px]">
-								{cyclePriceText(card)}
-							</span>
+
+							{pricing === "renewal" ? (
+								/* 주기 변경: 정가(갱신가)만 — 다음 결제일부터 적용. */
+								<span className="text-[16px] font-semibold text-ink sm:text-[17px]">
+									{card.pricePrefix}
+									{won(regular)} (부가세 포함)
+								</span>
+							) : (
+								/* 가입: 정가 취소선 + (연간) 정가 + 첫 결제 특가 + 첫 달 무료. */
+								<>
+									<span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+										<span className="text-sm text-muted-fg line-through">
+											{card.pricePrefix}
+											{won(list)}
+										</span>
+										{regular !== list ? (
+											<span className="text-sm font-medium text-body-soft">
+												{card.pricePrefix}
+												{won(regular)}
+											</span>
+										) : null}
+									</span>
+									<span className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+										<span className="text-[17px] font-bold text-ink sm:text-[19px]">
+											첫 결제 {card.pricePrefix}
+											{won(first)}
+										</span>
+										<span className="shrink-0 rounded bg-success-bg px-1.5 py-0.5 text-xs font-bold text-success">
+											+ 첫 달 무료
+										</span>
+									</span>
+									<span className="text-xs text-muted-fg">
+										부가세 포함 · 가입 한 달 뒤 첫 결제(오픈특가) 후 정가로 자동
+										갱신
+									</span>
+								</>
+							)}
+
 							{card.blurb ? (
 								<span className="pt-1 text-sm text-body-soft">
 									{card.blurb}
