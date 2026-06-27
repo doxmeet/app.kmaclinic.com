@@ -88,7 +88,13 @@ function Autocomplete({
 			const el = anchorRef.current;
 			if (!el) return;
 			const r = el.getBoundingClientRect();
-			setPanelPos({ left: r.left, top: r.bottom + 8, width: r.width });
+			// 패널은 body로 포털된 fixed 요소라 anchor 폭/위치를 그대로 쓰면
+			// 좁은 화면에서 화면 밖으로 밀려날 수 있다 → 뷰포트 안으로 클램프한다.
+			const margin = 8;
+			const vw = document.documentElement.clientWidth;
+			const width = Math.min(r.width, vw - margin * 2);
+			const left = Math.max(margin, Math.min(r.left, vw - width - margin));
+			setPanelPos({ left, top: r.bottom + 8, width });
 		};
 		update();
 		window.addEventListener("scroll", update, true);
@@ -169,7 +175,7 @@ function Autocomplete({
 						blurTimer.current = setTimeout(() => setOpen(false), 120);
 					}}
 					onKeyDown={onKeyDown}
-					className="h-full flex-1 bg-transparent text-[17px] text-ink-soft outline-none placeholder:text-muted-fg"
+					className="h-full min-w-0 flex-1 bg-transparent text-[17px] text-ink-soft outline-none placeholder:text-muted-fg"
 				/>
 				{value ? (
 					<button
@@ -207,15 +213,19 @@ function Autocomplete({
 							onMouseDown={() => {
 								if (blurTimer.current) clearTimeout(blurTimer.current);
 							}}
-							className="fixed z-50 flex max-h-[440px] flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-[0_2px_8px_rgba(0,0,0,0.07),0_8px_32px_rgba(42,100,246,0.1)]"
+							className="fixed z-50 flex max-h-[440px] max-w-[calc(100vw-16px)] flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-[0_2px_8px_rgba(0,0,0,0.07),0_8px_32px_rgba(42,100,246,0.1)]"
 						>
 							{/* 결과 헤더 */}
 							<div className="flex items-center gap-2 border-b border-line-soft px-4 py-2.5 text-base">
-								<Search className="size-3 text-muted-fg" aria-hidden />
+								<Search className="size-3 shrink-0 text-muted-fg" aria-hidden />
 								{value.trim() ? (
 									<>
-										<span className="text-muted-fg">'{value}' 검색 결과</span>
-										<span className="text-brand">{options.length}건</span>
+										<span className="min-w-0 truncate text-muted-fg">
+											'{value}' 검색 결과
+										</span>
+										<span className="shrink-0 text-brand">
+											{options.length}건
+										</span>
 									</>
 								) : (
 									<span className="text-muted-fg">검색어를 입력해주세요</span>
@@ -238,11 +248,11 @@ function Autocomplete({
 												isActive ? "bg-brand-50" : "hover:bg-app-bg",
 											)}
 										>
-											<span className="text-[18px] text-ink-soft">
+											<span className="break-keep text-[18px] text-ink-soft">
 												{highlight(opt.label, value)}
 											</span>
 											{opt.description ? (
-												<span className="text-base text-muted-fg">
+												<span className="break-keep text-base text-muted-fg">
 													{opt.description}
 												</span>
 											) : null}
@@ -264,8 +274,8 @@ function Autocomplete({
 									<span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-body">
 										<PencilLine className="size-3.5" />
 									</span>
-									<span className="flex flex-1 flex-col gap-0.5">
-										<span className="text-[17px] text-body">
+									<span className="flex min-w-0 flex-1 flex-col gap-0.5">
+										<span className="text-[17px] break-keep text-body">
 											리스트에 없는 경우:{" "}
 											<span className="text-brand underline">
 												'직접 입력' 하기

@@ -7,7 +7,7 @@ import { cn } from "#/lib/utils.ts";
  * aria-invalid 시 빨간 테두리(2px)로 전환된다.
  */
 const fieldControlBase =
-	"w-full rounded-lg border border-line bg-surface text-[17px] text-ink transition-colors outline-none placeholder:text-muted-fg disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60 focus-visible:border-brand focus-visible:ring-3 focus-visible:ring-brand/15 aria-invalid:border-2 aria-invalid:border-danger-strong aria-invalid:focus-visible:ring-danger-strong/15";
+	"w-full min-w-0 rounded-lg border border-line bg-surface text-[17px] text-ink transition-colors outline-none placeholder:text-muted-fg disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60 focus-visible:border-brand focus-visible:ring-3 focus-visible:ring-brand/15 aria-invalid:border-2 aria-invalid:border-danger-strong aria-invalid:focus-visible:ring-danger-strong/15";
 
 function FieldInput({
 	className,

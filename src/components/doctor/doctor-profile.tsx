@@ -1220,10 +1220,10 @@ function ProfileEditor() {
 						<Button
 							variant="neutral-outline"
 							size="2xl"
-							className="font-semibold"
+							className="h-11 gap-1.5 px-2.5 text-sm font-semibold sm:h-14 sm:gap-2 sm:px-6 sm:text-[17px]"
 							onClick={() => setVisibilityOpen(true)}
 						>
-							<Eye className="size-5" />
+							<Eye className="size-4 sm:size-5" />
 							공개 설정
 						</Button>
 					}
@@ -1232,26 +1232,26 @@ function ProfileEditor() {
 							<Button
 								variant="neutral-outline"
 								size="2xl"
-								className="font-semibold"
+								className="h-11 gap-1.5 px-2.5 text-sm font-semibold sm:h-14 sm:gap-2 sm:px-6 sm:text-[17px]"
 								onClick={() => {
 									setSelectedTemplate(state.core.template_key || "blue");
 									setDesignOpen(true);
 								}}
 							>
-								<Palette className="size-5" />
+								<Palette className="size-4 sm:size-5" />
 								디자인 선택
 							</Button>
 							<Button
 								variant="brand"
 								size="2xl"
-								className="px-8 font-semibold"
+								className="h-11 gap-1.5 px-2.5 text-sm font-semibold sm:h-14 sm:gap-2 sm:px-8 sm:text-[17px]"
 								disabled={saveMutation.isPending}
 								onClick={() => saveMutation.mutate(undefined)}
 							>
 								{saveMutation.isPending ? (
-									<Loader2 className="size-5 animate-spin" />
+									<Loader2 className="size-4 animate-spin sm:size-5" />
 								) : (
-									<Save className="size-5" />
+									<Save className="size-4 sm:size-5" />
 								)}
 								프로필 저장
 							</Button>
