@@ -129,6 +129,7 @@ type CollKey =
 
 const SELECT = {
 	degree: [
+		{ value: "highschool", label: "고등학교" },
 		{ value: "bachelor", label: "학사" },
 		{ value: "master", label: "석사" },
 		{ value: "doctorate", label: "박사" },
@@ -151,10 +152,6 @@ const SELECT = {
 		{ value: "corresponding", label: "교신저자" },
 	],
 } as const;
-
-/** 학력 학위 입력 순서(학사 → 석사 → 박사). "추가" 버튼은 다음 미입력 학위를 안내하고,
- *  박사까지 모두 입력되면 버튼을 숨긴다. */
-const DEGREE_ORDER: readonly string[] = SELECT.degree.map((d) => d.value);
 
 /** license_number 라벨 분기(§3.2): doctor=의사면허, specialist=전문의, subspecialist/certified=인증번호. */
 const LICENSE_NUMBER_LABEL: Record<string, string> = {
@@ -197,7 +194,7 @@ const COLLECTIONS: CollConfig[] = [
 				label: "학교명",
 				kind: "ref",
 				ref: { source: "medical_school", noField: "medical_school_no" },
-				placeholder: "의과대학을 검색하세요",
+				placeholder: "학교명을 검색하세요",
 			},
 			{ name: "major", label: "전공", placeholder: "예: 의학과" },
 			{ name: "start_year", label: "입학연도", kind: "year" },
@@ -429,6 +426,8 @@ type Row = {
 	id: string;
 	isNew: boolean;
 	deleted: boolean;
+	/** 새로 나타났을 때 아코디언을 자동으로 펼칠지(직접 "추가"=true, AI 일괄채움=false). */
+	autoExpand?: boolean;
 	values: Record<string, unknown>;
 };
 
@@ -452,6 +451,8 @@ type EditAction =
 			type: "addRow";
 			coll: CollKey | "affiliations";
 			values?: Record<string, unknown>;
+			/** false면 추가해도 아코디언을 펼치지 않는다(AI 일괄채움). 기본 true. */
+			expand?: boolean;
 	  }
 	| {
 			type: "updateRow";
@@ -524,6 +525,7 @@ function editReducer(state: EditState, action: EditAction): EditState {
 					id: genId(action.coll, rows),
 					isNew: true,
 					deleted: false,
+					autoExpand: action.expand !== false,
 					values: { is_public: true, ...action.values },
 				},
 			]);
@@ -1064,7 +1066,13 @@ function applyAnalysis(
 		for (const [origId, raw] of Object.entries(obj)) {
 			if (!selItems.has(`${coll}:${origId}`)) continue;
 			// 컬렉션은 항상 새 행으로 추가(append) — 기존 항목을 덮어쓰지 않는다(§6.1).
-			dispatch({ type: "addRow", coll, values: asObject(raw) ?? {} });
+			// AI 일괄채움은 아코디언을 펼치지 않고 접힌 요약 상태로 둔다(expand:false).
+			dispatch({
+				type: "addRow",
+				coll,
+				values: asObject(raw) ?? {},
+				expand: false,
+			});
 		}
 	}
 }
@@ -1508,7 +1516,7 @@ function DocumentAnalysisSection({
 		<SectionCard className="flex flex-col gap-5">
 			<SectionTitle>문서로 자동 채우기</SectionTitle>
 			<FieldDescription>
-				이력서·경력기술서·논문 목록 등을 올리면 AI가 분석해 채울 항목을 추천해
+				이력서·경력기술서·논문 등을 올리면 AI가 분석해 채울 항목을 추천해
 				드려요. 분석 후 원하는 항목만 골라 반영하고, 하단 “프로필 저장”으로
 				저장하면 됩니다.
 				<br />
@@ -2177,32 +2185,19 @@ function CollectionSection({
 	}
 	const seenIds = seenIdsRef.current;
 
-	// 렌더 중 상태 보정(공식 패턴): 새로 추가한(isNew) 행만 자동으로 펼쳐 바로
-	// 입력하게 한다. 서버에서 불러온 기존 행은 seenIds에 있어 접힌 채 유지된다.
-	const fresh: string[] = [];
+	// 렌더 중 상태 보정(공식 패턴): 새로 나타난(isNew) 행을 한 번만 처리한다. 직접 "추가"한
+	// 행(autoExpand)만 펼쳐 바로 입력하게 하고, AI 일괄채움 행은 펼치지 않고 접힌 요약으로
+	// 둔다. 서버에서 불러온 기존 행은 seenIds에 있어 그대로 접힌 채 유지된다.
+	const toOpen: string[] = [];
 	for (const r of visible) {
-		if (r.isNew && !seenIds.has(r.id)) fresh.push(r.id);
+		if (r.isNew && !seenIds.has(r.id)) {
+			seenIds.add(r.id);
+			if (r.autoExpand !== false) toOpen.push(r.id);
+		}
 	}
-	if (fresh.length > 0) {
-		for (const id of fresh) seenIds.add(id);
-		setOpenItems((prev) => [...prev, ...fresh]);
+	if (toOpen.length > 0) {
+		setOpenItems((prev) => [...prev, ...toOpen]);
 	}
-
-	// 학력은 학사 → 석사 → 박사 순서로 다음 미입력 학위만 추가하도록 안내하고,
-	// 박사까지 모두 입력되면 추가 버튼을 숨긴다. 그 외 컬렉션은 일반 추가.
-	const isEducation = config.key === "education";
-	const presentDegrees = new Set(
-		visible.map((r) => asString(r.values.degree_type)),
-	);
-	const nextDegree = isEducation
-		? DEGREE_ORDER.find((d) => !presentDegrees.has(d))
-		: undefined;
-	const showAdd = !isEducation || nextDegree !== undefined;
-	const addLabel =
-		isEducation && nextDegree
-			? `${optionLabel(SELECT.degree, nextDegree)} 추가`
-			: config.addLabel;
-	const addValues = nextDegree ? { degree_type: nextDegree } : undefined;
 
 	return (
 		<SectionCard className="flex flex-col gap-5">
@@ -2277,20 +2272,16 @@ function CollectionSection({
 					})}
 				</Accordion>
 			)}
-			{showAdd ? (
-				<Button
-					type="button"
-					variant="neutral-outline"
-					size="xl"
-					className="w-full"
-					onClick={() =>
-						dispatch({ type: "addRow", coll: config.key, values: addValues })
-					}
-				>
-					<Plus className="size-4" />
-					{addLabel}
-				</Button>
-			) : null}
+			<Button
+				type="button"
+				variant="neutral-outline"
+				size="xl"
+				className="w-full"
+				onClick={() => dispatch({ type: "addRow", coll: config.key })}
+			>
+				<Plus className="size-4" />
+				{config.addLabel}
+			</Button>
 		</SectionCard>
 	);
 }
@@ -2313,7 +2304,7 @@ const MEDICAL_SCHOOL_TYPE: Record<string, string> = {
 const REF_SOURCES: Record<RefSourceKey, RefSource> = {
 	medical_school: {
 		minLen: 1,
-		placeholder: "의과대학을 검색하세요",
+		placeholder: "학교명을 검색하세요",
 		search: (keyword) => searchMedicalSchools({ keyword, limit: 20 }),
 		describe: (i) =>
 			[
@@ -2461,13 +2452,16 @@ function AffiliationsSection({
 	}
 	const seenIds = seenIdsRef.current;
 
-	const fresh: string[] = [];
+	// 직접 "추가"한 행(autoExpand)만 펼치고, AI 일괄채움 행은 접힌 요약으로 둔다.
+	const toOpen: string[] = [];
 	for (const r of visible) {
-		if (r.isNew && !seenIds.has(r.id)) fresh.push(r.id);
+		if (r.isNew && !seenIds.has(r.id)) {
+			seenIds.add(r.id);
+			if (r.autoExpand !== false) toOpen.push(r.id);
+		}
 	}
-	if (fresh.length > 0) {
-		for (const id of fresh) seenIds.add(id);
-		setOpenItems((prev) => [...prev, ...fresh]);
+	if (toOpen.length > 0) {
+		setOpenItems((prev) => [...prev, ...toOpen]);
 	}
 
 	return (
