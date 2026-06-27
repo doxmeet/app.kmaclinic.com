@@ -90,6 +90,9 @@ const LOGIN_ID_RE = /^[a-z0-9]{4,20}$/;
 const HOLDING_POLL_MS = 2000;
 const HOLDING_POLL_MAX_MS = 60000;
 
+/** 첨부 파일 용량 상한(서버가 막기 전 클라이언트 사전 체크). */
+const MAX_UPLOAD_MB = 300;
+
 /** 온보딩 개요 쿼리 키 — 메시지/파일/충돌/commit이 바꾸는 상태(대시보드와 동일). */
 const OVERVIEW_KEY = ["onboarding", "overview"] as const;
 
@@ -537,6 +540,12 @@ function useOnboardingConversation(mode: OnboardingMode) {
 		if (!acceptExtensions.includes(ext)) {
 			toast.error(
 				`지원하지 않는 파일 형식입니다. ${fileAcceptLabel} 파일만 첨부할 수 있습니다.`,
+			);
+			return;
+		}
+		if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+			toast.error(
+				`파일이 너무 큽니다. 최대 ${MAX_UPLOAD_MB}MB까지 첨부할 수 있습니다.`,
 			);
 			return;
 		}

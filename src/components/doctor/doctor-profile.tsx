@@ -350,8 +350,8 @@ const ANALYZE_CORE_FIELDS: { key: string; label: string }[] = [
 /** 업로드 허용 확장자(문서·압축만, 이미지 제외). */
 const ANALYZE_ACCEPT = ".pdf,.doc,.docx,.hwp,.hwpx,.ppt,.pptx,.xls,.xlsx,.zip";
 
-/** 파일 용량 상한(§3 limits_mb 참고, 서버가 막기 전 클라이언트 사전 체크). */
-const MAX_FILE_MB = 20;
+/** 파일 용량 상한(서버가 막기 전 클라이언트 사전 체크). */
+const MAX_FILE_MB = 300;
 
 /** 분석 컬렉션(코어 외) — 표시/적용 대상. affiliations 포함. */
 const ANALYZE_COLL_KEYS: (CollKey | "affiliations")[] = [
