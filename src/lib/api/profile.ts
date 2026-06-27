@@ -88,15 +88,26 @@ export async function patchProfile(patch: ProfilePatch): Promise<ProfileDoc> {
 	return parse(res?.profile ?? res, ProfileDocSchema) as ProfileDoc;
 }
 
-// ── 문서 분석으로 자동 채우기(§8.11 analyze) ─────────────────────────────
+// ── 문서 분석으로 자동 채우기(§8.11 analyze, 비동기 잡 + 폴링) ───────────────
 //
 // 이력서·경력기술서·논문목록 등을 업로드하면 AI가 분석해 **프로필에 바로 적용 가능한
 // merge-patch(JSON)** 를 돌려준다. 이 호출은 **저장하지 않는다** — 돌려받은 patch를
 // 미리보기로 보여주고, 사용자가 고른 항목만 편집 상태에 반영한 뒤 별도로 PATCH 한다.
-//  - 파일은 먼저 `uploadFileToStorage`(presign)로 올려 file_url을 확보한다.
-//  - 단일=`{ file_url }`, 여러 개=`{ file_urls }`.
-//  - 동기 처리이며 보통 30~120초 걸린다 → per-call 타임아웃을 길게 둔다.
-//  - 에러: ERROR_400_FILE_URL_REQUIRED / ERROR_503_AI_DISABLED / 5xx(분석 실패).
+//
+// 처리는 **비동기 잡**이다(document-analysis-frontend-guide §1, 2026-06-27 전환). 동기
+// 호출은 파일이 크면 변환+추출에 분 단위가 걸려 게이트웨이/브라우저 타임아웃으로 결과가
+// 통째 버려졌다("Request failed due to a network error"). 이제는 잡으로 처리하고 결과를
+// 서버에 보존한다:
+//   ① 파일 업로드(presign) → file_url 확보(`uploadFilesToStorage`)
+//   ② POST /profile/me/analyze → { no, status:"pending" } **즉시** 반환
+//   ③ GET /profile/me/analyze/:no → done|failed 될 때까지 2~3초 폴링
+//   ④ done → result.patch 미리보기 → 선택 → PATCH /profile/me
+// 결과는 잡 번호로 보존되므로 새로고침/재진입해도 같은 no로 다시 받을 수 있다.
+//  - 본문: 단일=`{ file_url }`, 여러 개=`{ file_urls }`.
+//  - 에러(즉시): ERROR_400_FILE_URL_REQUIRED / ERROR_400_ZIP_MUST_BE_EXPANDED_CLIENT_SIDE /
+//    ERROR_415_UNSUPPORTED_FILE_TYPE / ERROR_503_AI_DISABLED.
+//  - 에러(폴링): ERROR_404_PROFILE_ANALYZE_JOB_NOT_FOUND.
+//  - 잡 실패: status:"failed" + error(사유 문자열).
 
 /** 분석 결과 — `patch`는 PATCH /profile/me에 그대로 넣을 수 있는 merge-patch. */
 export type ProfileAnalyzeResult = {
@@ -108,25 +119,110 @@ export type ProfileAnalyzeResult = {
 	raw?: unknown;
 };
 
-/** 업로드된 문서를 분석해 적용 가능한 patch를 받는다(저장 X). file_url 1개 이상 필요. */
-export async function analyzeProfileDocuments(
+/** 분석 잡 상태(문서 §4). */
+export type AnalyzeStatus = "pending" | "processing" | "done" | "failed";
+
+/** 분석 잡 — `done`이면 `result`, `failed`면 `error`가 채워진다. */
+export type ProfileAnalyzeJob = {
+	no: number;
+	status: AnalyzeStatus;
+	result?: ProfileAnalyzeResult | null;
+	error?: string | null;
+	created_at?: string;
+	updated_at?: string;
+};
+
+/** 분석 잡 생성(즉시 반환). file_url 1개 이상 필요. */
+export async function startProfileAnalyze(
 	fileUrls: string[],
-): Promise<ProfileAnalyzeResult> {
+): Promise<{ no: number; status: AnalyzeStatus }> {
 	const body =
 		fileUrls.length === 1 ? { file_url: fileUrls[0] } : { file_urls: fileUrls };
-	const res = await http.post<ProfileAnalyzeResult>(
+	const res = await http.post<{ no: number | string; status?: AnalyzeStatus }>(
 		"profile/me/analyze",
 		body,
-		{
-			// AI 분석은 길게 걸린다(문서 §4 보통 30~120초). 기본 60초 타임아웃을 늘린다.
-			timeout: 180_000,
-		},
 	);
+	return { no: Number(res?.no), status: res?.status ?? "pending" };
+}
+
+/** 분석 잡 상태 1회 조회(폴링 단위). */
+export async function getProfileAnalyzeJob(
+	no: number,
+): Promise<ProfileAnalyzeJob> {
+	const res = await http.get<ProfileAnalyzeJob>(`profile/me/analyze/${no}`);
 	return {
-		patch: (res?.patch ?? {}) as ProfilePatch,
-		counts: res?.counts,
-		raw: res?.raw,
+		no: Number(res?.no ?? no),
+		status: res?.status ?? "pending",
+		result: res?.result ?? null,
+		error: res?.error ?? null,
+		created_at: res?.created_at,
+		updated_at: res?.updated_at,
 	};
+}
+
+/**
+ * 잡이 `done`/`failed`가 될 때까지 폴링한다(문서 §3 폴링 규칙).
+ *  - 간격: 기본 2.5초.
+ *  - 지연 안내(`onSlow`): 기본 2분 경과 시 **1회** 호출 — 폴링은 멈추지 않는다(결과 보존).
+ *  - `signal`로 취소(언마운트 등). 취소 시 AbortError를 throw.
+ */
+export async function pollProfileAnalyze(
+	no: number,
+	opts: {
+		intervalMs?: number;
+		slowAfterMs?: number;
+		onTick?: (job: ProfileAnalyzeJob) => void;
+		onSlow?: () => void;
+		signal?: AbortSignal;
+	} = {},
+): Promise<ProfileAnalyzeJob> {
+	const interval = opts.intervalMs ?? 2500;
+	const slowAfter = opts.slowAfterMs ?? 120_000;
+	const startedAt = Date.now();
+	let slowFired = false;
+	for (;;) {
+		if (opts.signal?.aborted)
+			throw new DOMException("분석 폴링이 취소되었습니다.", "AbortError");
+		const job = await getProfileAnalyzeJob(no);
+		opts.onTick?.(job);
+		if (job.status === "done" || job.status === "failed") return job;
+		if (!slowFired && Date.now() - startedAt >= slowAfter) {
+			slowFired = true;
+			opts.onSlow?.();
+		}
+		await new Promise((r) => setTimeout(r, interval));
+	}
+}
+
+/**
+ * 업로드된 문서를 분석해 적용 가능한 patch를 받는다(저장 X). 잡 생성 → 폴링까지 묶은 헬퍼.
+ *  - `onJob`: 잡 번호 확보 시 호출(새로고침 대비 보관용).
+ *  - `onStatus`: 폴링마다 상태 전달(스피너 문구 갱신).
+ *  - `onSlow`: 2분 경과 지연 안내(1회).
+ *  - 잡이 실패하면 사유 메시지로 throw — 호출부에서 재시도 안내.
+ */
+export async function analyzeProfileDocuments(
+	fileUrls: string[],
+	opts: {
+		onJob?: (no: number) => void;
+		onStatus?: (status: AnalyzeStatus) => void;
+		onSlow?: () => void;
+		signal?: AbortSignal;
+	} = {},
+): Promise<ProfileAnalyzeResult> {
+	const { no } = await startProfileAnalyze(fileUrls);
+	opts.onJob?.(no);
+	const job = await pollProfileAnalyze(no, {
+		onTick: (j) => opts.onStatus?.(j.status),
+		onSlow: opts.onSlow,
+		signal: opts.signal,
+	});
+	if (job.status === "failed") {
+		throw new Error(
+			job.error || "문서 분석에 실패했습니다. 다시 시도해 주세요.",
+		);
+	}
+	return job.result ?? { patch: {} };
 }
 
 /** 완성도(%) + 섹션별 충족(§6.10.1 가중치). */

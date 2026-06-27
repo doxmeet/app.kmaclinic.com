@@ -30,6 +30,8 @@ const MESSAGES: Record<string, string> = {
 		"지원하지 않는 형식의 파일이 있습니다. pdf·doc·docx·hwp·ppt·xls 등 문서만 올려 주세요.",
 	ERROR_503_AI_DISABLED:
 		"자동 분석을 일시적으로 사용할 수 없습니다. 직접 입력해 주세요.",
+	ERROR_404_PROFILE_ANALYZE_JOB_NOT_FOUND:
+		"분석 작업을 찾을 수 없습니다. 문서를 다시 올려 분석해 주세요.",
 	ERROR_400_INVALID_LOGIN_ID:
 		"관리자 아이디는 영문 소문자·숫자 4~20자만 가능합니다.",
 	ERROR_400_ADMIN_PASSWORD_REQUIRED: "병원 관리자 비밀번호를 입력해 주세요.",
@@ -60,6 +62,11 @@ const MESSAGES: Record<string, string> = {
 		"공개 주소는 한 번 정하면 바꿀 수 없어요. 이미 설정되어 있습니다.",
 	// 운영자
 	ERROR_400_CANNOT_DEMOTE_SELF: "본인 권한은 강등할 수 없습니다.",
+	// 파일 업로드(presign / 중복제거)
+	ERROR_400_FILENAME_REQUIRED:
+		"업로드할 파일 이름이 없습니다. 파일을 다시 선택해 주세요.",
+	ERROR_400_INVALID_HASH:
+		"파일 확인 정보가 올바르지 않습니다. 파일을 다시 선택해 주세요.",
 	// 외부/인프라
 	ERROR_502_TOSS_UNREACHABLE:
 		"결제 서비스에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.",
