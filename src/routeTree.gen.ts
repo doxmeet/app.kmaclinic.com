@@ -23,6 +23,7 @@ import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as AdminPaymentsRouteImport } from './routes/admin.payments'
 import { Route as AdminNotificationsRouteImport } from './routes/admin.notifications'
 import { Route as AdminInstitutionsIndexRouteImport } from './routes/admin.institutions.index'
+import { Route as OauthGgkmaCallbackRouteImport } from './routes/oauth.ggkma.callback'
 import { Route as OauthDoxmeetCallbackRouteImport } from './routes/oauth.doxmeet.callback'
 import { Route as AdminInstitutionsIdRouteImport } from './routes/admin.institutions.$id'
 
@@ -96,6 +97,11 @@ const AdminInstitutionsIndexRoute = AdminInstitutionsIndexRouteImport.update({
   path: '/admin/institutions/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OauthGgkmaCallbackRoute = OauthGgkmaCallbackRouteImport.update({
+  id: '/oauth/ggkma/callback',
+  path: '/oauth/ggkma/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OauthDoxmeetCallbackRoute = OauthDoxmeetCallbackRouteImport.update({
   id: '/oauth/doxmeet/callback',
   path: '/oauth/doxmeet/callback',
@@ -123,6 +129,7 @@ export interface FileRoutesByFullPath {
   '/onboarding/': typeof OnboardingIndexRoute
   '/admin/institutions/$id': typeof AdminInstitutionsIdRoute
   '/oauth/doxmeet/callback': typeof OauthDoxmeetCallbackRoute
+  '/oauth/ggkma/callback': typeof OauthGgkmaCallbackRoute
   '/admin/institutions/': typeof AdminInstitutionsIndexRoute
 }
 export interface FileRoutesByTo {
@@ -141,6 +148,7 @@ export interface FileRoutesByTo {
   '/onboarding': typeof OnboardingIndexRoute
   '/admin/institutions/$id': typeof AdminInstitutionsIdRoute
   '/oauth/doxmeet/callback': typeof OauthDoxmeetCallbackRoute
+  '/oauth/ggkma/callback': typeof OauthGgkmaCallbackRoute
   '/admin/institutions': typeof AdminInstitutionsIndexRoute
 }
 export interface FileRoutesById {
@@ -160,6 +168,7 @@ export interface FileRoutesById {
   '/onboarding/': typeof OnboardingIndexRoute
   '/admin/institutions/$id': typeof AdminInstitutionsIdRoute
   '/oauth/doxmeet/callback': typeof OauthDoxmeetCallbackRoute
+  '/oauth/ggkma/callback': typeof OauthGgkmaCallbackRoute
   '/admin/institutions/': typeof AdminInstitutionsIndexRoute
 }
 export interface FileRouteTypes {
@@ -180,6 +189,7 @@ export interface FileRouteTypes {
     | '/onboarding/'
     | '/admin/institutions/$id'
     | '/oauth/doxmeet/callback'
+    | '/oauth/ggkma/callback'
     | '/admin/institutions/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -198,6 +208,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/admin/institutions/$id'
     | '/oauth/doxmeet/callback'
+    | '/oauth/ggkma/callback'
     | '/admin/institutions'
   id:
     | '__root__'
@@ -216,6 +227,7 @@ export interface FileRouteTypes {
     | '/onboarding/'
     | '/admin/institutions/$id'
     | '/oauth/doxmeet/callback'
+    | '/oauth/ggkma/callback'
     | '/admin/institutions/'
   fileRoutesById: FileRoutesById
 }
@@ -235,6 +247,7 @@ export interface RootRouteChildren {
   OnboardingIndexRoute: typeof OnboardingIndexRoute
   AdminInstitutionsIdRoute: typeof AdminInstitutionsIdRoute
   OauthDoxmeetCallbackRoute: typeof OauthDoxmeetCallbackRoute
+  OauthGgkmaCallbackRoute: typeof OauthGgkmaCallbackRoute
   AdminInstitutionsIndexRoute: typeof AdminInstitutionsIndexRoute
 }
 
@@ -338,6 +351,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminInstitutionsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/oauth/ggkma/callback': {
+      id: '/oauth/ggkma/callback'
+      path: '/oauth/ggkma/callback'
+      fullPath: '/oauth/ggkma/callback'
+      preLoaderRoute: typeof OauthGgkmaCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/oauth/doxmeet/callback': {
       id: '/oauth/doxmeet/callback'
       path: '/oauth/doxmeet/callback'
@@ -371,6 +391,7 @@ const rootRouteChildren: RootRouteChildren = {
   OnboardingIndexRoute: OnboardingIndexRoute,
   AdminInstitutionsIdRoute: AdminInstitutionsIdRoute,
   OauthDoxmeetCallbackRoute: OauthDoxmeetCallbackRoute,
+  OauthGgkmaCallbackRoute: OauthGgkmaCallbackRoute,
   AdminInstitutionsIndexRoute: AdminInstitutionsIndexRoute,
 }
 export const routeTree = rootRouteImport

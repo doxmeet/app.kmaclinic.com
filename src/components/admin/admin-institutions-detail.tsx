@@ -46,7 +46,6 @@ const STATUS_LABEL: Record<string, string> = {
 const BILLING_CYCLE_LABEL: Record<string, string> = {
 	monthly: "월간",
 	annual: "연간",
-	one_time: "일시",
 };
 
 const PAYMENT_STATUS_LABEL: Record<string, string> = {

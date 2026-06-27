@@ -4,15 +4,15 @@ import { useEffect } from "react";
 import { toast } from "sonner";
 import { AuthShell } from "#/components/common/auth-shell.tsx";
 import { Button } from "#/components/ui/button.tsx";
-import { startDoxmeetLogin } from "#/lib/auth/session.ts";
+import { startGgkmaLogin } from "#/lib/auth/session.ts";
 import { useSession } from "#/lib/auth/use-session.ts";
 
 export const Route = createFileRoute("/login")({ component: LoginPage });
 
 function handleLogin() {
-	if (!startDoxmeetLogin()) {
+	if (!startGgkmaLogin()) {
 		toast.info(
-			"Doxmeet OAuth 설정(authorize URL·client_id)이 아직 없습니다. 환경변수 설정 후 이용 가능합니다.",
+			"경기도의사회(GGKMA) OAuth 설정(authorize URL·client_id)이 아직 없습니다. 환경변수 설정 후 이용 가능합니다.",
 		);
 	}
 }

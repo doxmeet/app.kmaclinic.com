@@ -56,12 +56,11 @@ const STATUS_FILTERS = [
 	{ value: "expired", label: "만료" },
 ] as const;
 
-/** 결제 주기 필터(문서 §10.2 billing_cycle: monthly/annual/one_time). */
+/** 결제 주기 필터(billing_cycle: monthly/annual). */
 const BILLING_CYCLE_FILTERS = [
 	{ value: "", label: "전체" },
 	{ value: "monthly", label: "월간" },
 	{ value: "annual", label: "연간" },
-	{ value: "one_time", label: "일시" },
 ] as const;
 
 const STATUS_BADGE: Record<

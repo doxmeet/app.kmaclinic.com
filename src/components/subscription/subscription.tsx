@@ -44,10 +44,13 @@ import {
 	changeBillingCycle,
 	createSubscription,
 	getHospitalSubscription,
+	isTrialing,
 	listBilling,
 	listPayments,
 	type Payment,
+	refundWindowDays,
 	type Subscription,
+	trialDaysLeft,
 } from "#/lib/api/billing.ts";
 import { toastApiError } from "#/lib/api-error-message.ts";
 import { useSession } from "#/lib/auth/use-session.ts";
@@ -101,6 +104,59 @@ function formatCardNumber(value: string | null | undefined): string {
 	return compact.match(/.{1,4}/g)?.join("-") ?? compact;
 }
 
+/** 해지 전 환불창 추정 결과(가이드 §8.3). 최종 판정은 서버. */
+type RefundPreview = {
+	within: boolean;
+	amount: number | null;
+	trialing: boolean;
+};
+
+/**
+ * 환불창 추정 — 최근 '결제 완료'가 결제일 기준 월 7일 / 연 14일 이내면 전액 환불 대상으로 본다.
+ * 무료체험 중이거나 결제 이력이 없으면 환불 없음(현재 기간 종료까지 유지).
+ */
+function estimateRefund(
+	payments: Payment[],
+	cycle: BillingCycle | undefined,
+	trialing: boolean,
+): RefundPreview {
+	// 가장 '최근' 결제 완료 기준(목록 정렬을 가정하지 않고 paid_at 최댓값을 고른다).
+	const latestPaid = payments
+		.filter((p) => p.status === "paid" && p.paid_at)
+		.reduce<Payment | null>((latest, p) => {
+			if (!latest) return p;
+			return new Date(p.paid_at as string).getTime() >
+				new Date(latest.paid_at as string).getTime()
+				? p
+				: latest;
+		}, null);
+	const paidAt = latestPaid?.paid_at
+		? new Date(latestPaid.paid_at).getTime()
+		: NaN;
+	const within =
+		!trialing &&
+		Number.isFinite(paidAt) &&
+		Date.now() - paidAt <= refundWindowDays(cycle) * 86400000;
+	return { within, amount: latestPaid?.amount ?? null, trialing };
+}
+
+/** 해지 응답(refunded)에 따른 사용자 안내 메시지(가이드 §8.3). */
+function cancelResultMessage(res: {
+	refunded?: boolean;
+	refunded_amount?: number;
+	subscription?: Subscription | null;
+}): string {
+	if (res?.refunded) {
+		return res.refunded_amount
+			? `전액 환불 처리됐어요 (${money(res.refunded_amount)}). 서비스가 종료됐어요.`
+			: "전액 환불 처리됐어요. 서비스가 종료됐어요.";
+	}
+	const end = res?.subscription?.current_period_end ?? null;
+	return end
+		? `구독을 해지했어요. ${formatDate(end)}까지는 계속 이용할 수 있어요.`
+		: "구독을 해지했어요. 현재 결제 기간이 끝날 때까지는 계속 이용할 수 있어요.";
+}
+
 function SubscriptionManagePage({ hospitalNo }: { hospitalNo: number }) {
 	const qc = useQueryClient();
 	const { user, account } = useSession();
@@ -147,6 +203,10 @@ function SubscriptionManagePage({ hospitalNo }: { hospitalNo: number }) {
 	const payments: Payment[] = (paymentsData?.items ?? []).filter((p) =>
 		subNo == null ? true : p.subscription_no === subNo,
 	);
+	// 무료체험 중인지(가이드 §6.3). 해지/금액 카피 분기에 쓴다.
+	const trialing = subscription ? isTrialing(subscription) : false;
+	// 환불창 추정(최종 판정은 서버 — 가이드 §8.3).
+	const refundPreview = estimateRefund(payments, existingCycle, trialing);
 
 	const refetchAll = () => {
 		qc.invalidateQueries({
@@ -160,11 +220,10 @@ function SubscriptionManagePage({ hospitalNo }: { hospitalNo: number }) {
 	const cancelMutation = useMutation({
 		mutationFn: (reason: string) =>
 			cancelSubscription(subNo as number, reason || undefined),
-		onSuccess: () => {
+		onSuccess: (res) => {
 			setCancelOpen(false);
-			toast.success(
-				"구독을 해지했어요. 현재 결제 기간이 끝날 때까지는 계속 이용할 수 있어요.",
-			);
+			// 백엔드가 환불창 여부로 분기한 실제 결과(refunded)로 안내한다(가이드 §8.3).
+			toast.success(cancelResultMessage(res));
 			qc.invalidateQueries({
 				queryKey: ["subscription", "hospital", hospitalNo],
 			});
@@ -206,7 +265,7 @@ function SubscriptionManagePage({ hospitalNo }: { hospitalNo: number }) {
 	// 즉시 결제 아님 — 다음 결제일(next_billing_at)부터 적용되도록 pending_cycle에 예약된다.
 	// 현재 billing_cycle과 같은 값을 보내면 예약이 취소된다(문서 §2 동작 규칙).
 	const cycleMutation = useMutation({
-		mutationFn: (cycle: Exclude<BillingCycle, "one_time">) =>
+		mutationFn: (cycle: BillingCycle) =>
 			changeBillingCycle(subNo as number, cycle),
 		onSuccess: (res) => {
 			const pending = asBillingCycle(res?.subscription?.pending_cycle ?? null);
@@ -335,6 +394,7 @@ function SubscriptionManagePage({ hospitalNo }: { hospitalNo: number }) {
 					<>
 						<StatusSection
 							subscription={subscription}
+							trialing={trialing}
 							onChangeCard={() => startCardFlow("card")}
 							cardStarting={cardStarting}
 						/>
@@ -372,6 +432,7 @@ function SubscriptionManagePage({ hospitalNo }: { hospitalNo: number }) {
 				pending={cancelMutation.isPending}
 				hospitalName={hospitalName}
 				periodEnd={subscription?.current_period_end ?? null}
+				refundPreview={refundPreview}
 				onConfirm={(reason) => cancelMutation.mutate(reason)}
 			/>
 		</AppShell>
@@ -440,18 +501,27 @@ const paymentColumns: Array<DataTableColumn<Payment>> = [
 
 function StatusSection({
 	subscription,
+	trialing,
 	onChangeCard,
 	cardStarting,
 }: {
 	subscription: Subscription;
+	/** 무료체험 중인지(가이드 §6.3) — status가 아니라 trial_end_at 기준. */
+	trialing: boolean;
 	onChangeCard: () => void;
 	cardStarting: boolean;
 }) {
 	const status = subscription.status ?? "";
 	const meta = SUB_STATUS[status];
 	const isPastDue = status === "past_due";
+	const daysLeft = trialDaysLeft(subscription);
 
-	const statusBadge = meta ? (
+	// 체험 중이면 status(active)보다 "무료체험 중 · D-N"을 우선 표시(가이드 §6.3).
+	const statusBadge = trialing ? (
+		<Badge size="lg" variant="success" className="rounded-full">
+			무료체험 중{daysLeft > 0 ? ` · D-${daysLeft}` : ""}
+		</Badge>
+	) : meta ? (
 		<Badge size="lg" variant={meta.variant} className="rounded-full">
 			{meta.label}
 		</Badge>
@@ -461,10 +531,9 @@ function StatusSection({
 		</Badge>
 	);
 
-	// 결제 주기별 금액 접미사/라벨(monthly/annual/one_time). 알 수 없으면 월간으로 표시.
+	// 결제 주기별 금액 접미사(월/연). 알 수 없으면 월간으로 표시.
 	const cycle = asBillingCycle(subscription.billing_cycle);
-	const amountSuffix =
-		cycle === "annual" ? " / 년" : cycle === "one_time" ? " · 단건" : " / 월";
+	const amountSuffix = cycle === "annual" ? " / 년" : " / 월";
 
 	const rows: Array<{ label: string; value: ReactNode }> = [
 		{ label: "상태", value: statusBadge },
@@ -481,7 +550,11 @@ function StatusSection({
 		});
 	}
 	rows.push(
-		{ label: "금액", value: `${money(subscription.amount)}${amountSuffix}` },
+		{
+			// 체험 중엔 금액이 '첫 결제(오픈특가) 예정액', 첫 결제 후엔 정가(가이드 §6.1).
+			label: trialing ? "첫 결제 금액" : "금액",
+			value: `${money(subscription.amount)}${amountSuffix}`,
+		},
 		{
 			label: "이용 기간",
 			value: `${formatDate(subscription.current_period_start)} ~ ${formatDate(
@@ -494,18 +567,28 @@ function StatusSection({
 			label: "이용 종료 예정",
 			value: formatDate(subscription.current_period_end),
 		});
-	} else if (cycle === "one_time") {
-		// 단건 결제는 자동 갱신이 없다(기간 만료 시 expired).
-		rows.push({ label: "자동 갱신", value: "없음 (기간 만료 시 종료)" });
 	} else {
 		rows.push({
-			label: "다음 결제 예정",
+			label: trialing ? "첫 결제 예정" : "다음 결제 예정",
 			value: formatDate(subscription.next_billing_at),
 		});
 	}
 
 	return (
 		<CardShell title="구독 상태">
+			{trialing ? (
+				<div className="border-b border-line-soft p-5 sm:p-8">
+					<InfoCallout tone="info">
+						<p className="text-sm">
+							지금은 <span className="font-semibold text-ink">무료체험 중</span>
+							이에요. {formatDate(subscription.trial_end_at)}까지 무료로 모든
+							기능을 이용하고, 그 뒤 첫 결제({money(subscription.amount)})가
+							자동으로 진행돼요.
+						</p>
+					</InfoCallout>
+				</div>
+			) : null}
+
 			{isPastDue ? (
 				<div className="border-b border-line-soft p-5 sm:p-8">
 					<InfoCallout tone="warning">
@@ -543,13 +626,9 @@ function StatusSection({
 }
 
 /**
- * 결제 방식(월↔연) 변경 — 즉시 결제가 아니라 다음 결제일부터 적용되는 "예약"이다.
- * 변경 불가 구독(one_time·해지·만료·갱신 없음)이면 섹션 자체를 숨긴다(문서 §4).
- */
-/**
- * 결제 방식(월↔연) 변경 — 결제 페이지와 동일한 선택 카드(CycleSelect)로 고르고
- * 하단 풀폭 버튼으로 적용한다. 즉시 결제가 아니라 다음 결제일부터 적용되는 "예약"(문서 §1·§2).
- * 변경 불가 구독(one_time·해지·만료·갱신 없음)이면 섹션 자체를 숨긴다(문서 §4).
+ * 결제 방식(월↔연) 변경 — 가입 결제와 동일한 선택 카드(CycleSelect, 정가 표기)로 고르고
+ * 하단 풀폭 버튼으로 적용한다. 즉시 결제가 아니라 다음 결제일부터 적용되는 "예약"(가이드 §1·§7).
+ * 변경 불가 구독(해지·만료·갱신 없음)이면 섹션 자체를 숨긴다.
  */
 function CycleSection({
 	subscription,
@@ -557,23 +636,17 @@ function CycleSection({
 	pending,
 }: {
 	subscription: Subscription;
-	onApply: (cycle: Exclude<BillingCycle, "one_time">) => void;
+	onApply: (cycle: BillingCycle) => void;
 	pending: boolean;
 }) {
 	const cycle = asBillingCycle(subscription.billing_cycle);
 	const pendingCycle = asBillingCycle(subscription.pending_cycle);
 	// 다음 결제일에 적용될 예정 주기 = 예약이 있으면 예약값, 없으면 현재값(monthly|annual로 정규화).
-	const effective: Exclude<BillingCycle, "one_time"> =
-		pendingCycle === "annual" || pendingCycle === "monthly"
-			? pendingCycle
-			: cycle === "annual"
-				? "annual"
-				: "monthly";
-	const [selected, setSelected] =
-		useState<Exclude<BillingCycle, "one_time">>(effective);
+	const effective: BillingCycle = pendingCycle ?? cycle ?? "monthly";
+	const [selected, setSelected] = useState<BillingCycle>(effective);
 
 	// 변경 불가 구독이면 숨김. hooks 호출 이후에 분기(rules-of-hooks).
-	if (!cycle || cycle === "one_time" || !canChangeCycle(subscription)) {
+	if (!cycle || !canChangeCycle(subscription)) {
 		return null;
 	}
 
@@ -600,11 +673,12 @@ function CycleSection({
 					</InfoCallout>
 				) : null}
 
-				{/* 결제 페이지와 동일한 선택 카드(월간·연간만 노출) */}
+				{/* 가입 결제와 동일한 선택 카드. 주기 변경은 갱신가(정가) 기준 — pricing="renewal". */}
 				<CycleSelect
 					value={selected}
-					onChange={(c) => setSelected(c as Exclude<BillingCycle, "one_time">)}
+					onChange={(c) => setSelected(c)}
 					cycles={["monthly", "annual"]}
+					pricing="renewal"
 					disabled={pending}
 				/>
 
@@ -799,6 +873,7 @@ function CancelDialog({
 	pending,
 	hospitalName,
 	periodEnd,
+	refundPreview,
 	onConfirm,
 }: {
 	open: boolean;
@@ -806,22 +881,40 @@ function CancelDialog({
 	pending: boolean;
 	hospitalName: string;
 	periodEnd: string | null;
+	/** 환불창 추정(가이드 §8.3) — 안내 문구만 분기. 최종 환불 여부는 해지 응답으로 확정. */
+	refundPreview: RefundPreview;
 	onConfirm: (reason: string) => void;
 }) {
 	const [reason, setReason] = useState("");
 	const reasonId = useId();
+
+	// 환불창 이내 추정이면 "전액 환불 + 즉시 종료", 그 외(체험/환불창 밖)면 "기간 종료까지 유지".
+	const description = refundPreview.within ? (
+		<>
+			지금 해지하면{" "}
+			<span className="font-semibold text-ink">
+				{refundPreview.amount ? `${money(refundPreview.amount)} ` : ""}전액 환불
+			</span>
+			되고 {hospitalName} 서비스가 즉시 종료돼요.
+		</>
+	) : (
+		<>
+			{hospitalName}의 정기 결제가 중단됩니다.
+			{periodEnd
+				? ` ${formatDate(periodEnd)}까지는 계속 이용할 수 있어요.`
+				: " 현재 결제 기간 종료까지는 계속 이용할 수 있어요."}
+			{refundPreview.trialing
+				? " (무료체험 기간이라 환불 대상이 아니에요.)"
+				: " (이미 결제된 이용 기간은 환불되지 않아요.)"}
+		</>
+	);
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className="sm:max-w-md">
 				<DialogHeader>
 					<DialogTitle>구독을 해지할까요?</DialogTitle>
-					<DialogDescription>
-						{hospitalName}의 정기 결제가 중단됩니다.
-						{periodEnd
-							? ` ${formatDate(periodEnd)}까지는 계속 이용할 수 있어요.`
-							: " 현재 결제 기간 종료까지는 계속 이용할 수 있어요."}
-					</DialogDescription>
+					<DialogDescription>{description}</DialogDescription>
 				</DialogHeader>
 
 				<DialogBody>
