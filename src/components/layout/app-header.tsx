@@ -60,7 +60,7 @@ function AppHeader({
 			)}
 		>
 			<div className="mx-auto flex h-full w-full max-w-[1120px] items-center justify-between gap-4 px-4 sm:px-6">
-				<BrandLogo label="K CLINIC" to="/" />
+				<BrandLogo label="KMA CLINIC" to="/" />
 
 				{nav?.length ? (
 					<nav className="hidden items-center gap-7 text-[15px] font-medium text-body md:flex">

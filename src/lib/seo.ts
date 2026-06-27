@@ -5,7 +5,7 @@
  * 각 라우트의 `head()` 에서 `seo({ title, description })` 를 호출해 덮어쓰면 된다.
  *
  *   export const Route = createFileRoute("/foo")({
- *     head: () => ({ meta: seo({ title: "특정 페이지 | K CLINIC" }) }),
+ *     head: () => ({ meta: seo({ title: "특정 페이지 | KMA CLINIC" }) }),
  *   });
  */
 
@@ -13,7 +13,7 @@
 export const SITE_URL = "https://app.kmaclinic.com";
 
 /** 사이트 제목(브랜드명). */
-const SITE_NAME = "K CLINIC";
+const SITE_NAME = "KMA CLINIC";
 
 /** 기본 메타 설명. 검색 결과/소셜 미리보기에 노출된다. */
 const DEFAULT_DESCRIPTION =
@@ -21,13 +21,13 @@ const DEFAULT_DESCRIPTION =
 
 /** 기본 키워드. */
 const DEFAULT_KEYWORDS =
-	"K CLINIC, 케이클리닉, 의사 프로필, 병원 홈페이지, 의료진, 병의원, 의사 소개, 병원 제작, 진료과, 의사 면허 인증, 닥스밋, doxmeet";
+	"KMA CLINIC, 케이클리닉, 의사 프로필, 병원 홈페이지, 의료진, 병의원, 의사 소개, 병원 제작, 진료과, 의사 면허 인증";
 
 /** 기본 OG 이미지(절대 URL). */
 const OG_IMAGE = `${SITE_URL}/og-image.png`;
 
 type SeoArgs = {
-	/** 페이지 제목. 미지정 시 사이트명(K CLINIC)을 사용한다. */
+	/** 페이지 제목. 미지정 시 사이트명(KMA CLINIC)을 사용한다. */
 	title?: string;
 	/** 메타 설명. 미지정 시 기본 설명을 사용한다. */
 	description?: string;

@@ -168,24 +168,6 @@ export function OnboardingDashboard({
 											</span>
 										</span>
 									</button>
-									<button
-										type="button"
-										onClick={() => {
-											setMenuOpen(false);
-											navigate({ to: "/onboarding/direct" });
-										}}
-										className="flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-brand-50"
-									>
-										<PenLine className="mt-0.5 size-5 shrink-0 text-brand" />
-										<span className="flex flex-col">
-											<span className="text-sm font-semibold text-ink">
-												병원 직접 입력
-											</span>
-											<span className="text-xs text-body-soft">
-												병원 정보를 한 폼에 입력
-											</span>
-										</span>
-									</button>
 									<div className="my-1.5 h-px bg-line" />
 									<p className="px-3 pt-0.5 pb-1 text-xs font-medium text-muted-fg">
 										의사 프로필
@@ -342,8 +324,9 @@ function EmptyStateCard({
 								: "의사 프로필을 어떻게 만들까요?"}
 						</p>
 						<p className="text-sm text-body-soft">
-							질문에 답하며 만드는 대화형, 한 폼에 입력하는 직접 입력 중
-							선택하세요.
+							{pick === "hospital"
+								? "질문에 답하며 차근차근 만들어 드려요."
+								: "질문에 답하며 만드는 대화형, 한 폼에 입력하는 직접 입력 중 선택하세요."}
 						</p>
 					</div>
 					<div className="flex flex-col flex-wrap justify-center gap-2 sm:flex-row">
@@ -355,18 +338,16 @@ function EmptyStateCard({
 							<MessageSquareText className="size-5" />
 							대화형으로 만들기
 						</Button>
-						<Button
-							variant="neutral-outline"
-							size="2xl"
-							onClick={() =>
-								pick === "hospital"
-									? navigate({ to: "/onboarding/direct" })
-									: navigate({ to: "/doctor/profile" })
-							}
-						>
-							<PenLine className="size-5" />
-							직접 입력
-						</Button>
+						{pick === "profile" && (
+							<Button
+								variant="neutral-outline"
+								size="2xl"
+								onClick={() => navigate({ to: "/doctor/profile" })}
+							>
+								<PenLine className="size-5" />
+								직접 입력
+							</Button>
+						)}
 					</div>
 					<button
 						type="button"

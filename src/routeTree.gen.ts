@@ -16,7 +16,6 @@ import { Route as AccountRouteImport } from './routes/account'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as OnboardingIndexRouteImport } from './routes/onboarding.index'
 import { Route as SubscriptionHospitalNoRouteImport } from './routes/subscription.$hospitalNo'
-import { Route as OnboardingDirectRouteImport } from './routes/onboarding.direct'
 import { Route as ErrorPaymentFailedRouteImport } from './routes/error.payment-failed'
 import { Route as DoctorProfileRouteImport } from './routes/doctor.profile'
 import { Route as BillingCallbackRouteImport } from './routes/billing.callback'
@@ -60,11 +59,6 @@ const OnboardingIndexRoute = OnboardingIndexRouteImport.update({
 const SubscriptionHospitalNoRoute = SubscriptionHospitalNoRouteImport.update({
   id: '/subscription/$hospitalNo',
   path: '/subscription/$hospitalNo',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const OnboardingDirectRoute = OnboardingDirectRouteImport.update({
-  id: '/onboarding/direct',
-  path: '/onboarding/direct',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ErrorPaymentFailedRoute = ErrorPaymentFailedRouteImport.update({
@@ -125,7 +119,6 @@ export interface FileRoutesByFullPath {
   '/billing/callback': typeof BillingCallbackRoute
   '/doctor/profile': typeof DoctorProfileRoute
   '/error/payment-failed': typeof ErrorPaymentFailedRoute
-  '/onboarding/direct': typeof OnboardingDirectRoute
   '/subscription/$hospitalNo': typeof SubscriptionHospitalNoRoute
   '/onboarding/': typeof OnboardingIndexRoute
   '/admin/institutions/$id': typeof AdminInstitutionsIdRoute
@@ -144,7 +137,6 @@ export interface FileRoutesByTo {
   '/billing/callback': typeof BillingCallbackRoute
   '/doctor/profile': typeof DoctorProfileRoute
   '/error/payment-failed': typeof ErrorPaymentFailedRoute
-  '/onboarding/direct': typeof OnboardingDirectRoute
   '/subscription/$hospitalNo': typeof SubscriptionHospitalNoRoute
   '/onboarding': typeof OnboardingIndexRoute
   '/admin/institutions/$id': typeof AdminInstitutionsIdRoute
@@ -164,7 +156,6 @@ export interface FileRoutesById {
   '/billing/callback': typeof BillingCallbackRoute
   '/doctor/profile': typeof DoctorProfileRoute
   '/error/payment-failed': typeof ErrorPaymentFailedRoute
-  '/onboarding/direct': typeof OnboardingDirectRoute
   '/subscription/$hospitalNo': typeof SubscriptionHospitalNoRoute
   '/onboarding/': typeof OnboardingIndexRoute
   '/admin/institutions/$id': typeof AdminInstitutionsIdRoute
@@ -185,7 +176,6 @@ export interface FileRouteTypes {
     | '/billing/callback'
     | '/doctor/profile'
     | '/error/payment-failed'
-    | '/onboarding/direct'
     | '/subscription/$hospitalNo'
     | '/onboarding/'
     | '/admin/institutions/$id'
@@ -204,7 +194,6 @@ export interface FileRouteTypes {
     | '/billing/callback'
     | '/doctor/profile'
     | '/error/payment-failed'
-    | '/onboarding/direct'
     | '/subscription/$hospitalNo'
     | '/onboarding'
     | '/admin/institutions/$id'
@@ -223,7 +212,6 @@ export interface FileRouteTypes {
     | '/billing/callback'
     | '/doctor/profile'
     | '/error/payment-failed'
-    | '/onboarding/direct'
     | '/subscription/$hospitalNo'
     | '/onboarding/'
     | '/admin/institutions/$id'
@@ -243,7 +231,6 @@ export interface RootRouteChildren {
   BillingCallbackRoute: typeof BillingCallbackRoute
   DoctorProfileRoute: typeof DoctorProfileRoute
   ErrorPaymentFailedRoute: typeof ErrorPaymentFailedRoute
-  OnboardingDirectRoute: typeof OnboardingDirectRoute
   SubscriptionHospitalNoRoute: typeof SubscriptionHospitalNoRoute
   OnboardingIndexRoute: typeof OnboardingIndexRoute
   AdminInstitutionsIdRoute: typeof AdminInstitutionsIdRoute
@@ -300,13 +287,6 @@ declare module '@tanstack/react-router' {
       path: '/subscription/$hospitalNo'
       fullPath: '/subscription/$hospitalNo'
       preLoaderRoute: typeof SubscriptionHospitalNoRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/onboarding/direct': {
-      id: '/onboarding/direct'
-      path: '/onboarding/direct'
-      fullPath: '/onboarding/direct'
-      preLoaderRoute: typeof OnboardingDirectRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/error/payment-failed': {
@@ -387,7 +367,6 @@ const rootRouteChildren: RootRouteChildren = {
   BillingCallbackRoute: BillingCallbackRoute,
   DoctorProfileRoute: DoctorProfileRoute,
   ErrorPaymentFailedRoute: ErrorPaymentFailedRoute,
-  OnboardingDirectRoute: OnboardingDirectRoute,
   SubscriptionHospitalNoRoute: SubscriptionHospitalNoRoute,
   OnboardingIndexRoute: OnboardingIndexRoute,
   AdminInstitutionsIdRoute: AdminInstitutionsIdRoute,

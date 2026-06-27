@@ -11,7 +11,7 @@ import type * as React from "react";
 import { cn } from "#/lib/utils.ts";
 
 /**
- * AdminShell — 닥스밋 운영자 관리시스템 레이아웃.
+ * AdminShell — KMA CLINIC 운영자 관리시스템 레이아웃.
  * 좌측 다크 사이드바(고정 256px) + 흰 본문 + 하단 카피라이트.
  * 관리자 화면(요양기관 현황/상세)에서 사용.
  */
@@ -60,7 +60,7 @@ function AdminSidebar({ active }: { active: NavKey }) {
 					<Building2 className="size-[18px]" />
 				</span>
 				<div className="flex flex-col">
-					<span className="text-sm text-white">닥스밋</span>
+					<span className="text-sm text-white">KMA CLINIC</span>
 					<span className="text-xs text-[#93c5fd]">운영자 관리시스템</span>
 				</div>
 			</div>

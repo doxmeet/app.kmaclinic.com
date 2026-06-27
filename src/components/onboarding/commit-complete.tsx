@@ -26,10 +26,10 @@ import { useSession } from "#/lib/auth/use-session.ts";
 import { startCardBillingAuth } from "#/lib/toss.ts";
 
 /**
- * 온보딩/직접입력 commit 결과 화면.
+ * 온보딩 commit 결과 화면.
  * - 병원(payment.required) → toss 카드 등록 결제 단계
  * - 프로필만 → 무료 완료 축하
- * 대화형 온보딩(`/onboarding`)과 일괄 입력(`/onboarding/direct`)이 공유한다.
+ * 대화형 온보딩(`/onboarding`)에서 사용한다.
  */
 export function CommitComplete({
 	result,

@@ -13,17 +13,15 @@ function SiteFooter({ className }: { className?: string }) {
 		<footer className={cn("border-t border-line bg-surface", className)}>
 			<div className="mx-auto flex w-full max-w-[1120px] flex-col gap-6 px-4 py-10 sm:px-6 md:flex-row md:items-start md:justify-between">
 				<div className="flex flex-col gap-3">
-					<BrandLogo label="K CLINIC" to="/" />
+					<BrandLogo label="KMA CLINIC" to="/" />
 					<p className="max-w-[320px] text-sm leading-relaxed text-muted-fg">
 						의료진을 위한 프로필·병원 홈페이지 자동 생성 서비스.
-						<br />
-						닥스밋 계정으로 간편하게 시작하세요.
 					</p>
 				</div>
 			</div>
 			<div className="border-t border-line">
 				<p className="mx-auto w-full max-w-[1120px] px-4 py-4 text-sm text-muted-fg sm:px-6">
-					COPYRIGHT {COPYRIGHT_YEAR} ALL RIGHTS RESERVED BY 닥스밋
+					COPYRIGHT {COPYRIGHT_YEAR} ALL RIGHTS RESERVED BY KMA CLINIC
 				</p>
 			</div>
 		</footer>

@@ -877,13 +877,15 @@ function ProgressHeader({
 				<span className="font-semibold text-ink">대화로 작성하기</span>
 				<div className="flex items-center gap-3">
 					<span className="text-body-soft">{progress}% 완료</span>
-					{/* 한 번에 입력하기 — 병원은 one-shot 직접 입력 폼, 프로필은 직접 편집기(프로필용 direct 폼 없음). */}
-					<Link
-						to={isClinicOwner ? "/onboarding/direct" : "/doctor/profile"}
-						className="text-xs font-medium text-brand transition-colors hover:underline"
-					>
-						한 번에 입력하기
-					</Link>
+					{/* 한 번에 입력하기 — 프로필만 직접 편집기로 이동(병원 직접 입력 폼은 제거됨). */}
+					{!isClinicOwner && (
+						<Link
+							to="/doctor/profile"
+							className="text-xs font-medium text-brand transition-colors hover:underline"
+						>
+							한 번에 입력하기
+						</Link>
+					)}
 				</div>
 			</div>
 			<div className="h-2 w-full overflow-hidden rounded-full bg-line-soft">
