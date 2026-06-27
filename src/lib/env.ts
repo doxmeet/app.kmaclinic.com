@@ -1,18 +1,30 @@
 import { z } from "zod";
 
 /**
- * Runtime-validated environment variables.
+ * 런타임 검증 환경변수. `VITE_` 접두만 클라이언트에 노출.
+ *   - pnpm dev (mode localhost) -> .env.localhost  (api-local)
+ *   - pnpm build:dev / start:dev -> .env.dev        (api-dev)
+ *   - pnpm build / start         -> .env.production (api)
  *
- * Only `VITE_`-prefixed vars are exposed to the client by Vite. The actual value
- * comes from the `.env.[mode]` file selected by the run mode:
- *   - `pnpm dev`                     -> mode "local"      -> .env.local      (api-local)
- *   - `pnpm build:dev` / `start:dev` -> mode "dev"        -> .env.dev        (api-dev)
- *   - `pnpm build` / `start`         -> mode "production" -> .env.production (api)
- *
- * Override locally without committing via `.env.local` / `.env.development.local`.
+ * Doxmeet OAuth 시작에 필요한 값은 백엔드에서 추후 전달 → 지금은 선택(미설정 시 로그인 시작 stub).
  */
 const schema = z.object({
 	VITE_API_URL: z.url(),
+	// Doxmeet OAuth (로그인 시작용, 선택)
+	VITE_DOXMEET_AUTHORIZE_URL: z.string().optional(),
+	VITE_DOXMEET_CLIENT_ID: z.string().optional(),
+	VITE_DOXMEET_SCOPE: z.string().optional(),
+	VITE_OAUTH_REDIRECT_URI: z.string().optional(),
+	// 결제 위젯(toss) — payment.toss_client_key가 응답으로 오므로 보통 불필요(선택 폴백)
+	VITE_TOSS_CLIENT_KEY: z.string().optional(),
+	// 병원 홈페이지 실시간 미리보기 앱(preview.kmaclinic.com)의 origin.
+	// iframe src = origin 루트(`/preview` 경로 없음) + postMessage targetOrigin(preview-integration.md §2).
+	// 미리보기 앱은 dev가 없어 모든 환경이 prod(preview.kmaclinic.com)를 쓴다. 미설정 시 폴백.
+	VITE_PREVIEW_ORIGIN: z.url().optional(),
+	// 의사 프로필 실시간 미리보기 앱(preview.kmadoc.com)의 origin.
+	// iframe src = origin 루트(`/preview` 경로 없음) + postMessage targetOrigin(editor-preview-integration.md §4).
+	// 미리보기 앱은 dev가 없어 모든 환경이 prod(preview.kmadoc.com)를 쓴다. 미설정 시 폴백.
+	VITE_PROFILE_PREVIEW_ORIGIN: z.url().optional(),
 });
 
 const parsed = schema.safeParse(import.meta.env);

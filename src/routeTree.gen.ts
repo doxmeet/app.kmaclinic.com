@@ -9,38 +9,265 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as FindPasswordRouteImport } from './routes/find-password'
+import { Route as FindIdRouteImport } from './routes/find-id'
+import { Route as AccountRouteImport } from './routes/account'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as OnboardingIndexRouteImport } from './routes/onboarding.index'
+import { Route as SubscriptionHospitalNoRouteImport } from './routes/subscription.$hospitalNo'
+import { Route as ErrorPaymentFailedRouteImport } from './routes/error.payment-failed'
+import { Route as DoctorProfileRouteImport } from './routes/doctor.profile'
+import { Route as BillingCallbackRouteImport } from './routes/billing.callback'
+import { Route as AdminUsersRouteImport } from './routes/admin.users'
+import { Route as AdminPaymentsRouteImport } from './routes/admin.payments'
+import { Route as AdminNotificationsRouteImport } from './routes/admin.notifications'
+import { Route as AdminInstitutionsIndexRouteImport } from './routes/admin.institutions.index'
+import { Route as OauthDoxmeetCallbackRouteImport } from './routes/oauth.doxmeet.callback'
+import { Route as AdminInstitutionsIdRouteImport } from './routes/admin.institutions.$id'
 
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FindPasswordRoute = FindPasswordRouteImport.update({
+  id: '/find-password',
+  path: '/find-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FindIdRoute = FindIdRouteImport.update({
+  id: '/find-id',
+  path: '/find-id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AccountRoute = AccountRouteImport.update({
+  id: '/account',
+  path: '/account',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OnboardingIndexRoute = OnboardingIndexRouteImport.update({
+  id: '/onboarding/',
+  path: '/onboarding/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SubscriptionHospitalNoRoute = SubscriptionHospitalNoRouteImport.update({
+  id: '/subscription/$hospitalNo',
+  path: '/subscription/$hospitalNo',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ErrorPaymentFailedRoute = ErrorPaymentFailedRouteImport.update({
+  id: '/error/payment-failed',
+  path: '/error/payment-failed',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DoctorProfileRoute = DoctorProfileRouteImport.update({
+  id: '/doctor/profile',
+  path: '/doctor/profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BillingCallbackRoute = BillingCallbackRouteImport.update({
+  id: '/billing/callback',
+  path: '/billing/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminUsersRoute = AdminUsersRouteImport.update({
+  id: '/admin/users',
+  path: '/admin/users',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminPaymentsRoute = AdminPaymentsRouteImport.update({
+  id: '/admin/payments',
+  path: '/admin/payments',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminNotificationsRoute = AdminNotificationsRouteImport.update({
+  id: '/admin/notifications',
+  path: '/admin/notifications',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminInstitutionsIndexRoute = AdminInstitutionsIndexRouteImport.update({
+  id: '/admin/institutions/',
+  path: '/admin/institutions/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OauthDoxmeetCallbackRoute = OauthDoxmeetCallbackRouteImport.update({
+  id: '/oauth/doxmeet/callback',
+  path: '/oauth/doxmeet/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminInstitutionsIdRoute = AdminInstitutionsIdRouteImport.update({
+  id: '/admin/institutions/$id',
+  path: '/admin/institutions/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/account': typeof AccountRoute
+  '/find-id': typeof FindIdRoute
+  '/find-password': typeof FindPasswordRoute
+  '/login': typeof LoginRoute
+  '/admin/notifications': typeof AdminNotificationsRoute
+  '/admin/payments': typeof AdminPaymentsRoute
+  '/admin/users': typeof AdminUsersRoute
+  '/billing/callback': typeof BillingCallbackRoute
+  '/doctor/profile': typeof DoctorProfileRoute
+  '/error/payment-failed': typeof ErrorPaymentFailedRoute
+  '/subscription/$hospitalNo': typeof SubscriptionHospitalNoRoute
+  '/onboarding/': typeof OnboardingIndexRoute
+  '/admin/institutions/$id': typeof AdminInstitutionsIdRoute
+  '/oauth/doxmeet/callback': typeof OauthDoxmeetCallbackRoute
+  '/admin/institutions/': typeof AdminInstitutionsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/account': typeof AccountRoute
+  '/find-id': typeof FindIdRoute
+  '/find-password': typeof FindPasswordRoute
+  '/login': typeof LoginRoute
+  '/admin/notifications': typeof AdminNotificationsRoute
+  '/admin/payments': typeof AdminPaymentsRoute
+  '/admin/users': typeof AdminUsersRoute
+  '/billing/callback': typeof BillingCallbackRoute
+  '/doctor/profile': typeof DoctorProfileRoute
+  '/error/payment-failed': typeof ErrorPaymentFailedRoute
+  '/subscription/$hospitalNo': typeof SubscriptionHospitalNoRoute
+  '/onboarding': typeof OnboardingIndexRoute
+  '/admin/institutions/$id': typeof AdminInstitutionsIdRoute
+  '/oauth/doxmeet/callback': typeof OauthDoxmeetCallbackRoute
+  '/admin/institutions': typeof AdminInstitutionsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/account': typeof AccountRoute
+  '/find-id': typeof FindIdRoute
+  '/find-password': typeof FindPasswordRoute
+  '/login': typeof LoginRoute
+  '/admin/notifications': typeof AdminNotificationsRoute
+  '/admin/payments': typeof AdminPaymentsRoute
+  '/admin/users': typeof AdminUsersRoute
+  '/billing/callback': typeof BillingCallbackRoute
+  '/doctor/profile': typeof DoctorProfileRoute
+  '/error/payment-failed': typeof ErrorPaymentFailedRoute
+  '/subscription/$hospitalNo': typeof SubscriptionHospitalNoRoute
+  '/onboarding/': typeof OnboardingIndexRoute
+  '/admin/institutions/$id': typeof AdminInstitutionsIdRoute
+  '/oauth/doxmeet/callback': typeof OauthDoxmeetCallbackRoute
+  '/admin/institutions/': typeof AdminInstitutionsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/account'
+    | '/find-id'
+    | '/find-password'
+    | '/login'
+    | '/admin/notifications'
+    | '/admin/payments'
+    | '/admin/users'
+    | '/billing/callback'
+    | '/doctor/profile'
+    | '/error/payment-failed'
+    | '/subscription/$hospitalNo'
+    | '/onboarding/'
+    | '/admin/institutions/$id'
+    | '/oauth/doxmeet/callback'
+    | '/admin/institutions/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/account'
+    | '/find-id'
+    | '/find-password'
+    | '/login'
+    | '/admin/notifications'
+    | '/admin/payments'
+    | '/admin/users'
+    | '/billing/callback'
+    | '/doctor/profile'
+    | '/error/payment-failed'
+    | '/subscription/$hospitalNo'
+    | '/onboarding'
+    | '/admin/institutions/$id'
+    | '/oauth/doxmeet/callback'
+    | '/admin/institutions'
+  id:
+    | '__root__'
+    | '/'
+    | '/account'
+    | '/find-id'
+    | '/find-password'
+    | '/login'
+    | '/admin/notifications'
+    | '/admin/payments'
+    | '/admin/users'
+    | '/billing/callback'
+    | '/doctor/profile'
+    | '/error/payment-failed'
+    | '/subscription/$hospitalNo'
+    | '/onboarding/'
+    | '/admin/institutions/$id'
+    | '/oauth/doxmeet/callback'
+    | '/admin/institutions/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AccountRoute: typeof AccountRoute
+  FindIdRoute: typeof FindIdRoute
+  FindPasswordRoute: typeof FindPasswordRoute
+  LoginRoute: typeof LoginRoute
+  AdminNotificationsRoute: typeof AdminNotificationsRoute
+  AdminPaymentsRoute: typeof AdminPaymentsRoute
+  AdminUsersRoute: typeof AdminUsersRoute
+  BillingCallbackRoute: typeof BillingCallbackRoute
+  DoctorProfileRoute: typeof DoctorProfileRoute
+  ErrorPaymentFailedRoute: typeof ErrorPaymentFailedRoute
+  SubscriptionHospitalNoRoute: typeof SubscriptionHospitalNoRoute
+  OnboardingIndexRoute: typeof OnboardingIndexRoute
+  AdminInstitutionsIdRoute: typeof AdminInstitutionsIdRoute
+  OauthDoxmeetCallbackRoute: typeof OauthDoxmeetCallbackRoute
+  AdminInstitutionsIndexRoute: typeof AdminInstitutionsIndexRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/find-password': {
+      id: '/find-password'
+      path: '/find-password'
+      fullPath: '/find-password'
+      preLoaderRoute: typeof FindPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/find-id': {
+      id: '/find-id'
+      path: '/find-id'
+      fullPath: '/find-id'
+      preLoaderRoute: typeof FindIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/account': {
+      id: '/account'
+      path: '/account'
+      fullPath: '/account'
+      preLoaderRoute: typeof AccountRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -48,11 +275,103 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/onboarding/': {
+      id: '/onboarding/'
+      path: '/onboarding'
+      fullPath: '/onboarding/'
+      preLoaderRoute: typeof OnboardingIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/subscription/$hospitalNo': {
+      id: '/subscription/$hospitalNo'
+      path: '/subscription/$hospitalNo'
+      fullPath: '/subscription/$hospitalNo'
+      preLoaderRoute: typeof SubscriptionHospitalNoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/error/payment-failed': {
+      id: '/error/payment-failed'
+      path: '/error/payment-failed'
+      fullPath: '/error/payment-failed'
+      preLoaderRoute: typeof ErrorPaymentFailedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/doctor/profile': {
+      id: '/doctor/profile'
+      path: '/doctor/profile'
+      fullPath: '/doctor/profile'
+      preLoaderRoute: typeof DoctorProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/billing/callback': {
+      id: '/billing/callback'
+      path: '/billing/callback'
+      fullPath: '/billing/callback'
+      preLoaderRoute: typeof BillingCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/users': {
+      id: '/admin/users'
+      path: '/admin/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof AdminUsersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/payments': {
+      id: '/admin/payments'
+      path: '/admin/payments'
+      fullPath: '/admin/payments'
+      preLoaderRoute: typeof AdminPaymentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/notifications': {
+      id: '/admin/notifications'
+      path: '/admin/notifications'
+      fullPath: '/admin/notifications'
+      preLoaderRoute: typeof AdminNotificationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/institutions/': {
+      id: '/admin/institutions/'
+      path: '/admin/institutions'
+      fullPath: '/admin/institutions/'
+      preLoaderRoute: typeof AdminInstitutionsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/oauth/doxmeet/callback': {
+      id: '/oauth/doxmeet/callback'
+      path: '/oauth/doxmeet/callback'
+      fullPath: '/oauth/doxmeet/callback'
+      preLoaderRoute: typeof OauthDoxmeetCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/institutions/$id': {
+      id: '/admin/institutions/$id'
+      path: '/admin/institutions/$id'
+      fullPath: '/admin/institutions/$id'
+      preLoaderRoute: typeof AdminInstitutionsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AccountRoute: AccountRoute,
+  FindIdRoute: FindIdRoute,
+  FindPasswordRoute: FindPasswordRoute,
+  LoginRoute: LoginRoute,
+  AdminNotificationsRoute: AdminNotificationsRoute,
+  AdminPaymentsRoute: AdminPaymentsRoute,
+  AdminUsersRoute: AdminUsersRoute,
+  BillingCallbackRoute: BillingCallbackRoute,
+  DoctorProfileRoute: DoctorProfileRoute,
+  ErrorPaymentFailedRoute: ErrorPaymentFailedRoute,
+  SubscriptionHospitalNoRoute: SubscriptionHospitalNoRoute,
+  OnboardingIndexRoute: OnboardingIndexRoute,
+  AdminInstitutionsIdRoute: AdminInstitutionsIdRoute,
+  OauthDoxmeetCallbackRoute: OauthDoxmeetCallbackRoute,
+  AdminInstitutionsIndexRoute: AdminInstitutionsIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

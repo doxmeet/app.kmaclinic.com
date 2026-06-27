@@ -1,4 +1,16 @@
 allowBuilds:
   esbuild: true
+# Supply-chain hardening (react-doctor/require-pnpm-hardening).
+# minimumReleaseAge delays installs of freshly published versions. Set to 3 days
+# (4320 min) rather than the 7-day default because the current lockfile pins
+# several transitive deps published within the last week; 7 days would reject
+# them and break `pnpm install --frozen-lockfile`. Raise to 10080 once those age out.
+minimumReleaseAge: 4320
+trustPolicy: no-downgrade
 minimumReleaseAgeExclude:
   - nitro-nightly@3.0.1-20260617-160837-7765bcb7
+# Long-stable packages whose trust signals predate provenance/signature metadata;
+# excluded so `trustPolicy: no-downgrade` does not flag them as takeovers.
+trustPolicyExclude:
+  - "semver@6.3.1"
+  - "undici-types@6.21.0"

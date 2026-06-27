@@ -1,30 +1,134 @@
-import { api, publicApi } from "#/lib/api";
-import { clearAccessToken, setAccessToken } from "#/lib/auth/token-store";
+import { z } from "zod";
+import { http, parse, publicApi, publicHttp } from "#/lib/api";
+import { clearTokens, getRefreshToken } from "#/lib/auth/token-store.ts";
+import { env } from "#/lib/env.ts";
 
 /**
- * Thin session helpers wrapping the backend auth endpoints.
+ * 세션 헬퍼 — 문서 §1 (Doxmeet OAuth).
  *
- * Adjust the endpoint paths / response shapes to match the actual Node.js API.
- * Login/refresh are expected to return a JSON access token, and the backend is
- * expected to set the refresh token as an httpOnly cookie via Set-Cookie.
+ * 로그인은 Doxmeet 인가서버에서 받은 `code`를 POST /oauth/callback 으로 교환.
+ * 토큰은 응답 헤더(KCLINIC-*)로 내려오며 api 레이어의 captureHook이 저장.
  */
 
-export interface LoginInput {
-	email: string;
-	password: string;
+/**
+ * GET /account/me 응답(문서 §7.1) — { user, profile, hospitals }.
+ *
+ * 백엔드 bigint PK(no/subscription_no 등)는 JSON에서 **문자열**로 직렬화되므로
+ * (예: "12") 경계에서 숫자로 정규화한다(onboarding.ts의 `numeric`과 동일 규약).
+ * 라우트 파라미터(Number)와 strict 비교가 깨지지 않도록 하기 위함.
+ */
+const numericId = z.coerce.number();
+const numericIdOpt = z.coerce.number().optional();
+const numericIdNullish = z.coerce.number().nullish();
+
+const AccountUserSchema = z.looseObject({
+	no: numericId,
+	id: z.string().optional(),
+	name: z.string().nullish(),
+	phone: z.string().nullish(),
+	hospital_name: z.string().nullish(),
+	level: z.coerce.number().default(0),
+	is_withdrawn: z.boolean().optional(),
+	created_at: z.string().optional(),
+});
+export type AccountUser = z.infer<typeof AccountUserSchema>;
+
+const AccountProfileSchema = z.looseObject({
+	no: numericIdOpt,
+	slug: z.string().nullish(),
+	is_published: z.boolean().optional(),
+	completion_percent: z.coerce.number().optional(),
+});
+export type AccountProfile = z.infer<typeof AccountProfileSchema> | null;
+
+const AccountHospitalSchema = z.looseObject({
+	no: numericId,
+	slug: z.string().nullish(),
+	name: z.string().optional(),
+	is_published: z.boolean().optional(),
+	subscription_no: numericIdNullish,
+	subscription_status: z.string().nullish(),
+	next_billing_at: z.string().nullish(),
+	current_period_end: z.string().nullish(),
+});
+export type AccountHospital = z.infer<typeof AccountHospitalSchema>;
+
+const AccountMeSchema = z.looseObject({
+	user: AccountUserSchema,
+	profile: AccountProfileSchema.nullish(),
+	hospitals: z.array(AccountHospitalSchema).nullish().default([]),
+});
+export type AccountMe = z.infer<typeof AccountMeSchema>;
+
+/** Doxmeet code → 토큰 교환(로그인 완료). 백엔드 엔드포인트는 POST /oauth/callback. */
+export async function exchangeOAuthCode(
+	code: string,
+	site = "doxmeet",
+): Promise<void> {
+	await publicHttp.post("oauth/callback", { site, code });
 }
 
-export async function login(input: LoginInput): Promise<void> {
-	const { accessToken } = await publicApi
-		.post("auth/login", { json: input })
-		.json<{ accessToken: string }>();
-	setAccessToken(accessToken);
+/** 내 계정 + 프로필 요약 + 소유 병원/구독 상태. ID는 경계에서 숫자로 정규화. */
+export async function fetchAccount(): Promise<AccountMe> {
+	return parse(await http.get("account/me"), AccountMeSchema);
+}
+
+/** 새로고침 후 부트스트랩: refresh 토큰이 있으면 access를 갱신. */
+export async function bootstrapSession(): Promise<boolean> {
+	const refresh = getRefreshToken();
+	if (!refresh) return false;
+	try {
+		await publicApi.get("auth/refresh", {
+			headers: { Authorization: `Bearer ${refresh}` },
+		});
+		return true;
+	} catch {
+		clearTokens();
+		return false;
+	}
 }
 
 export async function logout(): Promise<void> {
+	const refresh = getRefreshToken();
+	// 로컬 세션을 먼저 비워 UI가 서버 응답을 기다리지 않고 즉시 로그아웃되게 한다.
+	// (clearTokens는 첫 await 이전에 동기 실행되므로 호출부가 await하지 않아도 즉시 반영.)
+	clearTokens();
+	if (!refresh) return;
 	try {
-		await api.post("auth/logout");
+		await publicApi.post("auth/logout", {
+			headers: { Authorization: `Bearer ${refresh}` },
+		});
+	} catch {
+		/* 서버 폐기 실패는 무시 — 로컬 세션은 이미 종료됨 */
 	} finally {
-		clearAccessToken();
+		// 폐기 응답 헤더가 토큰을 재주입했을 수 있으니 한 번 더 정리.
+		clearTokens();
 	}
+}
+
+/**
+ * Doxmeet OAuth 로그인 시작.
+ * authorize URL/client_id 가 env로 설정돼 있으면 인가서버로 리다이렉트, 아니면 false.
+ * (값은 백엔드에서 추후 전달 → 그전까지 stub)
+ */
+export function startDoxmeetLogin(): boolean {
+	const authorize = env.VITE_DOXMEET_AUTHORIZE_URL;
+	const clientId = env.VITE_DOXMEET_CLIENT_ID;
+	if (!authorize || !clientId) return false;
+	const redirectUri =
+		env.VITE_OAUTH_REDIRECT_URI ??
+		(typeof window !== "undefined"
+			? `${window.location.origin}/oauth/doxmeet/callback`
+			: "");
+	const url = new URL(authorize);
+	url.searchParams.set("client_id", clientId);
+	url.searchParams.set("redirect_uri", redirectUri);
+	url.searchParams.set("response_type", "code");
+	url.searchParams.set("scope", env.VITE_DOXMEET_SCOPE ?? "read:user");
+	if (typeof window !== "undefined") window.location.href = url.toString();
+	return true;
+}
+
+export function isDoxmeetLoginConfigured(): boolean {
+	return Boolean(env.VITE_DOXMEET_AUTHORIZE_URL && env.VITE_DOXMEET_CLIENT_ID);
 }
