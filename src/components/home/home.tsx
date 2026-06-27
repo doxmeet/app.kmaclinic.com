@@ -252,8 +252,8 @@ function WhatYouGet() {
 			<div className="mx-auto w-full max-w-[1120px] px-4 py-16 sm:px-6 sm:py-20">
 				<SectionHeading
 					eyebrow="만들어지는 것"
-					title="한 번 작성, 두 개의 사이트"
-					desc="의사 개인 프로필과 병원 홈페이지가 한 번에 만들어집니다."
+					title="하나의 가입, 두 개의 사이트"
+					desc="한 번의 가입으로 의사 프로필과 병원 홈페이지를 만들어 운영하세요."
 				/>
 				<div className="mt-10 grid gap-6 lg:grid-cols-2">
 					<CreateCard
@@ -261,7 +261,7 @@ function WhatYouGet() {
 						title="의사 공개 프로필"
 						domain="*.kmadoc.com"
 						desc="경력·학력, 전문 자격, 진료 일정, 대표 논문까지. 환자가 신뢰할 수 있는 공개 프로필이 자동으로 구성됩니다."
-						bullets={["진료 일정", "경력 타임라인"]}
+						bullets={["소개 문구", "진료 일정", "경력 타임라인"]}
 					/>
 					<CreateCard
 						icon={LayoutGrid}
