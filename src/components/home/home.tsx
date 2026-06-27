@@ -6,7 +6,6 @@ import {
 	CreditCard,
 	Globe,
 	LayoutGrid,
-	LogIn,
 	type LucideIcon,
 	MessageSquareText,
 	ShieldCheck,
@@ -87,7 +86,7 @@ function Hero() {
 							size="cta"
 							className="w-full sm:w-auto"
 						>
-							{isAuthenticated ? "작성 이어가기" : "닥스밋 계정으로 시작하기"}
+							{isAuthenticated ? "작성 이어가기" : "시작하기"}
 							<ArrowRight className="size-5" />
 						</Button>
 						<Button
@@ -187,26 +186,20 @@ type StepItem = {
 
 const STEPS: StepItem[] = [
 	{
-		icon: LogIn,
-		step: "01",
-		title: "닥스밋으로 로그인",
-		desc: "이미 쓰던 닥스밋 의사 계정으로 1초 만에 시작합니다.",
-	},
-	{
 		icon: MessageSquareText,
-		step: "02",
+		step: "01",
 		title: "대화로 작성하기",
 		desc: "AI가 묻는 말에 답하고 사진만 올리면 초안이 완성됩니다.",
 	},
 	{
 		icon: CreditCard,
-		step: "03",
+		step: "02",
 		title: "결제 & 공개",
 		desc: "프로필은 무료, 병원 홈페이지는 구독 결제 후 바로 공개됩니다.",
 	},
 	{
 		icon: Globe,
-		step: "04",
+		step: "03",
 		title: "환자와 연결",
 		desc: "공개된 프로필·홈페이지 주소로 환자와 자연스럽게 이어집니다.",
 	},
@@ -220,10 +213,10 @@ function HowItWorks() {
 		>
 			<SectionHeading
 				eyebrow="작동 방식"
-				title="4단계면 충분합니다"
+				title="3단계면 충분합니다"
 				desc="복잡한 설정 없이, 로그인부터 공개까지 하나의 흐름으로 이어집니다."
 			/>
-			<ol className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+			<ol className="mt-10 grid gap-5 grid-cols-1 lg:grid-cols-3">
 				{STEPS.map((s) => (
 					<li
 						key={s.step}
@@ -427,7 +420,7 @@ function FinalCta() {
 					size="cta"
 					className="w-full border-transparent bg-surface text-brand hover:bg-surface/90 sm:w-auto"
 				>
-					{isAuthenticated ? "작성 이어가기" : "닥스밋 계정으로 시작하기"}
+					{isAuthenticated ? "작성 이어가기" : "시작하기"}
 					<ArrowRight className="size-5" />
 				</Button>
 			</div>
