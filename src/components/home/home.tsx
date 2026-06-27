@@ -69,14 +69,13 @@ function Hero() {
 						의료진 전용
 					</Badge>
 					<h1 className="text-[26px] font-extrabold leading-tight tracking-tight text-ink sm:text-[44px] sm:leading-[1.18]">
-						의사 프로필도 병원 홈페이지도,
-						<br />
-						<span className="text-brand">대화 한 번으로</span> 끝.
+						AI와 대화를 통해 의사 프로필과 병원 홈페이지가&nbsp;
+						<span className="text-brand">완성</span>됩니다.
 					</h1>
 					<p className="max-w-[520px] text-[17px] leading-relaxed text-body">
-						복잡한 입력 폼은 그만. AI와 대화하듯 답하기만 하면 의사 공개
-						프로필과 병원 홈페이지가 자동으로 완성됩니다. 면허 인증부터 결제,
-						공개까지 한 흐름으로 이어집니다.
+						학력, 경력, 전문 진료 분야, 소개글을 입력해 주세요. 입력한 내용은
+						의사 공개 프로필과 병원 홈페이지에 자동으로 정리되어 게시됩니다.
+						원하시면 공개 전 내용을 직접 확인하고 수정할 수 있습니다.
 					</p>
 					<div className="flex w-full flex-col gap-3 sm:flex-row">
 						<Button
@@ -86,7 +85,7 @@ function Hero() {
 							size="cta"
 							className="w-full sm:w-auto"
 						>
-							{isAuthenticated ? "작성 이어가기" : "시작하기"}
+							내 프로필 작성하기
 							<ArrowRight className="size-5" />
 						</Button>
 						<Button
@@ -95,7 +94,7 @@ function Hero() {
 							size="cta"
 							className="w-full sm:w-auto"
 						>
-							작동 방식 보기
+							샘플 보기
 						</Button>
 					</div>
 					<ul className="flex flex-wrap items-center gap-x-5 gap-y-2 pt-2 text-sm text-muted-fg">
@@ -213,8 +212,8 @@ function HowItWorks() {
 		>
 			<SectionHeading
 				eyebrow="작동 방식"
-				title="3단계면 충분합니다"
-				desc="복잡한 설정 없이, 로그인부터 공개까지 하나의 흐름으로 이어집니다."
+				title="입력은 짧게, 공개는 완성도 있게"
+				desc="복잡한 홈페이지 설정 없이 의사 이력과 병원 정보를 입력하면 공개용 페이지가 만들어집니다."
 			/>
 			<ol className="mt-10 grid gap-5 grid-cols-1 lg:grid-cols-3">
 				{STEPS.map((s) => (
@@ -253,25 +252,30 @@ function WhatYouGet() {
 				<SectionHeading
 					eyebrow="만들어지는 것"
 					title="하나의 가입, 두 개의 사이트"
-					desc="한 번의 가입으로 의사 프로필과 병원 홈페이지를 만들어 운영하세요."
+					desc="한 번 입력하면 두 곳에 활용됩니다. 의사 개인 프로필과 병원 홈페이지가 같은 정보로 함께 구성됩니다."
 				/>
 				<div className="mt-10 grid gap-6 lg:grid-cols-2">
 					<CreateCard
 						icon={Stethoscope}
 						title="의사 공개 프로필"
 						domain="*.kmadoc.com"
-						desc="경력·학력, 전문 자격, 진료 일정, 대표 논문까지. 환자가 신뢰할 수 있는 공개 프로필이 자동으로 구성됩니다."
-						bullets={["소개 문구", "진료 일정", "경력 타임라인"]}
+						desc="환자가 또는 의사간 전문분야와 경력을 확인할 수 있는 개인 소개 페이지입니다."
+						bullets={[
+							"진료과 및 전문분야",
+							"학력·경력·활동 이력",
+							"한 줄 소개와 자기소개",
+						]}
 					/>
 					<CreateCard
 						icon={LayoutGrid}
 						title="병원 홈페이지"
 						domain="*.kmaclinic.com"
-						desc="병원 소개, 진료 안내, 공지·칼럼 게시판을 갖춘 홈페이지. 구독 결제 후 즉시 공개됩니다."
+						desc="병원 소개, 의료진, 진료 안내, 공지사항을 담은 공식 홈페이지입니다."
 						bullets={[
-							"병원 소개·진료안내",
-							"공지/칼럼 게시판",
-							"정기결제 후 공개",
+							"병원 기본 정보",
+							"의료진 소개",
+							"진료시간 및 오시는 길",
+							"공지사항 게시판",
 						]}
 					/>
 				</div>
@@ -357,7 +361,7 @@ function Pricing() {
 						</span>
 					</p>
 					<p className="text-sm leading-relaxed text-body">
-						면허 인증과 공개 프로필 생성까지 비용이 들지 않습니다.
+						의사 소개 페이지는 비용 없이 계속 사용할 수 있습니다.
 					</p>
 				</div>
 				<div className="relative flex flex-col gap-4 rounded-2xl border-2 border-brand bg-surface p-7">
@@ -378,7 +382,8 @@ function Pricing() {
 						</span>
 					</p>
 					<p className="text-sm leading-relaxed text-body">
-						홈페이지 공개와 게시판 운영을 위한 월 구독. 결제 즉시 공개됩니다.
+						병원 공식 홈페이지를 공개하고 운영할 때 구독이 시작됩니다. 구독
+						전에는 비용이 청구되지 않습니다.
 					</p>
 				</div>
 			</div>
@@ -390,7 +395,7 @@ function Pricing() {
 					size="cta"
 					className="w-full sm:w-auto"
 				>
-					{isAuthenticated ? "작성 이어가기" : "지금 시작하기"}
+					내 프로필 작성 시작
 					<ArrowRight className="size-5" />
 				</Button>
 			</div>
@@ -407,11 +412,11 @@ function FinalCta() {
 			<div className="mx-auto flex w-full max-w-[1120px] flex-col items-center gap-6 rounded-3xl bg-brand px-6 py-14 text-center">
 				<CalendarClock className="size-10 text-brand-foreground/90" />
 				<h2 className="text-2xl font-extrabold text-brand-foreground sm:text-3xl">
-					오늘 등록하고, 오늘 공개하세요.
+					지금 의사 프로필을 작성해 보세요.
 				</h2>
 				<p className="max-w-[520px] text-[15px] leading-relaxed text-brand-foreground/85">
-					대화로 작성하면 10분이면 충분합니다. 지금 바로 프로필과 병원
-					홈페이지를 만들어 보세요.
+					10분 정도 입력하면 공개용 프로필 초안과 병원 홈페이지 구성이
+					만들어집니다.
 				</p>
 				<Button
 					nativeButton={false}
@@ -420,7 +425,7 @@ function FinalCta() {
 					size="cta"
 					className="w-full border-transparent bg-surface text-brand hover:bg-surface/90 sm:w-auto"
 				>
-					{isAuthenticated ? "작성 이어가기" : "시작하기"}
+					내 프로필 작성 시작
 					<ArrowRight className="size-5" />
 				</Button>
 			</div>
@@ -440,7 +445,7 @@ function SectionHeading({
 	desc: string;
 }) {
 	return (
-		<div className="flex flex-col items-center gap-3 text-center">
+		<div className="flex flex-col items-center gap-3 text-center break-keep">
 			<span className="text-sm font-bold uppercase tracking-wide text-brand">
 				{eyebrow}
 			</span>
