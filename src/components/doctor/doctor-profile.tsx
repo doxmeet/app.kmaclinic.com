@@ -65,6 +65,7 @@ import { Switch } from "#/components/ui/switch.tsx";
 import { useDebouncedValue } from "#/hooks/use-debounced-value.ts";
 import { ApiError } from "#/lib/api";
 import {
+	type AnalyzeStatus,
 	analyzeProfileDocuments,
 	getCompletion,
 	getProfile,
@@ -72,6 +73,7 @@ import {
 	type ProfileDoc,
 	type ProfilePatch,
 	patchProfile,
+	pollProfileAnalyze,
 } from "#/lib/api/profile.ts";
 import {
 	type RefClinic,
@@ -354,6 +356,45 @@ const ANALYZE_ACCEPT = ".pdf,.doc,.docx,.hwp,.hwpx,.ppt,.pptx,.xls,.xlsx,.zip";
 
 /** 파일 용량 상한(서버가 막기 전 클라이언트 사전 체크). */
 const MAX_FILE_MB = 300;
+
+// 진행 중/완료된 분석 잡 번호 보관(문서 §7) — 새로고침·재진입 시 같은 no로 결과를 복구한다.
+// 결과는 서버에 보존되므로, 폴링 도중 페이지를 떠나도 다음 진입에서 이어 받을 수 있다.
+const PENDING_ANALYZE_KEY = "kclinic:profile-analyze-job";
+
+function readPendingAnalyzeJob(): number | null {
+	try {
+		const raw = localStorage.getItem(PENDING_ANALYZE_KEY);
+		const no = raw ? Number(raw) : Number.NaN;
+		return Number.isFinite(no) && no > 0 ? no : null;
+	} catch {
+		return null; // localStorage 비활성(프라이빗 모드 등) — 복구 없이 진행.
+	}
+}
+
+function savePendingAnalyzeJob(no: number) {
+	try {
+		localStorage.setItem(PENDING_ANALYZE_KEY, String(no));
+	} catch {
+		// 저장 불가 — 복구만 못 할 뿐 분석 흐름엔 영향 없음.
+	}
+}
+
+function clearPendingAnalyzeJob() {
+	try {
+		localStorage.removeItem(PENDING_ANALYZE_KEY);
+	} catch {
+		// 무시.
+	}
+}
+
+// 직접 분석 실패 처리(분석 잡 폴링). 언마운트 취소(AbortError)는 잡을 보존해 다음 진입에서
+// 복구하므로 토스트 없이 무시한다. 그 외에는 보관 잡을 정리하고 사유를 안내한다.
+function handleAnalyzeError(err: unknown) {
+	if (err instanceof DOMException && err.name === "AbortError") return;
+	clearPendingAnalyzeJob();
+	if (err instanceof ApiError) toastApiError(err);
+	else toast.error(String((err as Error)?.message ?? err));
+}
 
 /** 분석 컬렉션(코어 외) — 표시/적용 대상. affiliations 포함. */
 const ANALYZE_COLL_KEYS: (CollKey | "affiliations")[] = [
@@ -1476,19 +1517,41 @@ function DocumentAnalysisSection({
 	// setResult가 재렌더를 일으키므로 ref로 충분(추가 렌더 불필요).
 	const resultKeyRef = useRef(0);
 	const [dialogOpen, setDialogOpen] = useState(false);
-	// 진행 단계 표시(압축 해제 → 업로드 n/total → 분석). null이면 busy 아님.
+	// 진행 단계 표시(압축 해제 → 업로드 n/total → 분석 잡 폴링). null이면 busy 아님.
+	// analyze 단계는 잡 상태(pending|processing)와 2분 경과 지연 안내(slow)를 함께 싣는다.
 	const [progress, setProgress] = useState<{
 		stage: "expand" | "upload" | "analyze";
 		done?: number;
 		total?: number;
+		status?: AnalyzeStatus;
+		slow?: boolean;
 	} | null>(null);
+	// 진행 중인 폴링 루프 취소용(언마운트 시 중단 — 잡 결과는 서버에 보존되므로 안전).
+	const abortRef = useRef<AbortController | null>(null);
+	useEffect(() => () => abortRef.current?.abort(), []);
 
-	// analyze는 서버 상태를 바꾸지 않고(저장 X) 분석 patch만 돌려주므로 캐시 무효화가 필요 없다.
+	// 분석 결과를 받았을 때 공통 처리(직접 분석/복구 모두 사용). 추출 내용이 없으면 안내만.
+	function handleResult(res: ProfileAnalyzeResult) {
+		if (res.patch && Object.keys(res.patch).length > 0) {
+			resultKeyRef.current += 1;
+			setResult(res);
+			setFiles([]); // 분석 완료 — 업로드 목록 비움
+			setDialogOpen(true);
+		} else {
+			toast.message("문서에서 추출된 내용이 없습니다. 직접 입력해 주세요.");
+		}
+	}
+
+	// analyze는 서버 상태(프로필)를 바꾸지 않고(저장 X) 분석 patch만 돌려주므로 캐시 무효화 불필요.
 	// react-doctor-disable-next-line query-mutation-missing-invalidation
 	const analyzeMutation = useMutation({
-		// ZIP은 브라우저에서 풀어 개별 파일로 업로드(presign) → file_url 목록으로 분석(저장 X).
-		// paper-zip-bulk-analyze-guide §1·§6: 해제 → 동시 업로드(부분 실패 허용) → 1회 분석.
+		// ZIP은 브라우저에서 풀어 개별 파일로 업로드(presign) → file_url 목록으로 분석 잡 생성.
+		// paper-zip-bulk-analyze-guide §1·§6 + document-analysis-guide §1: 해제 → 동시 업로드
+		// (부분 실패 허용) → 잡 생성 → done/failed까지 폴링(결과는 서버 보존).
 		mutationFn: async (picked: File[]) => {
+			const ctrl = new AbortController();
+			abortRef.current = ctrl;
+
 			setProgress({ stage: "expand" });
 			const docs = await expandFilesToUpload(picked);
 			if (docs.length === 0) {
@@ -1509,28 +1572,74 @@ function DocumentAnalysisSection({
 				);
 			}
 
-			setProgress({ stage: "analyze" });
-			return analyzeProfileDocuments(urls);
+			setProgress({ stage: "analyze", status: "pending" });
+			return analyzeProfileDocuments(urls, {
+				// 잡 번호 보관 → 새로고침/재진입 시 같은 no로 결과 복구(문서 §7).
+				onJob: savePendingAnalyzeJob,
+				onStatus: (status) =>
+					setProgress((p) => ({ ...p, stage: "analyze", status })),
+				onSlow: () =>
+					setProgress((p) => ({ ...p, stage: "analyze", slow: true })),
+				signal: ctrl.signal,
+			});
 		},
 		onSuccess: (res) => {
-			const hasAny = res.patch && Object.keys(res.patch).length > 0;
-			if (hasAny) {
-				resultKeyRef.current += 1;
-				setResult(res);
-				setFiles([]); // 분석 완료 — 업로드 목록 비움
-				setDialogOpen(true);
-			} else {
-				toast.message("문서에서 추출된 내용이 없습니다. 직접 입력해 주세요.");
-			}
+			clearPendingAnalyzeJob();
+			handleResult(res);
 		},
-		onError: (err) =>
-			err instanceof ApiError
-				? toastApiError(err)
-				: toast.error(String((err as Error)?.message ?? err)),
+		onError: handleAnalyzeError,
 		onSettled: () => setProgress(null),
 	});
 
-	const busy = analyzeMutation.isPending;
+	// 새로고침/재진입 복구 — 보관된 잡 no를 done/failed까지 이어서 폴링한다(문서 §7).
+	// react-doctor-disable-next-line query-mutation-missing-invalidation
+	const resumeMutation = useMutation({
+		mutationFn: async (no: number) => {
+			const ctrl = new AbortController();
+			abortRef.current = ctrl;
+			setProgress({ stage: "analyze", status: "processing" });
+			const job = await pollProfileAnalyze(no, {
+				onTick: (j) =>
+					setProgress((p) => ({ ...p, stage: "analyze", status: j.status })),
+				onSlow: () =>
+					setProgress((p) => ({ ...p, stage: "analyze", slow: true })),
+				signal: ctrl.signal,
+			});
+			if (job.status === "failed") {
+				throw new Error(
+					job.error || "문서 분석에 실패했습니다. 다시 시도해 주세요.",
+				);
+			}
+			return job.result ?? { patch: {} };
+		},
+		onSuccess: (res) => {
+			clearPendingAnalyzeJob();
+			handleResult(res);
+		},
+		// 복구 실패는 사용자가 방금 올린 게 아니므로 조용히 정리(404=만료된 잡은 토스트 생략).
+		onError: (err) => {
+			if (err instanceof DOMException && err.name === "AbortError") return;
+			clearPendingAnalyzeJob();
+			if (err instanceof ApiError) {
+				if (err.status !== 404) toastApiError(err);
+			} else {
+				toast.error(String((err as Error)?.message ?? err));
+			}
+		},
+		onSettled: () => setProgress(null),
+	});
+
+	// 마운트 시 1회: 보관된 미완료 잡이 있으면 결과를 이어서 복구한다(ref로 StrictMode 이중 실행 방지).
+	const { mutate: resumeAnalyze } = resumeMutation;
+	const resumedRef = useRef(false);
+	useEffect(() => {
+		if (resumedRef.current) return;
+		resumedRef.current = true;
+		const no = readPendingAnalyzeJob();
+		if (no != null) resumeAnalyze(no);
+	}, [resumeAnalyze]);
+
+	const busy = analyzeMutation.isPending || resumeMutation.isPending;
 
 	function addFiles(e: React.ChangeEvent<HTMLInputElement>) {
 		const picked = Array.from(e.target.files ?? []);
@@ -1577,9 +1686,16 @@ function DocumentAnalysisSection({
 							/>
 						</div>
 					) : null}
-					<p className="text-sm text-muted-fg">
+					<p
+						className={cn(
+							"text-sm",
+							progress?.slow ? "text-amber-600" : "text-muted-fg",
+						)}
+					>
 						{progress?.stage === "analyze"
-							? "문서 분량에 따라 최대 2분 정도 걸릴 수 있어요. 잠시만 기다려 주세요."
+							? progress.slow
+								? "문서가 많아 처리가 지연되고 있어요. 조금만 더 기다려 주세요."
+								: "문서 분량에 따라 1~2분 정도 걸릴 수 있어요. 잠시만 기다려 주세요."
 							: "잠시만 기다려 주세요."}
 					</p>
 				</div>

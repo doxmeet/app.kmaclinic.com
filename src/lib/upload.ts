@@ -2,12 +2,20 @@ import JSZip from "jszip";
 import { http } from "#/lib/api";
 
 /**
- * 파일 업로드 — 문서 §0 (Ncloud Object Storage, presigned URL 2단계).
+ * 파일 업로드 — 문서 §0 / file-upload-dedup-guide (Ncloud Object Storage, presigned URL).
  * 서버를 거치지 않고 스토리지로 직접 PUT.
  *
- *   ① POST /upload/presign { filename, content_type, subdir } → { upload_url, headers, file_url }
- *   ② PUT <upload_url> (body=파일, headers의 x-amz-acl + Content-Type)
+ *   ① POST /upload/presign { filename, content_type, subdir, sha256, size }
+ *        → { duplicate, upload_url, headers, file_url, ... }
+ *   ② duplicate=false 일 때만 PUT <upload_url> (body=파일, headers의 x-amz-acl + Content-Type)
+ *        — duplicate=true 면 이미 올라간 파일이라 PUT 생략하고 file_url 그대로 사용.
  *   ③ file_url 을 *_url 필드에 저장
+ *
+ * 중복제거(dedup, file-upload-dedup-guide): presign에 **파일 내용 SHA-256 + 크기**를 함께 보내면,
+ * 같은 사용자가 같은 내용(해시·크기 동일)의 파일을 다시 올릴 때 서버가 재업로드 없이 기존
+ * file_url을 즉시 돌려준다(`duplicate:true`). 판정 키 = (업로더, 해시, 크기). 해시는 보안
+ * 컨텍스트(HTTPS/localhost)에서만 되는 `crypto.subtle` — 못 쓰면 해시 없이 보내고 매번 새로
+ * 업로드한다(에러 아님, dedup만 비활성).
  *
  * 대량(논문 ZIP) 업로드는 paper-zip-bulk-analyze-guide §1: ZIP은 **백엔드가 풀지 않는다**.
  * 브라우저에서 ZIP을 풀어 내부 문서를 개별 파일로 업로드한 뒤, file_url 목록을 분석 API에
@@ -22,28 +30,61 @@ export type UploadSubdir =
 	| "misc";
 
 type PresignResponse = {
-	method: string;
-	upload_url: string;
-	headers?: Record<string, string>;
+	/** true면 이미 올라간 파일 — PUT 생략, file_url 그대로 사용. */
+	duplicate?: boolean;
+	/** duplicate=true 면 null. */
+	method?: string | null;
+	upload_url?: string | null;
+	headers?: Record<string, string> | null;
 	file_url: string;
 	key: string;
-	expires_in: number;
+	expires_in?: number | null;
+	/** duplicate=true 일 때 최초 업로드 시각(ISO). */
+	uploaded_at?: string | null;
+	content_type?: string | null;
 	limits_mb?: { image: number; video: number; file: number };
 };
 
-/** presign 발급 + 스토리지로 직접 PUT → 공개 file_url 반환. */
+/**
+ * File/Blob → SHA-256 hex(64자 소문자). 보안 컨텍스트가 아니어서 `crypto.subtle`이 없으면
+ * null(=dedup 없이 업로드). 전체를 메모리로 읽으므로 큰 파일은 수백 ms 걸릴 수 있다(§5).
+ */
+async function sha256Hex(file: File | Blob): Promise<string | null> {
+	if (!globalThis.crypto?.subtle) return null;
+	try {
+		const digest = await crypto.subtle.digest(
+			"SHA-256",
+			await file.arrayBuffer(),
+		);
+		return [...new Uint8Array(digest)]
+			.map((b) => b.toString(16).padStart(2, "0"))
+			.join("");
+	} catch {
+		return null; // 해시 실패 시 dedup만 포기하고 정상 업로드.
+	}
+}
+
+/** presign 발급(+dedup) → 중복이 아니면 스토리지로 직접 PUT → 공개 file_url 반환. */
 export async function uploadFileToStorage(
 	file: File | Blob,
 	subdir: UploadSubdir = "misc",
 ): Promise<string> {
 	const filename = file instanceof File ? file.name : "upload.bin";
 	const contentType = file.type || "application/octet-stream";
+	const sha256 = await sha256Hex(file);
 
 	const presign = await http.post<PresignResponse>("upload/presign", {
 		filename,
 		content_type: contentType,
 		subdir,
+		// 해시를 못 구하면(비보안 컨텍스트) 생략 — 서버는 dedup 없이 새로 업로드한다.
+		...(sha256 ? { sha256, size: file.size } : {}),
 	});
+
+	// 이미 올라간 파일이면 PUT 없이 기존 URL 사용(서버가 sha256+size로 판정).
+	if (presign.duplicate || !presign.upload_url) {
+		return presign.file_url;
+	}
 
 	const putHeaders: Record<string, string> = {
 		"Content-Type": contentType,
