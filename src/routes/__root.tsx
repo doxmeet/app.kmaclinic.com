@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { Toaster } from "sonner";
+import { KakaoSupportFab } from "#/components/common/kakao-support-fab.tsx";
 import { SITE_URL, seo } from "#/lib/seo.ts";
 import appCss from "../styles.css?url";
 
@@ -57,6 +58,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 			<body>
 				{children}
 				<Toaster position="top-center" richColors />
+				<KakaoSupportFab />
 				<TanStackDevtools
 					config={{
 						position: "bottom-right",

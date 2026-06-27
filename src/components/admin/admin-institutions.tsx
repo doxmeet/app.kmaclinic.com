@@ -40,7 +40,10 @@ import {
 	type Paginated,
 	type SubscriptionFilters,
 } from "#/lib/api/admin.ts";
-import { toastApiError } from "#/lib/api-error-message.ts";
+import {
+	ADMIN_ERROR_OVERRIDES,
+	toastApiError,
+} from "#/lib/api-error-message.ts";
 
 const PAGE_SIZE = 10;
 
@@ -586,7 +589,7 @@ function ResultsSection({
 									variant="neutral-outline"
 									size="sm"
 									onClick={() => {
-										toastApiError(error);
+										toastApiError(error, ADMIN_ERROR_OVERRIDES);
 										onRetry();
 									}}
 								>
@@ -693,7 +696,7 @@ function InstitutionsPage() {
 			a.remove();
 			URL.revokeObjectURL(url);
 		} catch (err) {
-			toastApiError(err);
+			toastApiError(err, ADMIN_ERROR_OVERRIDES);
 		} finally {
 			setExporting(false);
 		}

@@ -1,8 +1,9 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { CheckCircle2, Loader2, X } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { InfoCallout } from "#/components/common/info-callout.tsx";
+import { KakaoSupportLink } from "#/components/common/kakao-support-link.tsx";
 import {
 	SectionCard,
 	SectionTitle,
@@ -13,7 +14,9 @@ import { ApiError } from "#/lib/api";
 import {
 	type BillingCycle,
 	createSubscription,
+	getHospitalSubscription,
 	issueBilling,
+	isTrialing,
 } from "#/lib/api/billing.ts";
 import { apiErrorMessage } from "#/lib/api-error-message.ts";
 import { useSession } from "#/lib/auth/use-session.ts";
@@ -23,6 +26,32 @@ const RE_REGISTER_CODES = new Set([
 	"ERROR_402_TOSS_PAYMENT_FAILED",
 	"ERROR_400_BILLING_KEY_REQUIRED",
 ]);
+
+// 1회용 authKey 콜백을 이미 성공 처리했는지 세션에 기록한다(뒤로가기/새로고침 재진입 대비).
+// authKey 단위로 저장 — 같은 콜백 URL로 다시 들어오면 결제를 재시도하지 않고 완료 화면을 보여준다.
+const PROCESSED_PREFIX = "billing:callback:done:";
+
+function readProcessed(authKey: string): { trial: boolean } | null {
+	try {
+		const raw = sessionStorage.getItem(PROCESSED_PREFIX + authKey);
+		if (!raw) return null;
+		const parsed = JSON.parse(raw) as { trial?: boolean };
+		return { trial: parsed.trial === true };
+	} catch {
+		return null;
+	}
+}
+
+function markProcessed(authKey: string, trial: boolean) {
+	try {
+		sessionStorage.setItem(
+			PROCESSED_PREFIX + authKey,
+			JSON.stringify({ trial }),
+		);
+	} catch {
+		// sessionStorage 사용 불가(시크릿 모드 등) — 무시. 서버 상태 확인으로 폴백된다.
+	}
+}
 
 export function BillingCallbackPage() {
 	const {
@@ -123,6 +152,9 @@ function BillingFlow({
 	const running = useRef(false);
 	// 빌링키 발급(①) 성공 여부. authKey는 1회용이라, ②에서만 실패한 재시도는 ①을 건너뛴다.
 	const issuedRef = useRef(false);
+	// 이 authKey 콜백을 이전에 이미 성공 처리했는지(뒤로가기/새로고침 재진입). 마운트 시 1회 조회.
+	const [processed] = useState(() => readProcessed(authKey));
+	const alreadyProcessed = processed !== null;
 	// refresh 토큰까지 만료(비로그인)면 재로그인 안내 — 세션 상태에서 파생(별도 state 없음).
 	const needsLogin = !sessionLoading && !isAuthenticated;
 
@@ -131,11 +163,49 @@ function BillingFlow({
 	// 카드 변경/재구독 실패·완료 후 돌아갈 곳은 해당 병원의 구독 관리 화면.
 	const backToManage = mode === "card" || mode === "resubscribe";
 
+	// 결제·구독·빌링키 변경 후 관련 캐시를 무효화해 최신 상태를 반영한다.
+	const invalidateBilling = () => {
+		queryClient.invalidateQueries({ queryKey: ["account", "me"] });
+		queryClient.invalidateQueries({
+			queryKey: ["subscription", "hospital", hospitalNo],
+		});
+		queryClient.invalidateQueries({ queryKey: ["billing", "list"] });
+	};
+
+	// 뒤로가기/새로고침으로 이미 처리된 콜백에 다시 들어오면 issueBilling이 1회용 authKey로
+	// 실패한다. 이때 서버 구독 상태를 확인해 "이미 완료된 결제"면 성공으로 간주한다.
+	// (카드 변경은 서버 상태만으로 판별 불가 → 세션 마커로만 처리하므로 여기선 null.)
+	const detectAlreadyComplete = async () => {
+		if (cardOnly) return null;
+		try {
+			const { subscription } = await getHospitalSubscription(hospitalNo);
+			if (subscription?.status === "active") {
+				return {
+					subscription,
+					payment: null,
+					trial: isTrialing(subscription),
+				};
+			}
+		} catch {
+			// 상태 조회 실패 시엔 원래 결제 에러를 그대로 노출한다.
+		}
+		return null;
+	};
+
+	// onSuccess/onError에서 invalidateBilling()로 캐시를 무효화한다(헬퍼라 정적분석이 못 따라감). 오탐 억제.
+	// react-doctor-disable-next-line query-mutation-missing-invalidation
 	const mutation = useMutation({
 		mutationFn: async () => {
 			// ① 빌링키 발급(아직 안 했을 때만 — authKey는 1회용).
 			if (!issuedRef.current) {
-				await issueBilling({ authKey, customerKey });
+				try {
+					await issueBilling({ authKey, customerKey });
+				} catch (err) {
+					// authKey가 이미 소진됐다면(재진입) 이미 완료된 결제인지 확인 후 성공 처리.
+					const completed = await detectAlreadyComplete();
+					if (completed) return completed;
+					throw err;
+				}
 				issuedRef.current = true;
 			}
 			// ② 카드 변경이면 빌링키만 교체(구독 생성 없음).
@@ -146,13 +216,20 @@ function BillingFlow({
 				...(billingCycle ? { billing_cycle: billingCycle } : {}),
 			});
 		},
-		onSuccess: () => {
-			// 결제·구독·빌링키 변경 후 관련 캐시를 무효화해 최신 상태를 반영한다.
-			queryClient.invalidateQueries({ queryKey: ["account", "me"] });
-			queryClient.invalidateQueries({
-				queryKey: ["subscription", "hospital", hospitalNo],
-			});
-			queryClient.invalidateQueries({ queryKey: ["billing", "list"] });
+		onSuccess: (data) => {
+			// 1회용 authKey 재진입 대비 — 처리 완료(첫 달 무료 여부 포함)를 세션에 기록한다.
+			markProcessed(authKey, data?.trial ?? false);
+			invalidateBilling();
+		},
+		onError: (err) => {
+			// 이미 활성 구독(409)이면 결제는 끝난 상태 → 완료로 기록(재진입 시 성공 화면).
+			if (
+				err instanceof ApiError &&
+				err.errorCode === "ERROR_409_SUBSCRIPTION_ALREADY_ACTIVE"
+			) {
+				markProcessed(authKey, false);
+				invalidateBilling();
+			}
 		},
 	});
 	const { mutate } = mutation;
@@ -163,9 +240,11 @@ function BillingFlow({
 		mutation.error instanceof ApiError ? mutation.error.errorCode : null;
 	const alreadyActive =
 		mutationErrorCode === "ERROR_409_SUBSCRIPTION_ALREADY_ACTIVE";
-	const done = mutation.isSuccess || alreadyActive;
+	// alreadyProcessed: 이전 방문에서 이미 성공 처리된 콜백(뒤로가기/새로고침 재진입) → 완료로 간주.
+	const done = mutation.isSuccess || alreadyActive || alreadyProcessed;
 	// 최초 구독이면 첫 달 무료(trial). 성공 화면 카피를 분기한다(가이드 §4).
-	const trial = mutation.data?.trial ?? false;
+	// 재진입(alreadyProcessed)이면 mutation 데이터가 없으므로 세션에 저장해 둔 값을 쓴다.
+	const trial = mutation.data?.trial ?? processed?.trial ?? false;
 	const error =
 		mutation.isError && !alreadyActive
 			? { code: mutationErrorCode, message: apiErrorMessage(mutation.error) }
@@ -175,6 +254,8 @@ function BillingFlow({
 	// running ref로 StrictMode 이중 실행/재렌더 재실행을 막는다.
 	useEffect(() => {
 		if (running.current) return;
+		// 이미 처리된 콜백 재진입이면 결제를 다시 시도하지 않는다(완료 화면으로 파생).
+		if (alreadyProcessed) return;
 		// 세션 로딩 중이거나 비로그인이면 자동 시작하지 않는다(비로그인은 needsLogin 화면 파생).
 		if (sessionLoading || !isAuthenticated) return;
 		running.current = true;
@@ -182,7 +263,11 @@ function BillingFlow({
 		// 새로고침 후 세션 부트스트랩이 끝나야만 호출 가능 → effect가 유일한 자리). 오탐 억제.
 		// react-doctor-disable-next-line no-pass-data-to-parent
 		mutate();
-	}, [sessionLoading, isAuthenticated, mutate]);
+	}, [sessionLoading, isAuthenticated, mutate, alreadyProcessed]);
+
+	// 이미 완료된 결제(뒤로가기/새로고침 재진입 등)는 로그인 만료보다 우선해 완료 화면을 보여준다.
+	if (done)
+		return <BillingSuccess mode={mode} hospitalNo={hospitalNo} trial={trial} />;
 
 	if (needsLogin) {
 		return (
@@ -204,9 +289,6 @@ function BillingFlow({
 			</AppShell>
 		);
 	}
-
-	if (done)
-		return <BillingSuccess mode={mode} hospitalNo={hospitalNo} trial={trial} />;
 
 	if (error) {
 		return (
@@ -314,6 +396,7 @@ function BillingError({
 							</Button>
 						</>
 					)}
+					<KakaoSupportLink variant="button" size="2xl" className="w-full" />
 				</div>
 			</SectionCard>
 		</AppShell>

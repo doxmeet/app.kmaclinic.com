@@ -33,7 +33,10 @@ import {
 	type AdminSubscriptionDetail,
 	adminApi,
 } from "#/lib/api/admin.ts";
-import { toastApiError } from "#/lib/api-error-message.ts";
+import {
+	ADMIN_ERROR_OVERRIDES,
+	toastApiError,
+} from "#/lib/api-error-message.ts";
 import { cn } from "#/lib/utils.ts";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -249,7 +252,7 @@ function InstitutionDetailPage() {
 			qc.invalidateQueries({ queryKey: ["admin", "subscription", no] });
 			qc.invalidateQueries({ queryKey: ["admin", "subscriptions"] });
 		},
-		onError: (err) => toastApiError(err),
+		onError: (err) => toastApiError(err, ADMIN_ERROR_OVERRIDES),
 	});
 
 	const statusValue = subscription
@@ -320,7 +323,7 @@ function InstitutionDetailPage() {
 							variant="neutral-outline"
 							size="sm"
 							onClick={() => {
-								toastApiError(error);
+								toastApiError(error, ADMIN_ERROR_OVERRIDES);
 								refetch();
 							}}
 						>

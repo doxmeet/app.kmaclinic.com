@@ -36,7 +36,10 @@ import {
 	TableRow,
 } from "#/components/ui/table.tsx";
 import { type AdminUser, adminApi, type Paginated } from "#/lib/api/admin.ts";
-import { toastApiError } from "#/lib/api-error-message.ts";
+import {
+	ADMIN_ERROR_OVERRIDES,
+	toastApiError,
+} from "#/lib/api-error-message.ts";
 
 const PAGE_SIZE = 10;
 
@@ -175,7 +178,7 @@ function UsersPage() {
 	const levelMutation = useMutation({
 		mutationFn: ({ no, level }: { no: number; level: number }) =>
 			adminApi.setUserLevel(no, level),
-		onError: (err) => toastApiError(err),
+		onError: (err) => toastApiError(err, ADMIN_ERROR_OVERRIDES),
 		onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "users"] }),
 	});
 
@@ -183,7 +186,7 @@ function UsersPage() {
 	const withdrawMutation = useMutation({
 		mutationFn: ({ no, isWithdrawn }: { no: number; isWithdrawn: boolean }) =>
 			adminApi.withdrawUser(no, isWithdrawn),
-		onError: (err) => toastApiError(err),
+		onError: (err) => toastApiError(err, ADMIN_ERROR_OVERRIDES),
 		onSuccess: (_data, vars) => {
 			toast.success(
 				vars.isWithdrawn ? "회원을 탈퇴 처리했습니다." : "회원을 복구했습니다.",
@@ -293,7 +296,7 @@ function UsersPage() {
 											variant="neutral-outline"
 											size="sm"
 											onClick={() => {
-												toastApiError(error);
+												toastApiError(error, ADMIN_ERROR_OVERRIDES);
 												refetch();
 											}}
 										>
