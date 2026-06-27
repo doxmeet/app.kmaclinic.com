@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { Button } from "#/components/ui/button.tsx";
 import { apiErrorMessage, toastApiError } from "#/lib/api-error-message.ts";
 import { consumeGgkmaState, exchangeOAuthCode } from "#/lib/auth/session.ts";
 
@@ -21,76 +22,81 @@ export const Route = createFileRoute("/oauth/ggkma/callback")({
 	}),
 });
 
+/** state 불일치를 토큰 교환 실패와 같은 .catch로 흘려보내기 위한 sentinel 메시지. */
+const STATE_MISMATCH = "GGKMA_STATE_MISMATCH";
+
 function GgkmaCallbackPage() {
 	const { code, state, error } = Route.useSearch();
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
-	const [reason, setReason] = useState<string | null>(null);
+	// 동기적으로 판정되는 실패(인가 오류 / 코드 없음)는 렌더 중 파생한다(state 미보관).
+	const staticFailureReason = error
+		? "GGKMA 인증이 취소되었습니다."
+		: !code
+			? "인증 코드(code)가 없습니다."
+			: null;
+	// state 불일치(sessionStorage 소비)·토큰 교환 실패만 state로 보관한다.
+	const [asyncError, setAsyncError] = useState<string | null>(null);
+	const reason = staticFailureReason ?? asyncError;
 	const ran = useRef(false);
 
 	useEffect(() => {
 		if (ran.current) return;
+		// 동기 실패면 교환을 시도하지 않는다(화면은 파생 reason으로 처리).
+		if (staticFailureReason || !code) return;
 		ran.current = true;
 
-		// code·state는 1회용 → 처리 후 쿼리스트링 제거(재진입/새로고침 시 재교환 방지).
-		const stripUrl = () => {
-			if (typeof window !== "undefined") {
-				window.history.replaceState(null, "", window.location.pathname);
-			}
-		};
-
-		if (error) {
-			setReason("GGKMA 인증이 취소되었습니다.");
-			stripUrl();
-			return;
-		}
-		if (!code) {
-			setReason("인증 코드(code)가 없습니다.");
-			stripUrl();
-			return;
-		}
-		// CSRF: 시작 때 저장한 state와 일치해야 진행(저장값 소비).
-		if (!consumeGgkmaState(state)) {
-			setReason("인증 상태가 올바르지 않습니다. 다시 시도해 주세요.");
-			stripUrl();
-			return;
-		}
-
-		exchangeOAuthCode(code, "ggkma")
+		// CSRF state 대조와 토큰 교환을 하나의 async 체인으로 묶어, 모든 실패를 .catch에서
+		// 일괄 처리한다(동기 setState로 인한 불필요한 추가 렌더 방지).
+		Promise.resolve()
+			// state 일치(저장값 소비)해야 교환 진행. 불일치는 sentinel로 .catch에 위임(삼항=if문 회피).
+			.then(() =>
+				consumeGgkmaState(state)
+					? exchangeOAuthCode(code, "ggkma")
+					: Promise.reject(new Error(STATE_MISMATCH)),
+			)
 			.then(async () => {
-				stripUrl();
 				await queryClient.invalidateQueries({ queryKey: ["account", "me"] });
 				navigate({ to: "/onboarding" });
 			})
 			.catch((e) => {
-				stripUrl();
-				toastApiError(e);
-				setReason(apiErrorMessage(e));
+				const mismatch = e instanceof Error && e.message === STATE_MISMATCH;
+				if (!mismatch) toastApiError(e);
+				setAsyncError(
+					mismatch
+						? "인증 상태가 올바르지 않습니다. 다시 시도해 주세요."
+						: apiErrorMessage(e),
+				);
+			})
+			.finally(() => {
+				// code·state는 1회용 → 처리 후 쿼리스트링 제거(재진입/새로고침 시 재교환 방지).
+				if (typeof window !== "undefined") {
+					window.history.replaceState(null, "", window.location.pathname);
+				}
 			});
-	}, [code, state, error, navigate, queryClient]);
+	}, [code, state, staticFailureReason, navigate, queryClient]);
 
 	return (
-		<div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-surface px-6 text-center">
+		<div className="flex min-h-screen flex-col items-center justify-center gap-5 bg-surface px-6 text-center">
 			{reason ? (
 				<>
-					<p className="text-lg font-semibold text-ink">
-						로그인에 실패했습니다.
-					</p>
-					<p className="text-sm text-body">
+					<p className="text-3xl font-bold text-ink">로그인에 실패했습니다.</p>
+					<p className="text-lg text-body break-keep text-balance">
 						{reason ?? "잠시 후 다시 시도해 주세요."}
 					</p>
-					<button
-						type="button"
+					<Button
+						variant="brand"
+						size="cta"
+						className="mt-3"
 						onClick={() => navigate({ to: "/login" })}
-						className="mt-2 rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-brand-foreground"
 					>
 						로그인으로 돌아가기
-					</button>
+					</Button>
 				</>
 			) : (
 				<>
-					<Loader2 className="size-7 animate-spin text-brand" />
-					<p className="text-base text-body">로그인 처리 중입니다…</p>
+					<Loader2 className="size-10 animate-spin text-brand" />
+					<p className="text-xl text-body">로그인 처리 중입니다…</p>
 				</>
 			)}
 		</div>
