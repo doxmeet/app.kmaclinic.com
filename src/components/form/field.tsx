@@ -10,7 +10,7 @@ function Field({ className, ...props }: React.ComponentProps<"div">) {
 	return (
 		<div
 			data-slot="field"
-			className={cn("flex w-full flex-col gap-4", className)}
+			className={cn("flex w-full min-w-0 flex-col gap-4", className)}
 			{...props}
 		/>
 	);

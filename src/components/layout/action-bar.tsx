@@ -23,7 +23,7 @@ function StickyActionBar({
 				className,
 			)}
 		>
-			<div className="mx-auto flex max-w-[1100px] items-center gap-3 px-4 py-3 sm:px-6">
+			<div className="mx-auto flex max-w-[1100px] items-center gap-2 px-3 py-3 sm:gap-3 sm:px-6">
 				<div className="flex shrink-0 items-center gap-2">{left}</div>
 				<div className="hidden flex-1 justify-center text-center text-sm text-body sm:flex">
 					{center}
