@@ -16,11 +16,7 @@ import { isSlugValid } from "#/components/onboarding/slug.ts";
 import { SlugField } from "#/components/onboarding/slug-field.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { ApiError } from "#/lib/api";
-import {
-	publishHospital,
-	setHospitalSlug,
-	setProfileSlug,
-} from "#/lib/api/billing.ts";
+import { publishHospital, setHospitalSlug } from "#/lib/api/billing.ts";
 import {
 	getOverview,
 	type OnboardingMode,
@@ -216,15 +212,11 @@ function PublishPanel({
 	onPublished: () => void;
 }) {
 	const queryClient = useQueryClient();
-	const { account, refetch } = useSession();
-	// profile.slug가 이미 있으면 setProfileSlug 호출 금지(immutable).
-	const profileSlug = account?.profile?.slug?.trim() || null;
 
 	// 병원 slug는 기존 hospital.slug prefill 유지.
 	const [hospitalSlug, setHospitalSlugValue] = useState(
 		hospital.slug?.trim() ?? "",
 	);
-	const [profileSlugInput, setProfileSlugInput] = useState("");
 	const [touched, setTouched] = useState(false);
 
 	const publishMutation = useMutation({
@@ -232,11 +224,7 @@ function PublishPanel({
 			if (hospital.hospital_no == null) {
 				throw new Error("병원 정보를 찾을 수 없습니다.");
 			}
-			// profile slug 미설정 시에만 설정(이미 설정돼 있으면 건너뜀 → immutable 방지).
-			if (!profileSlug) {
-				await setProfileSlug(profileSlugInput.trim());
-				await refetch();
-			}
+			// 발행은 병원 slug + 활성 구독만 필요. 프로필 slug는 프로필 전용 흐름에서만 설정한다.
 			await setHospitalSlug(hospital.hospital_no, hospitalSlug.trim());
 			await publishHospital(hospital.hospital_no);
 		},
@@ -250,10 +238,7 @@ function PublishPanel({
 	const title = hospital.name?.trim() ? hospital.name : "병원";
 
 	const hospitalValid = isSlugValid(hospitalSlug.trim());
-	const profileValid = profileSlug
-		? true
-		: isSlugValid(profileSlugInput.trim());
-	const canSubmit = hospitalValid && profileValid && !publishMutation.isPending;
+	const canSubmit = hospitalValid && !publishMutation.isPending;
 
 	function handleSubmit(e: React.FormEvent) {
 		e.preventDefault();
@@ -272,36 +257,6 @@ function PublishPanel({
 			</div>
 
 			<form onSubmit={handleSubmit} className="flex flex-col gap-4">
-				{profileSlug ? (
-					<InfoCallout tone="info">
-						<p className="text-sm">
-							내 프로필 주소:{" "}
-							<span className="font-semibold text-ink">
-								{`${profileSlug}.kmadoc.com`}
-							</span>{" "}
-							(설정됨)
-						</p>
-					</InfoCallout>
-				) : (
-					<SlugField
-						label="프로필 공개 주소"
-						domain=".kmadoc.com"
-						value={profileSlugInput}
-						onChange={(v) => {
-							setProfileSlugInput(v);
-							setTouched(true);
-						}}
-						placeholder="예: hong-gildong"
-						disabled={publishMutation.isPending}
-						invalid={
-							touched &&
-							profileSlugInput.trim().length > 0 &&
-							!isSlugValid(profileSlugInput.trim())
-						}
-						description="의사 프로필이 이 주소로 공개됩니다."
-					/>
-				)}
-
 				<SlugField
 					label="병원 공개 주소"
 					domain=".kmaclinic.com"
