@@ -13,6 +13,10 @@ interface ImportMetaEnv {
 	readonly VITE_OAUTH_REDIRECT_URI?: string;
 	/** toss 결제위젯 client key 폴백(보통 API 응답값 사용) */
 	readonly VITE_TOSS_CLIENT_KEY?: string;
+	/** 홈 "샘플 보기" — 병원 홈페이지 샘플 사이트 URL (미설정 시 ggkma1 샘플) */
+	readonly VITE_SAMPLE_HOSPITAL_URL?: string;
+	/** 홈 "샘플 보기" — 의사 프로필 샘플 사이트 URL (미설정 시 ggkma1 샘플) */
+	readonly VITE_SAMPLE_PROFILE_URL?: string;
 }
 
 interface ImportMeta {

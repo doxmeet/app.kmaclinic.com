@@ -40,24 +40,35 @@ function DialogContent({
 	className,
 	children,
 	showCloseButton = true,
+	fullScreen = false,
 	...props
 }: DialogPrimitive.Popup.Props & {
 	showCloseButton?: boolean;
+	/** 전체화면(뷰포트 가득) 레이아웃 — iframe 등 몰입형 콘텐츠용. */
+	fullScreen?: boolean;
 }) {
 	return (
 		<DialogPortal>
 			<DialogOverlay />
 			<DialogPrimitive.Popup
 				data-slot="dialog-content"
+				// 전체화면 표시자. Base UI 스크롤 잠금이 html에 scrollbar-gutter:stable을 걸어
+				// 예약한 거터(스크롤바 폭)를, styles.css의 html:has(...) 규칙이 이 속성을 보고 해제한다.
+				data-fullscreen={fullScreen ? "" : undefined}
 				className={cn(
-					// 모바일: 바텀시트(Drawer) — 화면 하단에 붙어 위로 슬라이드, 상단 모서리만 둥글게.
-					"fixed inset-x-0 bottom-0 z-50 flex max-h-[92dvh] w-full flex-col overflow-y-auto rounded-t-[28px] bg-surface text-popover-foreground shadow-[0_-8px_24px_0_rgba(0,0,0,0.12)] duration-200 outline-none",
-					// PC(sm 이상): 화면 중앙 정렬 다이얼로그.
-					"sm:inset-x-auto sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:max-h-[85dvh] sm:max-w-lg sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:shadow-[0_25px_50px_0_rgba(0,0,0,0.25)] sm:ring-1 sm:ring-line-soft",
-					// 등장/퇴장: 페이드 공통, 모바일은 슬라이드업, PC는 줌.
-					"data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
-					"max-sm:data-open:slide-in-from-bottom max-sm:data-closed:slide-out-to-bottom",
-					"sm:data-open:zoom-in-95 sm:data-closed:zoom-out-95",
+					fullScreen
+						? // 전체화면: inset-0으로 뷰포트에 딱 맞춤(거터 해제 시 창 전체를 덮음). 세로 컬럼(상단 바 + 본문), 페이드만.
+							"fixed inset-0 z-50 flex flex-col overflow-hidden bg-surface text-popover-foreground outline-none data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0"
+						: cn(
+								// 모바일: 바텀시트(Drawer) — 화면 하단에 붙어 위로 슬라이드, 상단 모서리만 둥글게.
+								"fixed inset-x-0 bottom-0 z-50 flex max-h-[92dvh] w-full flex-col overflow-y-auto rounded-t-[28px] bg-surface text-popover-foreground shadow-[0_-8px_24px_0_rgba(0,0,0,0.12)] duration-200 outline-none",
+								// PC(sm 이상): 화면 중앙 정렬 다이얼로그.
+								"sm:inset-x-auto sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:max-h-[85dvh] sm:max-w-lg sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:shadow-[0_25px_50px_0_rgba(0,0,0,0.25)] sm:ring-1 sm:ring-line-soft",
+								// 등장/퇴장: 페이드 공통, 모바일은 슬라이드업, PC는 줌.
+								"data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+								"max-sm:data-open:slide-in-from-bottom max-sm:data-closed:slide-out-to-bottom",
+								"sm:data-open:zoom-in-95 sm:data-closed:zoom-out-95",
+							),
 					className,
 				)}
 				{...props}

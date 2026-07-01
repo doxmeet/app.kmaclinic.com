@@ -240,6 +240,18 @@ body {
   overflow-x: clip;
 }
 
+/*
+ * 전체화면 Dialog가 열려 있는 동안엔 html의 스크롤바 거터 예약을 해제한다.
+ * Base UI 스크롤 잠금이 html에 인라인으로 scrollbar-gutter:stable을 걸어(배경 흔들림 방지)
+ * 오른쪽에 스크롤바 폭만큼 빈 거터가 남는데, 전체화면 Dialog(fixed inset-0)는 예약된
+ * 거터 위를 덮지 못해 빈 공간처럼 보인다. 배경이 Dialog로 완전히 가려지므로 거터를 auto로
+ * 되돌려 뷰포트를 창 전체 폭으로 만들면 Dialog가 빈틈없이 덮는다.
+ * (인라인 stable을 이기려면 !important 필요)
+ */
+html:has([data-slot='dialog-content'][data-fullscreen]) {
+  scrollbar-gutter: auto !important;
+}
+
 /* 한글 줄바꿈: 제목은 단어 단위 유지 */
 h1,
 h2,

@@ -12,6 +12,7 @@ import {
 	Sparkles,
 	Stethoscope,
 } from "lucide-react";
+import { SampleViewMenu } from "#/components/home/sample-preview.tsx";
 import {
 	AppHeader,
 	type HeaderNavItem,
@@ -20,17 +21,6 @@ import { SiteFooter } from "#/components/layout/site-footer.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { useSession } from "#/lib/auth/use-session.ts";
-
-/**
- * 같은 섹션을 다시 눌러도 스크롤되도록 프로그래밍적으로 이동한다.
- * (href="#id"는 주소창 해시가 동일하면 동작하지 않는 문제 회피)
- */
-function scrollToSection(id: string) {
-	const el = document.getElementById(id);
-	if (!el) return;
-	el.scrollIntoView({ behavior: "smooth" });
-	window.history.replaceState(null, "", `#${id}`);
-}
 
 /** 홈 상단 마케팅 섹션 내비(헤더 가운데). */
 const HOME_NAV: HeaderNavItem[] = [
@@ -88,14 +78,7 @@ function Hero() {
 							내 프로필 작성하기
 							<ArrowRight className="size-5" />
 						</Button>
-						<Button
-							onClick={() => scrollToSection("how")}
-							variant="neutral-outline"
-							size="cta"
-							className="w-full sm:w-auto"
-						>
-							샘플 보기
-						</Button>
+						<SampleViewMenu />
 					</div>
 					<ul className="flex flex-wrap items-center gap-x-5 gap-y-2 pt-2 text-sm text-muted-fg">
 						<li className="flex items-center gap-1.5">
