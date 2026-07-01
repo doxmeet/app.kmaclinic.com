@@ -33,6 +33,9 @@ const schema = z.object({
 	// iframe src = origin 루트(`/preview` 경로 없음) + postMessage targetOrigin(editor-preview-integration.md §4).
 	// 미리보기 앱은 dev가 없어 모든 환경이 prod(preview.kmadoc.com)를 쓴다. 미설정 시 폴백.
 	VITE_PROFILE_PREVIEW_ORIGIN: z.url().optional(),
+	// 홈 "샘플 보기" 전체화면 Dialog에 iframe으로 띄우는 샘플 사이트. 미설정 시 ggkma1 샘플 테넌트로 폴백.
+	VITE_SAMPLE_HOSPITAL_URL: z.url().optional(),
+	VITE_SAMPLE_PROFILE_URL: z.url().optional(),
 });
 
 const parsed = schema.safeParse(import.meta.env);
