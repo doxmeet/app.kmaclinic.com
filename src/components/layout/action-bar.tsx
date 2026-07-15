@@ -18,6 +18,8 @@ function StickyActionBar({
 }) {
 	return (
 		<div
+			// 카카오톡 FAB(우하단)가 이 바를 감지해 위로 비켜나는 마커.
+			data-sticky-action-bar=""
 			className={cn(
 				"sticky bottom-0 z-30 border-t border-line bg-surface/95 backdrop-blur",
 				className,

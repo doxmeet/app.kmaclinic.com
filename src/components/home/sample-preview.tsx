@@ -1,14 +1,6 @@
-import { Menu } from "@base-ui/react/menu";
 import { Link } from "@tanstack/react-router";
-import {
-	Building2,
-	ChevronDown,
-	IdCard,
-	Loader2,
-	LogIn,
-	XIcon,
-} from "lucide-react";
-import { useEffect, useState } from "react";
+import { Loader2, LogIn, XIcon } from "lucide-react";
+import { useState } from "react";
 import { Button } from "#/components/ui/button.tsx";
 import {
 	Dialog,
@@ -21,7 +13,7 @@ import { useSession } from "#/lib/auth/use-session.ts";
 import { env } from "#/lib/env.ts";
 
 /**
- * 홈 "샘플 보기" — 완성 결과물(병원 홈페이지 / 의사 프로필)을 앱 내부 전체화면 Dialog(iframe)로 보여준다.
+ * 홈 "예시 보기" — 완성 결과물(병원 홈페이지 / 의사 프로필)을 앱 내부 전체화면 Dialog(iframe)로 보여준다.
  * 새 창 대신 Dialog를 쓰는 이유: 모바일에서 새 창 → 뒤로가기 흐름이 어색하기 때문(단일 화면 내 열고 닫기).
  * Dialog 상단에는 로그인/작성하기 CTA를 고정해 샘플을 보다 바로 전환하도록 유도한다.
  */
@@ -45,58 +37,6 @@ const SAMPLE_SITES: Record<
 	},
 };
 
-const MENU_ITEM_CLASS =
-	"flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2.5 text-[15px] text-ink outline-none transition-colors select-none data-[highlighted]:bg-muted";
-
-/**
- * SampleViewMenu — 히어로의 "샘플 보기" 드롭다운 + 샘플 Dialog.
- * 트리거는 기존 "샘플 보기" 버튼과 동일 외형(neutral-outline · cta), 선택 시 해당 샘플 Dialog를 연다.
- */
-function SampleViewMenu() {
-	const [kind, setKind] = useState<SampleKind | null>(null);
-
-	return (
-		<>
-			<Menu.Root>
-				<Menu.Trigger
-					render={
-						<Button
-							variant="neutral-outline"
-							size="cta"
-							className="w-full sm:w-auto"
-						/>
-					}
-				>
-					샘플 보기
-					<ChevronDown className="size-5" />
-				</Menu.Trigger>
-				<Menu.Portal>
-					<Menu.Positioner sideOffset={8} align="start" className="z-50">
-						<Menu.Popup className="min-w-[240px] origin-top rounded-xl border border-line bg-surface p-1.5 shadow-[0_12px_32px_rgba(0,0,0,0.12)] outline-none">
-							<Menu.Item
-								className={MENU_ITEM_CLASS}
-								onClick={() => setKind("hospital")}
-							>
-								<Building2 className="size-4.5 text-muted-fg" />
-								병원 홈페이지 샘플
-							</Menu.Item>
-							<Menu.Item
-								className={MENU_ITEM_CLASS}
-								onClick={() => setKind("profile")}
-							>
-								<IdCard className="size-4.5 text-muted-fg" />
-								의사 프로필 샘플
-							</Menu.Item>
-						</Menu.Popup>
-					</Menu.Positioner>
-				</Menu.Portal>
-			</Menu.Root>
-
-			<SamplePreviewDialog kind={kind} onClose={() => setKind(null)} />
-		</>
-	);
-}
-
 /**
  * SamplePreviewDialog — 전체화면 iframe Dialog.
  * `kind`가 null이 되면 닫힘. 닫히는 애니메이션 동안 콘텐츠가 유지되도록 마지막 kind를 기억한다.
@@ -110,15 +50,18 @@ function SamplePreviewDialog({
 }) {
 	const { isAuthenticated } = useSession();
 	// 닫힘 애니메이션 중에도 site가 유효하도록 마지막으로 연 kind를 유지.
+	const [prevKind, setPrevKind] = useState<SampleKind | null>(null);
 	const [lastKind, setLastKind] = useState<SampleKind>("hospital");
 	const [loaded, setLoaded] = useState(false);
 
-	useEffect(() => {
+	// 열릴 때 kind 기억 + 로딩 표시 초기화 — effect 대신 렌더 중 조정(추가 커밋 없이 즉시 반영).
+	if (kind !== prevKind) {
+		setPrevKind(kind);
 		if (kind) {
 			setLastKind(kind);
 			setLoaded(false);
 		}
-	}, [kind]);
+	}
 
 	const site = SAMPLE_SITES[lastKind];
 
@@ -182,6 +125,9 @@ function SamplePreviewDialog({
 						src={site.url}
 						title={site.title}
 						onLoad={() => setLoaded(true)}
+						// 샘플 테넌트 사이트(교차 출처) 구동에 scripts/same-origin 필요 — live-preview와 동일 조합.
+						// react-doctor-disable-next-line iframe-missing-sandbox
+						sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
 						className="h-full w-full border-0"
 					/>
 				</div>
@@ -190,4 +136,4 @@ function SamplePreviewDialog({
 	);
 }
 
-export { SampleViewMenu };
+export { SamplePreviewDialog, type SampleKind };
