@@ -1454,9 +1454,7 @@ function AdminCredentialsDialog({
 			<DialogContent className="sm:max-w-md">
 				<DialogHeader>
 					<DialogTitle>병원 관리자 계정 설정</DialogTitle>
-					<DialogDescription className="text-[17px]">
-						병원 홈페이지를 관리할 관리자 아이디와 비밀번호를 설정합니다.
-					</DialogDescription>
+					<DialogDescription className="text-[17px]"></DialogDescription>
 				</DialogHeader>
 
 				<form onSubmit={handleSubmit} className="contents">

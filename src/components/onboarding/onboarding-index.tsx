@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { ArrowLeft, Loader2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AuthGuard } from "#/components/auth/auth-guard.tsx";
 import { InfoCallout } from "#/components/common/info-callout.tsx";
 import { KakaoSupportLink } from "#/components/common/kakao-support-link.tsx";
@@ -77,6 +78,23 @@ function OnboardingOrchestrator() {
 		queryKey: OVERVIEW_KEY,
 		queryFn: getOverview,
 	});
+
+	// 결제 완료 화면의 "홈페이지 주소 정하기" 딥링크(?publish=병원번호) 처리 —
+	// overview 조회가 끝나길 기다렸다가 해당 병원으로 publish 모드에 바로 진입한다.
+	// (목록에 없어도 hospital_no만으로 진입 가능 — PublishPanel은 번호만 필수)
+	const { publish: publishParam } = useSearch({ from: "/onboarding/" });
+	const navigate = useNavigate();
+	useEffect(() => {
+		if (publishParam == null || isLoading) return;
+		const found =
+			overview?.hospitals?.find((h) => h.hospital_no === publishParam) ?? null;
+		setPublishTarget(
+			found ?? ({ hospital_no: publishParam } as OverviewHospital),
+		);
+		setMode("publish");
+		// 새로고침·뒤로가기에서 다시 트리거되지 않도록 파라미터는 소비 후 지운다.
+		navigate({ to: "/onboarding", search: {}, replace: true });
+	}, [publishParam, isLoading, overview, navigate]);
 
 	function refetchOverview() {
 		queryClient.invalidateQueries({ queryKey: OVERVIEW_KEY });
@@ -252,7 +270,7 @@ function PublishPanel({
 	return (
 		<SectionCard className="flex flex-col gap-6">
 			<div className="flex flex-col gap-2">
-				<SectionTitle>병원 홈페이지 공개</SectionTitle>
+				<SectionTitle>병원 홈페이지 주소 설정</SectionTitle>
 				<p className="text-[15px] leading-7 text-body-soft">
 					<span className="font-semibold text-ink">{title}</span> 홈페이지를
 					공개합니다. 방문자에게 보일 공개 주소를 정해 주세요.
@@ -275,9 +293,10 @@ function PublishPanel({
 				/>
 
 				<InfoCallout tone="warning">
-					<p className="text-base">
-						공개 주소는 한 번 정하면 바꿀 수 없어요. 공개하려면 활성
-						구독(결제)이 필요합니다.
+					<p className="text-base break-keep">
+						사이트 주소는 한 번 정하면 바꿀 수 없어요.
+						<br />
+						주소를 정한 후 네이버지도에 등록하면 더욱 빠르게 노출돼요.
 					</p>
 				</InfoCallout>
 
@@ -291,7 +310,7 @@ function PublishPanel({
 					{publishMutation.isPending ? (
 						<Loader2 className="size-5 animate-spin" />
 					) : null}
-					공개하기
+					사이트 주소 정하기
 				</Button>
 			</form>
 		</SectionCard>

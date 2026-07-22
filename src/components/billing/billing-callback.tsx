@@ -485,8 +485,9 @@ function BillingSuccess({
 	}
 
 	// 최초 구독(subscribe): 게시 단계로 유도. 첫 달 무료(trial)면 카피를 분기한다.
+	// 폭은 온보딩 대시보드와 동일(1280/720) — "주소 정하기"로 이어지는 화면 전환이 자연스럽도록.
 	return (
-		<AppShell maxWidth="560px">
+		<AppShell maxWidth="1280px" innerMaxWidth="720px">
 			<SectionCard className="flex flex-col items-center gap-6 text-center">
 				<div className="flex size-16 items-center justify-center rounded-full bg-success-bg">
 					<CheckCircle2 className="size-8 text-success" />
@@ -495,9 +496,9 @@ function BillingSuccess({
 					<h1 className="text-2xl font-bold text-ink">
 						{trial ? "첫 달 무료로 시작했어요!" : "결제가 완료됐어요!"}
 					</h1>
-					<p className="text-[15px] leading-7 text-body-soft">
+					<p className="text-[15px] leading-7 text-body-soft text-balance break-keep whitespace-pre-line">
 						{trial
-							? "카드가 등록됐고 첫 달은 무료예요. 무료 기간이 끝나면 자동으로 첫 결제가 진행됩니다."
+							? "카드가 등록됐고 첫 달은 무료예요.\n무료 기간이 끝나면 자동으로 첫 결제가 진행됩니다."
 							: "정기 결제 카드 등록과 구독이 완료됐습니다."}
 						<br />
 						이제 <span className="font-semibold text-ink">공개</span>하면 병원
@@ -506,19 +507,19 @@ function BillingSuccess({
 				</div>
 				<InfoCallout tone="info" className="w-full text-left">
 					<p className="text-base">
-						대시보드에서 이 병원의{" "}
-						<span className="font-semibold text-ink">공개하기</span> 버튼으로
-						공개 주소를 정하고 공개할 수 있어요.
+						이제 병원 홈페이지 주소를 정하면 환자가 볼 수 있어요.
+						<br />
+						주소를 정하고 네이버지도/카카오에 추가하면 빠르게 활성화가 됩니다.
 					</p>
 				</InfoCallout>
 				<Button
 					nativeButton={false}
-					render={<Link to="/onboarding" />}
+					render={<Link to="/onboarding" search={{ publish: hospitalNo }} />}
 					variant="brand"
 					size="cta"
 					className="w-full"
 				>
-					대시보드로 가서 공개하기
+					홈페이지 주소 정하기
 				</Button>
 			</SectionCard>
 		</AppShell>
@@ -536,7 +537,7 @@ function PaymentFailed({
 }) {
 	return (
 		<div className="flex min-h-screen items-center justify-center bg-black/45 px-4 py-10">
-			<div className="flex w-full max-w-[400px] flex-col items-center gap-6 rounded-3xl bg-surface p-8 shadow-[0_25px_50px_0_rgba(0,0,0,0.25)]">
+			<div className="flex w-full max-w-100 flex-col items-center gap-6 rounded-3xl bg-surface p-8 shadow-[0_25px_50px_0_rgba(0,0,0,0.25)]">
 				<div className="flex size-16 items-center justify-center rounded-full bg-danger-bg">
 					<div className="flex size-10 items-center justify-center rounded-full bg-danger-strong">
 						<X className="size-5 text-white" strokeWidth={2.5} />

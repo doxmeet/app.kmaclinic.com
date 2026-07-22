@@ -4,6 +4,7 @@ import { CheckCircle2, CreditCard, Loader2, PartyPopper } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { CycleSelect } from "#/components/billing/cycle-select.tsx";
+import { PaymentSchedule } from "#/components/billing/payment-schedule.tsx";
 import { InfoCallout } from "#/components/common/info-callout.tsx";
 import {
 	SectionCard,
@@ -14,6 +15,7 @@ import { SlugField } from "#/components/onboarding/slug-field.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { ApiError } from "#/lib/api";
 import {
+	amountForCycle,
 	type BillingCycle,
 	type BillingKey,
 	createSubscription,
@@ -304,6 +306,7 @@ function PaymentStep({
 		return (
 			<PaidComplete
 				slug={slug}
+				hospitalNo={hospitalNo}
 				onComplete={onComplete}
 				trial={completed.trial}
 				subscription={completed.subscription}
@@ -314,41 +317,62 @@ function PaymentStep({
 		<SectionCard className="flex flex-col gap-6">
 			<div className="flex flex-col gap-2">
 				<SectionTitle>병원 홈페이지 구독 시작</SectionTitle>
-				<p className="text-[15px] leading-7 text-body-soft">
-					{showSavedCard
-						? "프로필과 병원이 생성됐어요. 첫 달은 무료예요 — 저장된 카드로 시작하면 한 달 뒤부터 자동 결제됩니다."
-						: "프로필과 병원이 생성됐어요. 첫 달은 무료로 이용하고, 한 달 뒤부터 자동 결제됩니다. 카드만 먼저 등록해 주세요."}
+				<p className="text-[15px] leading-7 text-body-soft sm:text-base">
+					경기도의사회에서 홈페이지 제작비를 지원합니다. 회원님은 유지보수비만
+					결제하시면 됩니다.
+				</p>
+				<p className="text-[15px] text-muted-fg">
+					정가는 월 {money(amountForCycle("monthly"))}입니다. 1년 후부터는
+					정가로 결제됩니다.
 				</p>
 			</div>
 
-			{/* 결제 주기 선택 — Figma 1:11958. 월간·연간만 노출(1개월 이용권 제외). */}
+			{/* 결제 주기 선택 — 월간·연간만 노출(1개월 이용권 제외). */}
 			<CycleSelect
 				value={cycle}
 				onChange={(c) => setCycle(c)}
 				cycles={["monthly", "annual"]}
 			/>
 
-			{/* 저장된 카드 — 카드 재입력 없이 바로 결제(가이드 2-A). 글씨/여백을 결제 주기 카드와 맞춤. */}
-			{showSavedCard && savedCard ? (
-				<div className="flex items-center justify-between gap-3 rounded-xl border border-line-soft bg-surface p-6">
-					<div className="flex min-w-0 items-center gap-3">
-						<CreditCard className="size-6 shrink-0 text-brand" />
-						<div className="flex min-w-0 flex-col gap-0.5">
-							<span className="truncate text-[16px] font-semibold text-ink sm:text-[17px]">
-								{cardLabel(savedCard)}
-							</span>
-							<span className="text-base text-body-soft">저장된 결제 카드</span>
-						</div>
+			{/* 결제 일정 안내 — 월간/연간 청구 흐름 타임라인 */}
+			<PaymentSchedule />
+
+			{/* 결제 수단 — 저장된 카드가 있으면 그 카드로 바로 결제(가이드 2-A), 없으면 카드 등록 안내. */}
+			<div className="flex items-center justify-between gap-4 rounded-2xl border border-line-soft bg-surface p-5 sm:p-6">
+				<div className="flex min-w-0 items-center gap-4">
+					<span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand">
+						<CreditCard className="size-6" />
+					</span>
+					<div className="flex min-w-0 flex-col gap-0.5">
+						<span className="text-[16px] font-semibold text-ink sm:text-[17px]">
+							결제 수단
+						</span>
+						<span className="truncate text-[15px] text-body-soft sm:text-base">
+							{showSavedCard && savedCard
+								? `${cardLabel(savedCard)} · 저장된 결제 카드`
+								: "안전한 결제를 위해 카드 정보를 등록합니다."}
+						</span>
 					</div>
+				</div>
+				{showSavedCard ? (
 					<button
 						type="button"
 						onClick={() => setUseNewCard(true)}
-						className="shrink-0 text-base font-medium text-brand underline-offset-4 transition-colors hover:underline"
+						className="shrink-0 text-[15px] font-medium text-brand underline-offset-4 transition-colors hover:underline sm:text-base"
 					>
 						다른 카드로 변경
 					</button>
-				</div>
-			) : null}
+				) : savedCard != null && useNewCard ? (
+					/* "다른 카드로 변경"으로 들어왔다면 저장된 카드로 되돌아갈 수 있게 한다. */
+					<button
+						type="button"
+						onClick={() => setUseNewCard(false)}
+						className="shrink-0 text-[15px] font-medium text-brand underline-offset-4 transition-colors hover:underline sm:text-base"
+					>
+						저장된 카드로 결제
+					</button>
+				) : null}
+			</div>
 
 			{billingIsPending ? (
 				<div className="flex items-center justify-center py-3">
@@ -368,28 +392,16 @@ function PaymentStep({
 					이 카드로 무료 시작하기
 				</Button>
 			) : ready ? (
-				<div className="flex flex-col gap-3">
-					<Button
-						variant="brand"
-						size="cta"
-						className="w-full"
-						disabled={loading}
-						onClick={handlePay}
-					>
-						{loading ? <Loader2 className="size-5 animate-spin" /> : null}
-						카드 등록하고 무료로 시작하기
-					</Button>
-					{/* "다른 카드로 변경"으로 들어왔다면 저장된 카드로 되돌아갈 수 있게 한다. */}
-					{savedCard != null && useNewCard ? (
-						<button
-							type="button"
-							onClick={() => setUseNewCard(false)}
-							className="text-center text-base font-medium text-body-soft underline-offset-4 transition-colors hover:text-brand hover:underline"
-						>
-							저장된 카드로 결제하기
-						</button>
-					) : null}
-				</div>
+				<Button
+					variant="brand"
+					size="cta"
+					className="w-full"
+					disabled={loading}
+					onClick={handlePay}
+				>
+					{loading ? <Loader2 className="size-5 animate-spin" /> : null}
+					결제 수단 등록하기
+				</Button>
 			) : (
 				<InfoCallout tone="warning">
 					<p className="text-base">
@@ -400,9 +412,9 @@ function PaymentStep({
 			)}
 
 			<p className="text-center text-base text-muted-fg">
-				카드 등록이 끝나면 병원 홈페이지를 공개할 수 있어요. 첫 결제는 한 달
-				뒤예요
-				{slug ? ` (${slug}.kmaclinic.com)` : ""}.
+				카드 등록이 완료되면 병원 홈페이지
+				{slug ? `(${slug}.kmaclinic.com)` : ""}를 바로 공개할 수 있습니다. 첫
+				결제는 다음 달에 진행됩니다.
 			</p>
 		</SectionCard>
 	);
@@ -410,17 +422,21 @@ function PaymentStep({
 
 /**
  * 카드 등록/구독 시작이 끝난 뒤 완료 화면(toss 콜백의 BillingSuccess(subscribe)와 동형).
- * onComplete가 있으면(대시보드 오케스트레이터) 그 핸들러로, 없으면 `/onboarding`으로 이동한다.
+ * CTA는 `?publish=<hospital_no>` 딥링크로 공개 주소 설정에 바로 진입한다(대시보드 목록 생략).
+ * hospitalNo가 없을 때만 onComplete(대시보드 복귀) 또는 `/onboarding`으로 폴백.
  *
  * `trial`(첫 달 무료)이면 "무료 시작" 카피로, 아니면(재구독 등 즉시 청구) "결제 완료" 카피로 분기한다.
  */
 function PaidComplete({
 	slug,
+	hospitalNo,
 	onComplete,
 	trial = false,
 	subscription = null,
 }: {
 	slug: string | null;
+	/** 공개 주소 설정 딥링크 대상 병원 번호. */
+	hospitalNo?: number | null;
 	onComplete?: () => void;
 	/** 첫 달 무료체험으로 시작됐는지(가이드 §4). */
 	trial?: boolean;
@@ -445,7 +461,7 @@ function PaidComplete({
 							{firstChargeAt
 								? ` 첫 결제는 ${fmtDate(firstChargeAt)}${
 										money(subscription?.amount)
-											? `에 ${money(subscription?.amount)}로`
+											? `에 ${money(subscription?.amount)}으로`
 											: "에"
 									} 자동 진행돼요.`
 								: " 무료 기간이 끝나면 자동으로 첫 결제가 진행돼요."}
@@ -464,12 +480,22 @@ function PaidComplete({
 			</div>
 			<InfoCallout tone="info" className="w-full text-left">
 				<p className="text-base">
-					대시보드에서 이 병원의{" "}
-					<span className="font-semibold text-ink">공개하기</span> 버튼으로 공개
-					주소를 정하고 공개할 수 있어요.
+					이제 병원 홈페이지 주소를 정하면 환자가 볼 수 있어요.
+					<br />
+					주소를 정하고 네이버지도/카카오에 추가하면 빠르게 활성화가 됩니다.
 				</p>
 			</InfoCallout>
-			{onComplete ? (
+			{hospitalNo != null ? (
+				<Button
+					nativeButton={false}
+					render={<Link to="/onboarding" search={{ publish: hospitalNo }} />}
+					variant="brand"
+					size="cta"
+					className="w-full"
+				>
+					홈페이지 주소 정하기
+				</Button>
+			) : onComplete ? (
 				<Button
 					variant="brand"
 					size="cta"

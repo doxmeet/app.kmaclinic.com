@@ -144,10 +144,13 @@ export function OnboardingDashboard({
 			{/* 병원은 만들었지만 프로필이 아직 없으면 제작 유도 */}
 			{hospitals.length > 0 && profile == null ? <ProfileNudgeCard /> : null}
 
-			{/* "새로 작성" 버튼 대신 최하단 카드로 병원 추가 제작 진입.
+			{/* "새로 작성" 버튼 대신 최하단 카드로 병원 (추가) 제작 진입.
 			    진행 중 draft가 있으면 새 대화를 시작할 수 없어 숨긴다. */}
 			{!isEmpty && canStartNewDraft ? (
-				<HospitalCreateCard onClick={() => onStartConversation("hospital")} />
+				<HospitalCreateCard
+					hasHospital={hospitals.length > 0}
+					onClick={() => onStartConversation("hospital")}
+				/>
 			) : null}
 		</div>
 	);
@@ -244,10 +247,18 @@ function KakaoChannelCta() {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// 병원 홈페이지 제작 카드 — 병원을 이미 만든 사용자가 추가로 만들 때(대시보드 최하단).
+// 병원 홈페이지 제작 카드 — 대시보드 최하단의 새 병원 제작 진입점.
+// 병원을 이미 만든 사용자에게는 "추가 제작"으로 문구를 바꿔 보여준다.
 // ─────────────────────────────────────────────────────────────────────
 
-function HospitalCreateCard({ onClick }: { onClick: () => void }) {
+function HospitalCreateCard({
+	hasHospital,
+	onClick,
+}: {
+	/** 이미 만든 병원이 있는지 — 있으면 추가 제작 문구로 노출. */
+	hasHospital: boolean;
+	onClick: () => void;
+}) {
 	return (
 		<button
 			type="button"
@@ -258,9 +269,13 @@ function HospitalCreateCard({ onClick }: { onClick: () => void }) {
 				<Building2 className="size-7 text-white" />
 			</span>
 			<span className="flex flex-col gap-2">
-				<span className="text-xl font-bold text-white">병원 홈페이지 제작</span>
+				<span className="text-xl font-bold text-white">
+					{hasHospital ? "병원 홈페이지 추가 제작" : "병원 홈페이지 제작"}
+				</span>
 				<span className="text-base leading-7 text-white/85">
-					병원 정보를 입력하고 1분만에 제작해요
+					{hasHospital
+						? "새 병원 정보를 입력하고 홈페이지를 하나 더 만들어요"
+						: "병원 정보를 입력하고 1분만에 제작해요"}
 				</span>
 			</span>
 		</button>
