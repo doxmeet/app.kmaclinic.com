@@ -172,11 +172,11 @@ export function DesignPreviewScreen({
 				>
 					{preview ?? (payload ? <LivePreview payload={payload} /> : null)}
 
-					{/* 스크롤을 따라오는 중앙 플로팅 안내 — 시안 헤더(h-20=80px) 바로 아래.
+					{/* 스크롤을 따라오는 중앙 플로팅 안내 — 상단 중앙(시안 헤더와 겹쳐도 무방, 사용자 확정).
 					    콘텐츠에 앵커되는 나머지 안내 2개(제목·로그인)는 미리보기 앱
 					    (wildcard.kmaclinic.com PreviewGuides)이 iframe 안에서 렌더한다. */}
 					{showGuides ? (
-						<GuideBubble className="top-24 left-1/2 w-max max-w-[calc(100%-2rem)] -translate-x-1/2 rounded-2xl">
+						<GuideBubble className="top-3 left-1/2 w-max max-w-[calc(100%-2rem)] -translate-x-1/2 rounded-2xl">
 							<p>너무 비어보여도 걱정 마세요.</p>
 							<p className="font-normal text-[#4b5563]">
 								제작 후 관리자 페이지에서 하나하나 추가하세요.
