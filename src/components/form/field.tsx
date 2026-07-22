@@ -68,7 +68,7 @@ function FieldDescription({ className, ...props }: React.ComponentProps<"p">) {
 	return (
 		<p
 			data-slot="field-description"
-			className={cn("text-sm text-body", className)}
+			className={cn("text-base text-body", className)}
 			{...props}
 		/>
 	);
@@ -84,7 +84,7 @@ function FieldError({
 		<p
 			data-slot="field-error"
 			role="alert"
-			className={cn("text-sm text-danger-strong", className)}
+			className={cn("text-base text-danger-strong", className)}
 			{...props}
 		>
 			{children}

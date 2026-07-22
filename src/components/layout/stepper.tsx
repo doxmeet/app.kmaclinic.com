@@ -32,7 +32,7 @@ function Stepper({
 						<li className="flex items-center gap-2">
 							<span
 								className={cn(
-									"flex size-6 items-center justify-center rounded-full text-xs font-semibold",
+									"flex size-6 items-center justify-center rounded-full text-[15px] font-semibold",
 									state === "todo"
 										? "bg-muted text-muted-fg"
 										: "bg-brand text-brand-foreground",
@@ -42,7 +42,7 @@ function Stepper({
 							</span>
 							<span
 								className={cn(
-									"hidden text-sm font-medium sm:inline",
+									"hidden text-base font-medium sm:inline",
 									state === "todo" ? "text-muted-fg" : "text-ink",
 								)}
 							>

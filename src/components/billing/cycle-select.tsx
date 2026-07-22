@@ -111,13 +111,13 @@ export function CycleSelect({
 										{card.title}
 									</span>
 									{card.badge ? (
-										<span className="shrink-0 rounded bg-brand px-2 py-0.5 text-xs font-bold text-white">
+										<span className="shrink-0 rounded bg-brand px-2 py-0.5 text-[15px] font-bold text-white">
 											{card.badge}
 										</span>
 									) : null}
 								</span>
 								{card.note ? (
-									<span className="shrink-0 text-sm text-muted-fg">
+									<span className="shrink-0 text-base text-muted-fg">
 										{card.note}
 									</span>
 								) : null}
@@ -133,12 +133,12 @@ export function CycleSelect({
 								/* 가입: 정가 취소선 + (연간) 정가 + 첫 결제 특가 + 첫 달 무료. */
 								<>
 									<span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-										<span className="text-sm text-muted-fg line-through">
+										<span className="text-base text-muted-fg line-through">
 											{card.pricePrefix}
 											{won(list)}
 										</span>
 										{regular !== list ? (
-											<span className="text-sm font-medium text-body-soft">
+											<span className="text-base font-medium text-body-soft">
 												{card.pricePrefix}
 												{won(regular)}
 											</span>
@@ -149,11 +149,11 @@ export function CycleSelect({
 											첫 결제 {card.pricePrefix}
 											{won(first)}
 										</span>
-										<span className="shrink-0 rounded bg-success-bg px-1.5 py-0.5 text-xs font-bold text-success">
+										<span className="shrink-0 rounded bg-success-bg px-1.5 py-0.5 text-[15px] font-bold text-success">
 											+ 첫 달 무료
 										</span>
 									</span>
-									<span className="text-xs text-muted-fg">
+									<span className="text-[15px] text-muted-fg">
 										부가세 포함 · 가입 한 달 뒤 첫 결제(오픈특가) 후 정가로 자동
 										갱신
 									</span>
@@ -161,7 +161,7 @@ export function CycleSelect({
 							)}
 
 							{card.blurb ? (
-								<span className="pt-1 text-sm text-body-soft">
+								<span className="pt-1 text-base text-body-soft">
 									{card.blurb}
 								</span>
 							) : null}

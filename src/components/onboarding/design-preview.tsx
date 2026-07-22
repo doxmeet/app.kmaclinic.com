@@ -39,6 +39,7 @@ export function DesignPreviewScreen({
 	confirming = false,
 	confirmLabel = "이 디자인으로 결제하기",
 	backLabel = "수정하기",
+	showGuides = false,
 }: {
 	/** 병원 미리보기 편의 — 주면 내부 LivePreview로 렌더(preview 미지정 시). */
 	payload?: PreviewPayload;
@@ -48,11 +49,14 @@ export function DesignPreviewScreen({
 	swatches?: Swatch[];
 	templateKey: string;
 	onTemplateChange: (key: string) => void;
-	onBack: () => void;
+	/** 미지정 시 뒤로가기(수정하기) 버튼을 렌더하지 않는다 — 병원 플로우는 시안 선택 후 계속만 가능. */
+	onBack?: () => void;
 	onConfirm: () => void;
 	confirming?: boolean;
 	confirmLabel?: string;
 	backLabel?: string;
+	/** 병원 미리보기 전용 안내 말풍선(글귀 수정·빈 화면·로그인 안내) 표시 여부. */
+	showGuides?: boolean;
 }) {
 	const [device, setDevice] = useState<Device>("desktop");
 	const current = (templateKey || swatches[0]?.key || "").toLowerCase();
@@ -71,18 +75,18 @@ export function DesignPreviewScreen({
 			{/* 상단 고정 바 — 항상 보임(Figma 1:19102) */}
 			<header className="shrink-0 border-b border-white/10 bg-[#111827]">
 				<div className="mx-auto flex w-full max-w-[1920px] flex-col gap-3 px-4 py-3 sm:px-6 lg:h-16 lg:flex-row lg:items-center lg:justify-between lg:gap-4 lg:py-0">
-					{/* 좌: 미리보기 모드 라벨 + 설명 */}
+					{/* 좌: 미리보기 모드 라벨 */}
 					<div className="flex min-w-0 items-center gap-3">
 						<span className="shrink-0 rounded-md bg-[#f3f4f6] px-3 py-1 text-[15px] tracking-[-0.5px] text-[#4b5563]">
 							미리보기 모드
 						</span>
-						<p className="hidden truncate text-[15px] text-[#d1d5db] xl:block">
-							현재 화면은 공개될 페이지의 프리뷰 상태입니다.
-						</p>
 					</div>
 
-					{/* 중앙: 시안 스와치 + (데스크톱) 기기 토글 */}
+					{/* 중앙: 안내 문구 + 시안 스와치 + (데스크톱) 기기 토글 */}
 					<div className="flex items-center justify-between gap-4 lg:justify-center">
+						<p className="hidden text-[15px] whitespace-nowrap text-[#d1d5db] xl:block">
+							디자인은 언제든 수정하여 선택이 가능해요.
+						</p>
 						{/* 시안 색상 스와치 — 각 버튼에 aria-label로 라벨 제공 */}
 						<div className="flex items-center gap-2">
 							{swatches.map((t) => {
@@ -107,35 +111,42 @@ export function DesignPreviewScreen({
 							})}
 						</div>
 
-						{/* 기기 토글 — 데스크톱에서만(미리보기 폭 전환) */}
-						<div className="hidden items-center gap-1 rounded-lg bg-white/5 p-1 lg:flex">
-							<DeviceButton
-								active={device === "desktop"}
-								onClick={() => setDevice("desktop")}
-								label="데스크톱 미리보기"
-							>
-								<Monitor className="size-4" />
-							</DeviceButton>
-							<DeviceButton
-								active={device === "mobile"}
-								onClick={() => setDevice("mobile")}
-								label="모바일 미리보기"
-							>
-								<Smartphone className="size-4" />
-							</DeviceButton>
+						{/* 기기 토글 — 데스크톱에서만(미리보기 폭 전환) + 모바일 열람 강조 문구 */}
+						<div className="hidden items-center gap-3 lg:flex">
+							<div className="flex items-center gap-1 rounded-lg bg-white/5 p-1">
+								<DeviceButton
+									active={device === "desktop"}
+									onClick={() => setDevice("desktop")}
+									label="데스크톱 미리보기"
+								>
+									<Monitor className="size-4" />
+								</DeviceButton>
+								<DeviceButton
+									active={device === "mobile"}
+									onClick={() => setDevice("mobile")}
+									label="모바일 미리보기"
+								>
+									<Smartphone className="size-4" />
+								</DeviceButton>
+							</div>
+							<p className="hidden text-[15px] whitespace-nowrap text-[#d1d5db] xl:block">
+								환자들은 핸드폰으로 더 많이봐요
+							</p>
 						</div>
 					</div>
 
 					{/* 우: 액션 — 모바일은 한 줄을 반반 나눠 채우고, lg+는 우측 정렬 */}
 					<div className="flex items-center justify-end gap-2 max-lg:w-full sm:gap-3">
-						<button
-							type="button"
-							onClick={onBack}
-							disabled={confirming}
-							className="shrink-0 rounded-md border border-[#4b5563] px-4 py-2 text-[15px] font-medium whitespace-nowrap text-white transition-colors hover:bg-white/5 disabled:opacity-50 sm:px-5"
-						>
-							{backLabel}
-						</button>
+						{onBack ? (
+							<button
+								type="button"
+								onClick={onBack}
+								disabled={confirming}
+								className="shrink-0 rounded-md border border-[#4b5563] px-4 py-2 text-[15px] font-medium whitespace-nowrap text-white transition-colors hover:bg-white/5 disabled:opacity-50 sm:px-5"
+							>
+								{backLabel}
+							</button>
+						) : null}
 						<button
 							type="button"
 							onClick={onConfirm}
@@ -153,14 +164,56 @@ export function DesignPreviewScreen({
 			<div className="flex flex-1 items-stretch justify-center overflow-hidden p-0 sm:p-4">
 				<div
 					className={cn(
-						"h-full overflow-hidden bg-white transition-[width] duration-300",
+						"relative h-full overflow-hidden bg-white transition-[width] duration-300",
 						device === "mobile"
 							? "w-full max-w-[420px] rounded-none border-white/10 sm:rounded-[2rem] sm:border-8"
 							: "w-full sm:rounded-xl",
 					)}
 				>
 					{preview ?? (payload ? <LivePreview payload={payload} /> : null)}
+
+					{/* 스크롤을 따라오는 중앙 플로팅 안내 — 시안 헤더(h-20=80px) 바로 아래.
+					    콘텐츠에 앵커되는 나머지 안내 2개(제목·로그인)는 미리보기 앱
+					    (wildcard.kmaclinic.com PreviewGuides)이 iframe 안에서 렌더한다. */}
+					{showGuides ? (
+						<GuideBubble className="top-24 left-1/2 w-max max-w-[calc(100%-2rem)] -translate-x-1/2 rounded-2xl">
+							<p>너무 비어보여도 걱정 마세요.</p>
+							<p className="font-normal text-[#4b5563]">
+								제작 후 관리자 페이지에서 하나하나 추가하세요.
+							</p>
+						</GuideBubble>
+					) : null}
 				</div>
+			</div>
+		</div>
+	);
+}
+
+/**
+ * 미리보기 위 안내 말풍선 — 콘솔 디자인 톤(흰 카드·보더·그림자 + 블루 핑 도트).
+ * 안내일 뿐이라 클릭을 막지 않도록 pointer-events-none.
+ */
+function GuideBubble({
+	className,
+	children,
+}: {
+	className?: string;
+	children: React.ReactNode;
+}) {
+	return (
+		<div
+			className={cn(
+				"pointer-events-none absolute z-10 flex items-start gap-2.5 rounded-full border border-[#e5e7eb] bg-white/95 px-4 py-2.5 shadow-[0px_10px_15px_-3px_rgba(17,24,39,0.12),0px_4px_6px_-4px_rgba(17,24,39,0.08)] backdrop-blur-sm",
+				className,
+			)}
+		>
+			{/* 핑 도트 — 여러 줄이어도 첫 줄 세로 중앙에 맞춘다(15px 텍스트 줄높이 기준). */}
+			<span className="relative mt-1.75 flex size-2 shrink-0" aria-hidden>
+				<span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#2a64f6] opacity-60" />
+				<span className="relative inline-flex size-2 rounded-full bg-[#2a64f6]" />
+			</span>
+			<div className="min-w-0 text-[15px] font-medium tracking-[-0.5px] text-[#111827]">
+				{children}
 			</div>
 		</div>
 	);

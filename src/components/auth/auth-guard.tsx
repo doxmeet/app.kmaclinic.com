@@ -40,7 +40,7 @@ export function AuthGuard({
 		return (
 			<div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-app-bg px-6 text-center">
 				<p className="text-lg font-semibold text-ink">접근 권한이 없습니다.</p>
-				<p className="text-sm text-body">
+				<p className="text-base text-body">
 					이 페이지는 플랫폼 운영자(ADMIN)만 이용할 수 있습니다.
 				</p>
 			</div>

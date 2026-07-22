@@ -21,7 +21,7 @@ function BrandLogo({
 			<span
 				aria-hidden
 				className={cn(
-					"flex size-7 items-center justify-center rounded-lg bg-brand text-sm font-bold text-brand-foreground",
+					"flex size-7 items-center justify-center rounded-lg bg-brand text-base font-bold text-brand-foreground",
 					markClassName,
 				)}
 			>

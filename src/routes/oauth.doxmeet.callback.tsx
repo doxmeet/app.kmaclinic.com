@@ -52,13 +52,13 @@ function OAuthCallbackPage() {
 					<p className="text-lg font-semibold text-ink">
 						로그인에 실패했습니다.
 					</p>
-					<p className="text-sm text-body">
+					<p className="text-base text-body">
 						{reason ?? "잠시 후 다시 시도해 주세요."}
 					</p>
 					<button
 						type="button"
 						onClick={() => navigate({ to: "/login" })}
-						className="mt-2 rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-brand-foreground"
+						className="mt-2 rounded-lg bg-brand px-5 py-2.5 text-base font-semibold text-brand-foreground"
 					>
 						로그인으로 돌아가기
 					</button>

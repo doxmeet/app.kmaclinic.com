@@ -402,8 +402,10 @@ function PaymentsTableBody({
 				const failure = str(getField(row, ["failure_reason", "failure_code"]));
 				const rowKey = getField(row, ["no", "order_id"]) ?? `row-${idx}`;
 				return (
+					// 정상 경로는 결제 PK(no/order_id) 키 — idx는 id 없는 행 방어 폴백(읽기 전용 표).
+					// react-doctor-disable-next-line no-array-index-as-key
 					<TableRow key={String(rowKey)} className="border-b-line-strong/50">
-						<TableCell className="font-mono text-[13px] text-body">
+						<TableCell className="font-mono text-[15px] text-body">
 							{orderId}
 						</TableCell>
 						<TableCell className="text-body-soft">{subscription}</TableCell>

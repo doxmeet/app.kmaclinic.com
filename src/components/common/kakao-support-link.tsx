@@ -1,5 +1,5 @@
-import { MessageSquareText } from "lucide-react";
 import type * as React from "react";
+import { KakaoTalkIcon } from "#/components/common/kakao-icon.tsx";
 import { Button } from "#/components/ui/button.tsx";
 import { KAKAO_CHANNEL_LABEL, KAKAO_CHANNEL_URL } from "#/lib/support.ts";
 import { cn } from "#/lib/utils.ts";
@@ -35,7 +35,7 @@ export function KakaoSupportLink({
 					className,
 				)}
 			>
-				<MessageSquareText className="size-4" />
+				<KakaoTalkIcon className="size-4" />
 				{label}
 			</a>
 		);
@@ -57,7 +57,7 @@ export function KakaoSupportLink({
 			size={size}
 			className={className}
 		>
-			<MessageSquareText className="size-4" />
+			<KakaoTalkIcon className="size-4" />
 			{label}
 		</Button>
 	);

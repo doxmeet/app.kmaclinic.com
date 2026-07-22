@@ -326,6 +326,8 @@ function UsersPage() {
 											withdrawMutation.variables?.no === Number(no);
 										return (
 											<TableRow
+												// 정상 경로는 회원 PK(no) 키 — idx는 id 없는 행 방어 폴백(행 동작은 no 기반).
+												// react-doctor-disable-next-line no-array-index-as-key
 												key={String(rowKey)}
 												className="border-b-line-strong/50"
 											>
@@ -399,7 +401,7 @@ function UsersPage() {
 																</Button>
 															)
 														) : (
-															<span className="text-[13px] text-muted-fg">
+															<span className="text-[15px] text-muted-fg">
 																변경 불가
 															</span>
 														)}

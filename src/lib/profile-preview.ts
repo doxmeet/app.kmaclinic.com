@@ -98,10 +98,10 @@ export function buildProfilePreviewBundleFromDoc(
 	templateOverride?: string,
 ): ProfilePreviewBundle {
 	const d = doc ?? {};
-	const collKeys = PROFILE_COLLECTION_KEYS as readonly string[];
+	const collKeys = new Set<string>(PROFILE_COLLECTION_KEYS);
 	const profile: ProfilePreviewCore = {};
 	for (const [k, v] of Object.entries(d)) {
-		if (!collKeys.includes(k)) profile[k] = v;
+		if (!collKeys.has(k)) profile[k] = v;
 	}
 	const tk = templateOverride ?? profile.template_key;
 	profile.template_key = (

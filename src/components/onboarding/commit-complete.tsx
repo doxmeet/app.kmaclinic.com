@@ -124,7 +124,7 @@ function FreeProfileComplete({ commitSlug }: { commitSlug: string | null }) {
 					/>
 
 					<InfoCallout tone="warning">
-						<p className="text-sm">
+						<p className="text-base">
 							공개 주소는 한 번 정하면 바꿀 수 없어요. 신중히 입력해 주세요.
 						</p>
 					</InfoCallout>
@@ -162,7 +162,7 @@ function FreeProfileComplete({ commitSlug }: { commitSlug: string | null }) {
 				</p>
 			</div>
 			<InfoCallout tone="success" className="w-full text-left">
-				<p className="text-sm">
+				<p className="text-base">
 					공개 주소:{" "}
 					<span className="font-semibold text-ink">
 						{`${settledSlug}.kmadoc.com`}
@@ -337,13 +337,13 @@ function PaymentStep({
 							<span className="truncate text-[16px] font-semibold text-ink sm:text-[17px]">
 								{cardLabel(savedCard)}
 							</span>
-							<span className="text-sm text-body-soft">저장된 결제 카드</span>
+							<span className="text-base text-body-soft">저장된 결제 카드</span>
 						</div>
 					</div>
 					<button
 						type="button"
 						onClick={() => setUseNewCard(true)}
-						className="shrink-0 text-sm font-medium text-brand underline-offset-4 transition-colors hover:underline"
+						className="shrink-0 text-base font-medium text-brand underline-offset-4 transition-colors hover:underline"
 					>
 						다른 카드로 변경
 					</button>
@@ -384,7 +384,7 @@ function PaymentStep({
 						<button
 							type="button"
 							onClick={() => setUseNewCard(false)}
-							className="text-center text-sm font-medium text-body-soft underline-offset-4 transition-colors hover:text-brand hover:underline"
+							className="text-center text-base font-medium text-body-soft underline-offset-4 transition-colors hover:text-brand hover:underline"
 						>
 							저장된 카드로 결제하기
 						</button>
@@ -392,14 +392,14 @@ function PaymentStep({
 				</div>
 			) : (
 				<InfoCallout tone="warning">
-					<p className="text-sm">
+					<p className="text-base">
 						결제 정보(클라이언트 키·고객 키·병원 번호)가 충분하지 않아 결제를
 						시작할 수 없습니다. 백엔드 응답을 확인해 주세요.
 					</p>
 				</InfoCallout>
 			)}
 
-			<p className="text-center text-sm text-muted-fg">
+			<p className="text-center text-base text-muted-fg">
 				카드 등록이 끝나면 병원 홈페이지를 공개할 수 있어요. 첫 결제는 한 달
 				뒤예요
 				{slug ? ` (${slug}.kmaclinic.com)` : ""}.
@@ -463,7 +463,7 @@ function PaidComplete({
 				</p>
 			</div>
 			<InfoCallout tone="info" className="w-full text-left">
-				<p className="text-sm">
+				<p className="text-base">
 					대시보드에서 이 병원의{" "}
 					<span className="font-semibold text-ink">공개하기</span> 버튼으로 공개
 					주소를 정하고 공개할 수 있어요.

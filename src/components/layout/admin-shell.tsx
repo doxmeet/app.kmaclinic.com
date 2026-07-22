@@ -60,14 +60,14 @@ function AdminSidebar({ active }: { active: NavKey }) {
 					<Building2 className="size-[18px]" />
 				</span>
 				<div className="flex flex-col">
-					<span className="text-sm text-white">KMA CLINIC</span>
-					<span className="text-xs text-[#93c5fd]">운영자 관리시스템</span>
+					<span className="text-base text-white">KMA CLINIC</span>
+					<span className="text-[15px] text-[#93c5fd]">운영자 관리시스템</span>
 				</div>
 			</div>
 
 			{/* 메뉴 */}
 			<nav className="flex flex-col gap-0.5 px-3 py-4">
-				<p className="px-3 text-xs leading-6 tracking-[0.7px] text-[#60a5fa]">
+				<p className="px-3 text-[15px] leading-6 tracking-[0.7px] text-[#60a5fa]">
 					메뉴
 				</p>
 				{NAV_ITEMS.map((item) => {
@@ -76,7 +76,7 @@ function AdminSidebar({ active }: { active: NavKey }) {
 					const content = (
 						<>
 							<Icon className="size-4 shrink-0" />
-							<span className="text-sm">{item.label}</span>
+							<span className="text-base">{item.label}</span>
 						</>
 					);
 					const className = cn(
@@ -101,8 +101,10 @@ function AdminSidebar({ active }: { active: NavKey }) {
 			<div className="mt-auto flex items-center gap-3 border-t border-[#1e3a8a]/50 bg-[#0f2744] p-4">
 				<span className="size-9 shrink-0 rounded-full bg-[#1e3a8a]" />
 				<div className="flex min-w-0 flex-1 flex-col">
-					<span className="truncate text-sm text-white">관리자</span>
-					<span className="truncate text-xs text-[#93c5fd]">슈퍼 관리자</span>
+					<span className="truncate text-base text-white">관리자</span>
+					<span className="truncate text-[15px] text-[#93c5fd]">
+						슈퍼 관리자
+					</span>
 				</div>
 				<EllipsisVertical className="size-4 shrink-0 text-[#93c5fd]" />
 			</div>
@@ -124,7 +126,7 @@ function AdminShell({
 				<main className="flex-1 px-5 py-6 sm:px-8 sm:py-8 lg:px-10">
 					{children}
 				</main>
-				<footer className="px-5 py-5 text-center text-[13px] text-muted-fg sm:px-8 lg:px-10">
+				<footer className="px-5 py-5 text-center text-[15px] text-muted-fg sm:px-8 lg:px-10">
 					Copyright (c) 2026. All rights reserved.
 				</footer>
 			</div>

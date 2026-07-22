@@ -48,10 +48,7 @@ function AppShell({
 					style={{ maxWidth }}
 				>
 					{innerMaxWidth ? (
-						<div
-							className="mx-auto w-full"
-							style={{ maxWidth: innerMaxWidth }}
-						>
+						<div className="mx-auto w-full" style={{ maxWidth: innerMaxWidth }}>
 							{children}
 						</div>
 					) : (

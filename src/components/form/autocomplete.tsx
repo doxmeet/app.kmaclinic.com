@@ -281,7 +281,7 @@ function Autocomplete({
 												'직접 입력' 하기
 											</span>
 										</span>
-										<span className="text-sm text-muted-fg">
+										<span className="text-base text-muted-fg">
 											검색 결과에 없으면 직접 입력해 주세요
 										</span>
 									</span>

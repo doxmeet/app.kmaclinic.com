@@ -25,12 +25,7 @@ export function HomePage() {
 				<LandingPanel
 					tone="light"
 					eyebrow="의원 홈페이지"
-					title={
-						<>
-							우리 병원의 첫인상을
-							<br />더 믿음직하게
-						</>
-					}
+					title="병원 홈페이지 만들기"
 					desc="진료시간과 의료진, 오시는 길까지. 꼭 필요한 정보만 담은 병원 홈페이지를 간편하게 시작하세요."
 					checks={[
 						"모바일·PC 자동 최적화",
@@ -43,12 +38,7 @@ export function HomePage() {
 				<LandingPanel
 					tone="navy"
 					eyebrow="의사 프로필"
-					title={
-						<>
-							나의 전문성과 경력을
-							<br />한 페이지에
-						</>
-					}
+					title="내 프로필 페이지 만들기"
 					desc="학력과 전문 분야, 진료 철학을 깔끔하게 정리해 환자와 동료에게 나를 소개해 보세요."
 					checks={[
 						"평생 무료로 이용",
@@ -149,7 +139,7 @@ function LandingPanel({
 				</p>
 				<ul
 					className={cn(
-						"mt-6 flex flex-wrap items-center gap-x-5 gap-y-2.5 text-[14px] font-medium sm:mt-8 sm:text-[15px]",
+						"mt-6 flex flex-wrap items-center gap-x-5 gap-y-2.5 text-[15px] font-medium sm:mt-8 sm:text-[17px]",
 						navy ? "text-[#e3ecf9]" : "text-ink-soft",
 					)}
 				>
@@ -203,7 +193,7 @@ function LandingPanel({
 
 			<p
 				className={cn(
-					"mt-14 text-sm xl:mt-auto xl:pt-10",
+					"mt-14 text-base xl:mt-auto xl:pt-10",
 					navy ? "text-white/60" : "text-muted-fg",
 				)}
 			>

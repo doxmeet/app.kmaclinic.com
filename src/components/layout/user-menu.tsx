@@ -11,7 +11,7 @@ import { useSession } from "#/lib/auth/use-session.ts";
 import { cn } from "#/lib/utils.ts";
 
 const MENU_ITEM_CLASS =
-	"flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-ink outline-none transition-colors select-none data-[highlighted]:bg-muted";
+	"flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-base text-ink outline-none transition-colors select-none data-[highlighted]:bg-muted";
 
 /**
  * UserMenu — 아바타 + 이름 + 드롭다운(운영자 콘솔[ADMIN] · 로그아웃).
@@ -42,10 +42,10 @@ function UserMenu({
 					className,
 				)}
 			>
-				<span className="flex size-8 items-center justify-center rounded-full bg-brand-100 text-sm font-semibold text-brand">
+				<span className="flex size-8 items-center justify-center rounded-full bg-brand-100 text-base font-semibold text-brand">
 					{initial}
 				</span>
-				<span className="hidden text-sm font-medium text-ink sm:inline">
+				<span className="hidden text-base font-medium text-ink sm:inline">
 					{displayName}
 				</span>
 				<ChevronDown className="size-4 text-muted-fg" />

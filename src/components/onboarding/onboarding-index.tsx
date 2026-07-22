@@ -41,7 +41,10 @@ type Mode = "dashboard" | "conversation" | "payment" | "publish";
 export function OnboardingPage() {
 	return (
 		<AuthGuard>
-			<OnboardingOrchestrator />
+			{/* 온보딩은 화면 안 문의 CTA로 유도하므로 우하단 카카오 FAB을 숨긴다. */}
+			<div data-hide-support-fab className="contents">
+				<OnboardingOrchestrator />
+			</div>
 		</AuthGuard>
 	);
 }
@@ -143,7 +146,7 @@ function OnboardingOrchestrator() {
 					<p className="text-lg font-semibold text-ink">
 						대시보드를 불러오지 못했습니다.
 					</p>
-					<p className="text-sm text-body">
+					<p className="text-base text-body">
 						{error instanceof ApiError
 							? apiErrorMessage(error)
 							: "네트워크 상태를 확인한 뒤 다시 시도해 주세요."}
@@ -192,7 +195,7 @@ function BackToDashboardLink({ onClick }: { onClick: () => void }) {
 		<button
 			type="button"
 			onClick={onClick}
-			className="flex w-fit items-center gap-1.5 text-sm font-medium text-body-soft transition-colors hover:text-brand"
+			className="flex w-fit items-center gap-1.5 text-base font-medium text-body-soft transition-colors hover:text-brand"
 		>
 			<ArrowLeft className="size-4" />
 			대시보드
@@ -215,7 +218,7 @@ function PublishPanel({
 
 	// 병원 slug는 기존 hospital.slug prefill 유지.
 	const [hospitalSlug, setHospitalSlugValue] = useState(
-		hospital.slug?.trim() ?? "",
+		() => hospital.slug?.trim() ?? "",
 	);
 	const [touched, setTouched] = useState(false);
 
@@ -272,7 +275,7 @@ function PublishPanel({
 				/>
 
 				<InfoCallout tone="warning">
-					<p className="text-sm">
+					<p className="text-base">
 						공개 주소는 한 번 정하면 바꿀 수 없어요. 공개하려면 활성
 						구독(결제)이 필요합니다.
 					</p>

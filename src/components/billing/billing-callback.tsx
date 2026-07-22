@@ -99,7 +99,7 @@ export function BillingCallbackPage() {
 					<p className="text-lg font-semibold text-ink">
 						결제 정보가 올바르지 않습니다.
 					</p>
-					<p className="text-sm text-body">
+					<p className="text-base text-body">
 						카드 등록 정보가 정상적으로 전달되지 않았습니다. 작성 화면에서
 						결제를 다시 시도해 주세요.
 					</p>
@@ -274,7 +274,7 @@ function BillingFlow({
 			<AppShell maxWidth="560px">
 				<SectionCard className="flex flex-col items-center gap-5 text-center">
 					<p className="text-lg font-semibold text-ink">로그인이 만료됐어요</p>
-					<p className="text-sm text-body">
+					<p className="text-base text-body">
 						다시 로그인한 뒤 결제를 이어서 진행해 주세요. 등록한 카드가 있다면
 						대시보드의 결제하기에서 한 번에 이어집니다.
 					</p>
@@ -315,7 +315,7 @@ function BillingFlow({
 				<Loader2 className="size-8 animate-spin text-brand" />
 				<div className="flex flex-col gap-1.5">
 					<SectionTitle>결제 처리 중</SectionTitle>
-					<p className="text-sm text-body-soft">
+					<p className="text-base text-body-soft">
 						카드 등록과 결제를 한 번에 처리하고 있어요. 창을 닫지 말고 잠시만
 						기다려 주세요.
 					</p>
@@ -505,7 +505,7 @@ function BillingSuccess({
 					</p>
 				</div>
 				<InfoCallout tone="info" className="w-full text-left">
-					<p className="text-sm">
+					<p className="text-base">
 						대시보드에서 이 병원의{" "}
 						<span className="font-semibold text-ink">공개하기</span> 버튼으로
 						공개 주소를 정하고 공개할 수 있어요.
@@ -558,7 +558,7 @@ function PaymentFailed({
 				</p>
 
 				{code ? (
-					<p className="text-xs text-body-soft/70">오류 코드: {code}</p>
+					<p className="text-[15px] text-body-soft/70">오류 코드: {code}</p>
 				) : null}
 
 				<div className="flex w-full flex-col gap-3">

@@ -608,6 +608,8 @@ function ResultsSection({
 							items.map((row, idx) => {
 								const subscriptionNo = getField(row, ["no"]);
 								const rowKey = subscriptionNo ?? `row-${idx}`;
+								// 정상 경로는 구독 PK(no) 키 — idx는 id 없는 행 방어 폴백(읽기 전용 표).
+								// react-doctor-disable-next-line no-array-index-as-key
 								return <SubscriptionRow key={String(rowKey)} row={row} />;
 							})
 						)}

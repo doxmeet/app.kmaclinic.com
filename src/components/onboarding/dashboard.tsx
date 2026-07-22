@@ -7,10 +7,8 @@ import {
 	ExternalLink,
 	IdCard,
 	Loader2,
-	MessageSquareText,
 	Palette,
 	PenLine,
-	Plus,
 	Trash2,
 } from "lucide-react";
 import { useState } from "react";
@@ -18,8 +16,8 @@ import { toast } from "sonner";
 import { CardShell } from "#/components/common/card-shell.tsx";
 import { InfoCallout } from "#/components/common/info-callout.tsx";
 import { InfoRows } from "#/components/common/info-rows.tsx";
+import { KakaoTalkIcon } from "#/components/common/kakao-icon.tsx";
 import { KakaoSupportLink } from "#/components/common/kakao-support-link.tsx";
-import { SectionCard } from "#/components/common/section-card.tsx";
 import { ProfileLivePreview } from "#/components/doctor/profile-live-preview.tsx";
 import { DesignPreviewScreen } from "#/components/onboarding/design-preview.tsx";
 import { isSlugValid } from "#/components/onboarding/slug.ts";
@@ -47,6 +45,7 @@ import {
 	buildProfilePreviewBundleFromDoc,
 	PROFILE_TEMPLATE_SWATCHES,
 } from "#/lib/profile-preview.ts";
+import { KAKAO_CHANNEL_URL } from "#/lib/support.ts";
 import { cn } from "#/lib/utils.ts";
 
 /**
@@ -74,9 +73,7 @@ export function OnboardingDashboard({
 	/** 액션(삭제 등) 후 overview 새로고침. */
 	onRefetch: () => void;
 }) {
-	const navigate = useNavigate();
 	const queryClient = useQueryClient();
-	const [menuOpen, setMenuOpen] = useState(false);
 
 	const draft = overview.draft ?? null;
 	const profile = overview.profile ?? null;
@@ -96,11 +93,6 @@ export function OnboardingDashboard({
 		onError: (err) => toastApiError(err),
 	});
 
-	function handleNewButtonClick() {
-		if (!canStartNewDraft) return;
-		setMenuOpen((v) => !v);
-	}
-
 	function handleDeleteDraft() {
 		const ok = window.confirm(
 			"진행 중이던 대화 내용을 삭제할까요?\n작성하던 초안은 복구할 수 없습니다.",
@@ -114,103 +106,7 @@ export function OnboardingDashboard({
 	return (
 		<div className="flex flex-col gap-6">
 			{/* 헤더 */}
-			<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-				<div className="flex flex-col gap-1">
-					<h1 className="text-2xl font-bold text-ink">내 병원·프로필</h1>
-					<p className="text-sm text-body-soft">
-						만든 병원 홈페이지와 진행 중인 작업을 한곳에서 관리하세요.
-					</p>
-				</div>
-				<div className="flex flex-col items-stretch gap-1.5 sm:items-end">
-					<div className="relative w-full sm:w-auto">
-						<Button
-							variant="brand"
-							size="2xl"
-							onClick={handleNewButtonClick}
-							disabled={!canStartNewDraft}
-							aria-expanded={menuOpen}
-							aria-haspopup="menu"
-							className="w-full sm:w-auto"
-						>
-							<Plus className="size-5" />
-							새로 작성
-						</Button>
-
-						{/* 대화형 / 직접입력 선택 메뉴 */}
-						{menuOpen ? (
-							<>
-								{/* 바깥 클릭으로 닫기 */}
-								<button
-									type="button"
-									aria-hidden
-									tabIndex={-1}
-									className="fixed inset-0 z-10 cursor-default"
-									onClick={() => setMenuOpen(false)}
-								/>
-								<div className="absolute right-0 z-20 mt-2 w-full overflow-hidden rounded-xl border border-line bg-surface p-1.5 shadow-[0_16px_40px_-12px_rgba(0,0,0,0.25)] sm:w-64">
-									<p className="px-3 pt-1.5 pb-1 text-xs font-medium text-muted-fg">
-										병원 홈페이지
-									</p>
-									<button
-										type="button"
-										onClick={() => {
-											setMenuOpen(false);
-											onStartConversation("hospital");
-										}}
-										className="flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-brand-50"
-									>
-										<MessageSquareText className="mt-0.5 size-5 shrink-0 text-brand" />
-										<span className="flex flex-col">
-											<span className="text-sm font-semibold text-ink">
-												대화형으로 만들기
-											</span>
-											<span className="text-xs text-body-soft">
-												질문에 답하며 차근차근 입력
-											</span>
-										</span>
-									</button>
-									<div className="my-1.5 h-px bg-line" />
-									<p className="px-3 pt-0.5 pb-1 text-xs font-medium text-muted-fg">
-										의사 프로필
-									</p>
-									{/* 의사 프로필은 대화형 작성을 노출하지 않고 직접 입력만 제공. */}
-									<button
-										type="button"
-										onClick={() => {
-											setMenuOpen(false);
-											navigate({ to: "/doctor/profile" });
-										}}
-										className="flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-brand-50"
-									>
-										{profile == null ? (
-											<PenLine className="mt-0.5 size-5 shrink-0 text-brand" />
-										) : (
-											<IdCard className="mt-0.5 size-5 shrink-0 text-brand" />
-										)}
-										<span className="flex flex-col">
-											<span className="text-sm font-semibold text-ink">
-												{profile == null
-													? "프로필 직접 입력"
-													: "프로필 작성·관리"}
-											</span>
-											<span className="text-xs text-body-soft">
-												{profile == null
-													? "프로필 정보를 한 폼에 입력"
-													: "의사 프로필을 직접 작성·수정"}
-											</span>
-										</span>
-									</button>
-								</div>
-							</>
-						) : null}
-					</div>
-					{!canStartNewDraft ? (
-						<p className="text-xs text-body-soft sm:text-right">
-							진행 중인 작성을 먼저 완료하거나 삭제해 주세요.
-						</p>
-					) : null}
-				</div>
-			</div>
+			<h1 className="text-2xl font-bold text-ink">내 병원·프로필</h1>
 
 			{/* 빈 상태 */}
 			{isEmpty ? (
@@ -244,14 +140,29 @@ export function OnboardingDashboard({
 					))}
 				</div>
 			) : null}
+
+			{/* 병원은 만들었지만 프로필이 아직 없으면 제작 유도 */}
+			{hospitals.length > 0 && profile == null ? <ProfileNudgeCard /> : null}
+
+			{/* "새로 작성" 버튼 대신 최하단 카드로 병원 추가 제작 진입.
+			    진행 중 draft가 있으면 새 대화를 시작할 수 없어 숨긴다. */}
+			{!isEmpty && canStartNewDraft ? (
+				<HospitalCreateCard onClick={() => onStartConversation("hospital")} />
+			) : null}
 		</div>
 	);
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// 빈 상태 카드 — 병원은 대화형, 프로필은 직접 입력으로 바로 시작한다.
+// 빈 상태 — 병원(네이비)/프로필(흰색) 선택 카드 2장 + 카카오톡 채널 문의 CTA.
+// 병원은 대화형, 프로필은 직접 입력으로 바로 시작한다.
 // (의사 프로필 대화형 작성은 노출하지 않음.)
 // ─────────────────────────────────────────────────────────────────────
+
+// 두 카드의 아이콘/제목/설명이 같은 높이에 놓이도록 상단 기준으로 정렬한다
+// (본문 줄 수가 달라 justify-center로는 행이 어긋난다).
+const choiceCardBase =
+	"flex min-h-64 cursor-pointer flex-col items-center gap-5 rounded-2xl px-6 pt-16 pb-10 text-center shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-brand/40 sm:min-h-96 sm:pt-24";
 
 function EmptyStateCard({
 	onStartConversation,
@@ -261,38 +172,130 @@ function EmptyStateCard({
 	const navigate = useNavigate();
 
 	return (
-		<SectionCard className="flex flex-col items-center gap-5 py-12 text-center">
-			<div className="flex size-14 items-center justify-center rounded-full bg-brand-50">
-				<Plus className="size-7 text-brand" />
-			</div>
-			<div className="flex flex-col gap-1.5">
-				<p className="text-lg font-semibold text-ink">아직 만든 항목이 없어요</p>
-				<p className="text-sm text-body-soft">
-					병원 홈페이지와 의사 프로필을 만들 수 있어요. 무엇을 만들지 선택해
-					주세요.
-				</p>
-			</div>
-			<div className="flex w-full flex-col flex-wrap justify-center gap-2 sm:w-auto sm:flex-row">
-				<Button
-					variant="brand"
-					size="2xl"
-					className="w-full sm:w-auto"
+		<div className="flex flex-col gap-10">
+			<div className="grid gap-5 sm:grid-cols-2">
+				{/* 병원 홈페이지 제작 — 대화형 시작 */}
+				<button
+					type="button"
 					onClick={() => onStartConversation("hospital")}
+					className={cn(choiceCardBase, "bg-[#1f3a63] hover:bg-[#264778]")}
 				>
-					<Building2 className="size-5" />
-					병원 만들기
-				</Button>
-				<Button
-					variant="neutral-outline"
-					size="2xl"
-					className="w-full sm:w-auto"
+					<span className="flex size-14 items-center justify-center rounded-full bg-white/10">
+						<Building2 className="size-7 text-white" />
+					</span>
+					<span className="flex flex-col gap-2">
+						<span className="text-xl font-bold text-white">
+							병원 홈페이지 제작
+						</span>
+						<span className="text-base leading-7 text-white/85">
+							병원 정보를 입력하고 1분만에 제작해요
+						</span>
+					</span>
+				</button>
+
+				{/* 내 프로필 제작 — 직접 입력 폼으로 이동 */}
+				<button
+					type="button"
 					onClick={() => navigate({ to: "/doctor/profile" })}
+					className={cn(
+						choiceCardBase,
+						"border border-line-soft bg-surface hover:border-brand-200 hover:bg-brand-50/50",
+					)}
 				>
-					<IdCard className="size-5" />
-					프로필 만들기
-				</Button>
+					<span className="flex size-14 items-center justify-center rounded-full bg-brand-50">
+						<IdCard className="size-7 text-brand" />
+					</span>
+					<span className="flex flex-col gap-2">
+						<span className="text-xl font-bold text-brand">내 프로필 제작</span>
+						<span className="text-base leading-7 text-brand/80">
+							프로필을 정리하세요.
+							<br />
+							회원님 전용 페이지로
+							<br />
+							외부에도 간편하게 공유
+							<br />
+							다국어도 지원 예정입니다.
+						</span>
+					</span>
+				</button>
 			</div>
-		</SectionCard>
+
+			<KakaoChannelCta />
+		</div>
+	);
+}
+
+/** 이용 안내 — 카카오톡 채널 문의 (온보딩은 FAB 대신 이 CTA 하나로 유도). */
+function KakaoChannelCta() {
+	return (
+		<div className="flex flex-col items-center gap-3.5">
+			<p className="text-base font-bold text-ink">이용 방법이 궁금하신가요?</p>
+			<a
+				href={KAKAO_CHANNEL_URL}
+				target="_blank"
+				rel="noreferrer noopener"
+				className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#fee500] px-6 py-3.5 text-base font-semibold text-[#191919] transition-[filter] hover:brightness-95 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-brand/40"
+			>
+				<KakaoTalkIcon className="size-5" />
+				카카오톡 채널 문의
+			</a>
+		</div>
+	);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// 병원 홈페이지 제작 카드 — 병원을 이미 만든 사용자가 추가로 만들 때(대시보드 최하단).
+// ─────────────────────────────────────────────────────────────────────
+
+function HospitalCreateCard({ onClick }: { onClick: () => void }) {
+	return (
+		<button
+			type="button"
+			onClick={onClick}
+			className="flex cursor-pointer flex-col items-center gap-5 rounded-2xl bg-[#1f3a63] px-6 py-14 text-center shadow-sm transition-colors hover:bg-[#264778] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-brand/40"
+		>
+			<span className="flex size-14 items-center justify-center rounded-full bg-white/10">
+				<Building2 className="size-7 text-white" />
+			</span>
+			<span className="flex flex-col gap-2">
+				<span className="text-xl font-bold text-white">병원 홈페이지 제작</span>
+				<span className="text-base leading-7 text-white/85">
+					병원 정보를 입력하고 1분만에 제작해요
+				</span>
+			</span>
+		</button>
+	);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// 프로필 제작 유도 카드 — 병원은 만들었지만 프로필이 아직 없을 때.
+// ─────────────────────────────────────────────────────────────────────
+
+function ProfileNudgeCard() {
+	const navigate = useNavigate();
+
+	return (
+		<button
+			type="button"
+			onClick={() => navigate({ to: "/doctor/profile" })}
+			className="flex flex-col items-center gap-5 rounded-2xl border border-line-soft bg-surface px-6 py-14 text-center shadow-sm transition-colors hover:border-brand-200 hover:bg-brand-50/50 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-brand/40"
+		>
+			<span className="flex size-14 items-center justify-center rounded-full bg-brand-50">
+				<IdCard className="size-7 text-brand" />
+			</span>
+			<span className="text-xl font-bold text-brand">내 프로필 제작</span>
+			<span className="flex flex-col gap-5 text-base leading-7 text-brand/80">
+				<span>
+					병원 홈페이지를 제작하셨다면
+					<br />내 의사 정보를 환자에게 알려주세요
+				</span>
+				<span>
+					내 프로필을 제작해야
+					<br />
+					병원 홈페이지에 정보를 띄울 수 있어요
+				</span>
+			</span>
+		</button>
 	);
 }
 
@@ -341,8 +344,8 @@ function DraftCard({
 			<div className="flex flex-col gap-4 p-5 sm:p-8">
 				<div className="flex flex-col gap-2">
 					<div className="flex items-center justify-between gap-3">
-						<span className="text-sm text-body-soft">진행률</span>
-						<span className="text-sm font-medium text-body-soft">
+						<span className="text-base text-body-soft">진행률</span>
+						<span className="text-base font-medium text-body-soft">
 							{progress}% 완료
 						</span>
 					</div>
@@ -356,8 +359,8 @@ function DraftCard({
 
 				{nextQuestion ? (
 					<div className="rounded-xl border border-line bg-app-bg px-4 py-3">
-						<p className="text-xs font-medium text-body-soft">다음 질문</p>
-						<p className="mt-1 text-sm text-body">{nextQuestion}</p>
+						<p className="text-[15px] font-medium text-body-soft">다음 질문</p>
+						<p className="mt-1 text-base text-body">{nextQuestion}</p>
 					</div>
 				) : null}
 
@@ -509,7 +512,7 @@ function ProfileCard({
 				{published ? (
 					<>
 						<InfoCallout tone="success">
-							<p className="text-sm">
+							<p className="text-base">
 								의사 프로필이 공개 중입니다. 내용 편집은 "프로필 관리"에서 할 수
 								있어요.
 							</p>
@@ -559,7 +562,7 @@ function ProfileCard({
 				) : (
 					<>
 						<InfoCallout tone="info">
-							<p className="text-sm">
+							<p className="text-base">
 								의사 프로필이 아직 비공개예요. "프로필 관리"에서 내용을 채운 뒤
 								공개 주소를 정하고 공개하면 게시됩니다.
 							</p>
@@ -673,13 +676,13 @@ function HospitalCard({
 					{status === "pending_payment" ? (
 						<>
 							<InfoCallout tone="warning">
-								<p className="text-sm">
+								<p className="text-base">
 									아직 결제 전이에요. 정기 결제 카드를 등록하면 병원 홈페이지를
 									공개할 수 있습니다.
 								</p>
 								<KakaoSupportLink
 									variant="inline"
-									className="mt-1.5 text-sm"
+									className="mt-1.5 text-base"
 									label="결제가 안 되면 카카오톡으로 문의하기"
 								/>
 							</InfoCallout>
@@ -714,7 +717,7 @@ function HospitalCard({
 					{status === "ready_to_publish" ? (
 						<>
 							<InfoCallout tone="info">
-								<p className="text-sm">
+								<p className="text-base">
 									결제가 완료됐어요. 공개 주소를 정하고 공개하면 병원 홈페이지가
 									공개됩니다.
 								</p>
@@ -736,19 +739,19 @@ function HospitalCard({
 						<>
 							{hospital.subscription_status === "past_due" ? (
 								<InfoCallout tone="warning">
-									<p className="text-sm">
+									<p className="text-base">
 										정기 결제가 연체된 상태입니다. 구독 관리에서 결제수단을
 										갱신해 주세요.
 									</p>
 									<KakaoSupportLink
 										variant="inline"
-										className="mt-1.5 text-sm"
+										className="mt-1.5 text-base"
 										label="결제가 안 되면 카카오톡으로 문의하기"
 									/>
 								</InfoCallout>
 							) : (
 								<InfoCallout tone="success">
-									<p className="text-sm">
+									<p className="text-base">
 										병원 홈페이지가 공개 중입니다. 콘텐츠 등 일상 관리는 별도
 										관리자 페이지에서 진행해 주세요.
 									</p>

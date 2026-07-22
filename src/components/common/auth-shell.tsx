@@ -37,7 +37,7 @@ function AuthShell({
 							{title}
 						</h1>
 					</div>
-					<hr className="mt-10 border-t border-body-soft" />
+					<hr className="mt-10 border-t border-brand" />
 					<div className={cn("pt-10", contentClassName)}>{children}</div>
 				</div>
 			</main>

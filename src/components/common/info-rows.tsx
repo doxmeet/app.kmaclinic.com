@@ -21,7 +21,7 @@ function InfoRows({
 					key={row.label}
 					className="flex flex-col gap-1 sm:h-14 sm:flex-row sm:items-center sm:gap-0 sm:border-b sm:border-line-soft sm:px-8 sm:last:border-b-0"
 				>
-					<dt className="text-[14px] text-body-soft sm:w-[140px] sm:shrink-0 sm:text-[17px]">
+					<dt className="text-[15px] text-body-soft sm:w-[140px] sm:shrink-0 sm:text-[17px]">
 						{row.label}
 					</dt>
 					<dd className="text-[16px] text-ink sm:text-[17px]">{row.value}</dd>
