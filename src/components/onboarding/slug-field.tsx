@@ -60,8 +60,14 @@ export function SlugField({
 				</FieldError>
 			) : (
 				<FieldDescription>
-					{description ? <>{description} </> : null}
-					공개 주소:{" "}
+					{/* 안내 문장과 공개 주소는 각각 제 줄에 — 좁은 카드에서 어중간하게 꺾이지 않도록. */}
+					{description ? (
+						<>
+							{description}
+							<br />
+						</>
+					) : null}
+					홈페이지 주소:{" "}
 					<span className="font-medium text-ink">{`${value.trim() || "*"}${domain}`}</span>
 				</FieldDescription>
 			)}

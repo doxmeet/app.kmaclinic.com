@@ -240,42 +240,34 @@ function KakaoChannelCta() {
 
 // ─────────────────────────────────────────────────────────────────────
 // 병원 홈페이지 제작 카드 — 병원 목록 최하단의 새 병원 제작 진입점.
-// 병원이 이미 있으면 슬림한 네이비 배너("추가 제작"), 없으면 설명이 있는 큰 카드.
+// 병원을 이미 만든 사용자에게는 "추가 제작"으로 문구를 바꿔 보여준다.
 // ─────────────────────────────────────────────────────────────────────
 
 function HospitalCreateCard({
 	hasHospital,
 	onClick,
 }: {
-	/** 이미 만든 병원이 있는지 — 있으면 추가 제작 배너로 노출. */
+	/** 이미 만든 병원이 있는지 — 있으면 추가 제작 문구로 노출. */
 	hasHospital: boolean;
 	onClick: () => void;
 }) {
-	if (hasHospital) {
-		return (
-			<button
-				type="button"
-				onClick={onClick}
-				className="cursor-pointer rounded-xl bg-[#1f3a63] px-6 py-7 text-center text-xl font-bold text-white shadow-sm transition-colors hover:bg-[#264778] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-brand/40"
-			>
-				병원 홈페이지 추가 제작
-			</button>
-		);
-	}
-
 	return (
 		<button
 			type="button"
 			onClick={onClick}
-			className="flex cursor-pointer flex-col items-center gap-5 rounded-2xl bg-[#1f3a63] px-6 py-14 text-center shadow-sm transition-colors hover:bg-[#264778] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-brand/40"
+			className="flex cursor-pointer flex-col items-center gap-5 rounded-2xl bg-[#1f3a63] px-6 py-6 text-center shadow-sm transition-colors hover:bg-[#264778] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-brand/40"
 		>
 			<span className="flex size-14 items-center justify-center rounded-full bg-white/10">
 				<Building2 className="size-7 text-white" />
 			</span>
 			<span className="flex flex-col gap-2">
-				<span className="text-xl font-bold text-white">병원 홈페이지 제작</span>
+				<span className="text-xl font-bold text-white">
+					{hasHospital ? "병원 홈페이지 추가 제작" : "병원 홈페이지 제작"}
+				</span>
 				<span className="text-base leading-7 text-white/85">
-					병원 정보를 입력하고 1분만에 제작해요
+					{hasHospital
+						? "새 병원 정보를 입력하고 홈페이지를 하나 더 만들어요"
+						: "병원 정보를 입력하고 1분만에 제작해요"}
 				</span>
 			</span>
 		</button>
@@ -462,12 +454,13 @@ function ProfileCard({
 			</div>
 
 			<div className="flex w-full flex-col gap-2.5">
+				{/* 좁은 카드에서 파란 글로우가 도드라져 그림자는 뺀다. */}
 				<Button
 					nativeButton={false}
 					render={<Link to="/doctor/profile" />}
 					variant="brand"
 					size="xl"
-					className="w-full"
+					className="w-full shadow-none"
 				>
 					프로필 수정하기
 				</Button>
@@ -493,7 +486,12 @@ function ProfileCard({
 									placeholder="예: hong-gildong"
 									disabled={publishMutation.isPending}
 									invalid={slugInput.length > 0 && !validSlug}
-									description="공개 시 사용할 주소예요. 한 번 정하면 바꿀 수 없어요."
+									description={
+										<>
+											공개 시 사용할 주소예요.
+											<br />한 번 정하면 바꿀 수 없어요.
+										</>
+									}
 								/>
 							</div>
 						) : null}
@@ -547,7 +545,7 @@ function ProfileEmptyCard() {
 				render={<Link to="/doctor/profile" />}
 				variant="brand"
 				size="xl"
-				className="w-full"
+				className="w-full shadow-none"
 			>
 				내 프로필 추가하기
 			</Button>
