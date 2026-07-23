@@ -11,10 +11,10 @@ function SiteFooter({ className }: { className?: string }) {
 	const copyrightYear = new Date().getFullYear();
 	return (
 		<footer className={cn("border-t border-line bg-surface", className)}>
-			<div className="mx-auto flex w-full max-w-[1120px] flex-col gap-6 px-4 py-10 sm:px-6 md:flex-row md:items-start md:justify-between">
+			<div className="mx-auto flex w-full max-w-300 flex-col gap-6 px-4 py-10 sm:px-6 md:flex-row md:items-start md:justify-between">
 				<div className="flex flex-col gap-3">
 					<BrandLogo label="KMA CLINIC" to="/" />
-					<p className="max-w-[320px] text-base leading-relaxed text-muted-fg">
+					<p className="max-w-sm text-base leading-relaxed text-muted-fg">
 						의료진을 위한 프로필·병원 홈페이지 자동 생성 서비스.
 					</p>
 					<address className="text-base not-italic leading-relaxed text-muted-fg">
@@ -30,7 +30,7 @@ function SiteFooter({ className }: { className?: string }) {
 				</div>
 			</div>
 			<div className="border-t border-line">
-				<p className="mx-auto w-full max-w-[1120px] px-4 py-4 text-base text-muted-fg sm:px-6">
+				<p className="mx-auto w-full max-w-300 px-4 py-4 text-base text-muted-fg sm:px-6">
 					COPYRIGHT {copyrightYear} ALL RIGHTS RESERVED BY DOXMEET
 				</p>
 			</div>

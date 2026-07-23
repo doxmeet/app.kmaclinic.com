@@ -4,7 +4,8 @@ import { cn } from "#/lib/utils.ts";
 /**
  * OptionGroup / OptionButton — 분절형(segmented) 선택 컨트롤.
  * 통신사 선택(SKT/KT/LGU+/알뜰폰), 결제수단, 유형 선택 등에 재사용.
- * 선택: bg-brand-50 / border-brand / text-brand, 미선택: bg-surface / border-line.
+ * - box(기본): 선택 bg-brand-50 / border-brand / text-brand, 미선택 bg-surface / border-line.
+ * - pill: 알약형(의사프로필 Figma 1:18531 — 학위/구분처럼 짧은 선택지). 선택 시 브랜드색 채움.
  */
 type OptionGroupContextValue = {
 	name: string;
@@ -51,11 +52,14 @@ function OptionButton({
 	children,
 	disabled,
 	fluid,
+	variant = "box",
 	...props
 }: Omit<React.ComponentProps<"button">, "value"> & {
 	value: string;
 	/** 남은 공간을 균등 분할 (flex-1) */
 	fluid?: boolean;
+	/** box(기본): 분절 버튼. pill: 알약형 — 학위/구분처럼 짧은 선택지. */
+	variant?: "box" | "pill";
 }) {
 	const ctx = use(OptionGroupContext);
 	const selected = ctx?.value === value;
@@ -69,11 +73,21 @@ function OptionButton({
 			data-state={selected ? "on" : "off"}
 			onClick={() => ctx?.onValueChange?.(value)}
 			className={cn(
-				"flex h-14 min-w-0 items-center justify-center rounded-xl border-2 px-3 text-base font-normal whitespace-nowrap transition-colors outline-none select-none sm:px-6",
+				"flex min-w-0 items-center justify-center whitespace-nowrap transition-colors outline-none select-none",
 				"focus-visible:ring-3 focus-visible:ring-brand/20 disabled:cursor-not-allowed disabled:opacity-50",
-				selected
-					? "border-brand bg-brand-50 font-medium text-brand"
-					: "border-line bg-surface text-body hover:border-line-strong",
+				variant === "box"
+					? cn(
+							"h-14 rounded-xl border-2 px-3 text-base font-normal sm:px-6",
+							selected
+								? "border-brand bg-brand-50 font-medium text-brand"
+								: "border-line bg-surface text-body hover:border-line-strong",
+						)
+					: cn(
+							"rounded-full border px-4 py-2 text-[15px]",
+							selected
+								? "border-brand bg-brand font-semibold text-brand-foreground"
+								: "border-line bg-surface text-body-soft hover:border-line-strong",
+						),
 				fluid && "flex-1",
 				className,
 			)}

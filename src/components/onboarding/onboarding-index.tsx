@@ -152,15 +152,16 @@ function OnboardingOrchestrator() {
 	}
 
 	// ── dashboard 모드(기본) ────────────────────────────────────────
+	// 목록은 좌 2/3(병원)·우 1/3(프로필) 그리드라 1200px 전체 폭을 쓴다.
 	return (
-		<AppShell userName={userName} maxWidth="1280px" innerMaxWidth="720px">
+		<AppShell userName={userName} maxWidth="1200px">
 			{isLoading ? (
 				<div className="flex flex-col items-center gap-4 py-24 text-center">
 					<Loader2 className="size-7 animate-spin text-brand" />
 					<p className="text-base text-body">불러오는 중이에요…</p>
 				</div>
 			) : isError ? (
-				<SectionCard className="flex flex-col items-center gap-5 text-center">
+				<SectionCard className="mx-auto flex w-full max-w-[720px] flex-col items-center gap-5 text-center">
 					<p className="text-lg font-semibold text-ink">
 						대시보드를 불러오지 못했습니다.
 					</p>
@@ -192,10 +193,6 @@ function OnboardingOrchestrator() {
 					onPay={(payment) => {
 						setPaymentTarget(payment);
 						setMode("payment");
-					}}
-					onPublish={(hospital) => {
-						setPublishTarget(hospital);
-						setMode("publish");
 					}}
 					onRefetch={refetchOverview}
 				/>

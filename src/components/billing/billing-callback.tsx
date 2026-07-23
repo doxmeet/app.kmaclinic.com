@@ -501,14 +501,12 @@ function BillingSuccess({
 							? "카드가 등록됐고 첫 달은 무료예요.\n무료 기간이 끝나면 자동으로 첫 결제가 진행됩니다."
 							: "정기 결제 카드 등록과 구독이 완료됐습니다."}
 						<br />
-						이제 <span className="font-semibold text-ink">공개</span>하면 병원
-						홈페이지가 공개됩니다.
+						이제 <span className="font-semibold text-ink">홈페이지 주소</span>를
+						정하면 병원 홈페이지가 공개됩니다.
 					</p>
 				</div>
 				<InfoCallout tone="info" className="w-full text-left">
-					<p className="text-base">
-						이제 병원 홈페이지 주소를 정하면 환자가 볼 수 있어요.
-						<br />
+					<p className="text-lg">
 						주소를 정하고 네이버지도/카카오에 추가하면 빠르게 활성화가 됩니다.
 					</p>
 				</InfoCallout>

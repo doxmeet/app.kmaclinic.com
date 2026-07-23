@@ -39,7 +39,7 @@ const CYCLE_CARDS: ReadonlyArray<{
 			{ label: "연간 혜택", tone: "success" },
 		],
 		perk: "첫 달 무료 + 연간 구독 시 2달 무료 (총 3달 무료)",
-		schedule: "3달 사용 후 최초 결제, 이후 1년마다 자동 결제",
+		schedule: "첫달 사용 후 최초 결제, 이후 1년마다 자동 결제",
 	},
 	{
 		value: "monthly",

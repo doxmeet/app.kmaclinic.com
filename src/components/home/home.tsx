@@ -5,6 +5,7 @@ import {
 	type SampleKind,
 	SamplePreviewDialog,
 } from "#/components/home/sample-preview.tsx";
+import { BrandLogo } from "#/components/layout/brand-logo.tsx";
 import { UserMenu } from "#/components/layout/user-menu.tsx";
 import { useSession } from "#/lib/auth/use-session.ts";
 import { cn } from "#/lib/utils.ts";
@@ -55,28 +56,29 @@ export function HomePage() {
 	);
 }
 
-/** 상단 헤더 — 좌: 경기도의사회 공식 로고 / 우: 서비스 명칭(+로그인 시 사용자 메뉴). */
+/** 상단 헤더 — 좌: KMA CLINIC 워드마크 / 우: 경기도의사회 로고 병행표기 + 서비스 명칭(+로그인 시 사용자 메뉴).
+ * 좌우 여백은 아래 분할 패널의 콘텐츠 시작선(xl에서 화면의 4% = 패널의 8%)과 정렬. */
 function LandingHeader() {
 	const { hasToken } = useSession();
 
 	return (
 		<header className="sticky top-0 z-40 h-16 w-full border-b border-line bg-surface/90 backdrop-blur sm:h-[72px]">
-			<div className="flex h-full w-full items-center justify-between gap-4 px-4 sm:px-8 lg:px-12">
-				<Link
-					to="/"
-					className="rounded-md transition-opacity hover:opacity-80"
-					aria-label="KMA 경기도의사회 홈"
-				>
-					<img
-						src="/ggkma-logo.svg"
-						alt="KMA 경기도의사회 GYEONGGI-DO MEDICAL ASSOCIATION"
-						className="h-6 w-auto sm:h-7"
-					/>
-				</Link>
+			<div className="flex h-full w-full items-center justify-between gap-4 px-6 sm:px-12 xl:px-[4%]">
+				<BrandLogo to="/" />
 				<div className="flex items-center gap-3">
-					<span className="text-[15px] font-semibold text-ink sm:text-base">
-						회원 디지털 지원 서비스
-					</span>
+					{/* 모바일: 로고 아래 문구(세로) — 문구가 폭을 정하고 로고가 따라감.
+					    w-0 min-w-full: 이미지가 컨테이너 폭 산정에 기여하지 않게(속성 없는 SVG의 기본 고유폭 300px 방지) 하고 결과 폭만 꽉 채움.
+					    sm+: 가로 병행표기(문구 글자 높이에 맞춤). */}
+					<div className="flex flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-3">
+						<img
+							src="/ggkma-logo.svg"
+							alt="KMA 경기도의사회 GYEONGGI-DO MEDICAL ASSOCIATION"
+							className="h-auto w-0 min-w-full sm:h-4 sm:w-auto sm:min-w-0"
+						/>
+						<span className="whitespace-nowrap text-[15px] font-semibold text-ink sm:text-base">
+							회원 디지털 지원 서비스
+						</span>
+					</div>
 					{hasToken ? <UserMenu /> : null}
 				</div>
 			</div>
@@ -112,7 +114,7 @@ function LandingPanel({
 				navy ? "bg-[#1d3e6d]" : "bg-app-bg",
 			)}
 		>
-			<div className="my-auto flex max-w-[560px] flex-col items-start xl:pt-10">
+			<div className="my-auto flex max-w-140 flex-col items-start xl:pt-10">
 				<span
 					className={cn(
 						"text-[15px] font-bold sm:text-base",

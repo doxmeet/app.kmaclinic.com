@@ -1,5 +1,5 @@
 import { Loader2, Monitor, Smartphone } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { PreviewPayload } from "#/lib/preview.ts";
 import { cn } from "#/lib/utils.ts";
 import { LivePreview } from "./live-preview.tsx";
@@ -61,17 +61,16 @@ export function DesignPreviewScreen({
 	const [device, setDevice] = useState<Device>("desktop");
 	const current = (templateKey || swatches[0]?.key || "").toLowerCase();
 
-	// 전체화면 동안 배경(body) 스크롤 잠금.
-	useEffect(() => {
-		const prev = document.body.style.overflow;
-		document.body.style.overflow = "hidden";
-		return () => {
-			document.body.style.overflow = prev;
-		};
-	}, []);
-
+	// 배경(body) 스크롤 잠금은 인라인 스타일이 아니라 styles.css의
+	// `body:has([data-design-preview])` 규칙으로 건다. 인라인으로 걸면 위에 뜨는
+	// Dialog(Base UI)가 그 값("hidden")을 원래 스타일로 캡처했다가, 이 화면과 Dialog가
+	// 동시에 언마운트될 때(commit 성공 → 결제 화면 전환) 마지막에 "hidden"을 복원해
+	// 다음 화면의 스크롤이 영구히 잠긴다.
 	return (
-		<div className="fixed inset-0 z-50 flex flex-col bg-[#0b0f14]">
+		<div
+			data-design-preview
+			className="fixed inset-0 z-50 flex flex-col bg-[#0b0f14]"
+		>
 			{/* 상단 고정 바 — 항상 보임(Figma 1:19102) */}
 			<header className="shrink-0 border-b border-white/10 bg-[#111827]">
 				<div className="mx-auto flex w-full max-w-[1920px] flex-col gap-3 px-4 py-3 sm:px-6 lg:h-16 lg:flex-row lg:items-center lg:justify-between lg:gap-4 lg:py-0">

@@ -39,6 +39,7 @@ import {
 	FieldLabel,
 } from "#/components/form/field.tsx";
 import { FieldInput } from "#/components/form/field-input.tsx";
+import { OptionButton, OptionGroup } from "#/components/form/option-group.tsx";
 import { FieldSelect } from "#/components/form/select-field.tsx";
 import { StickyActionBar } from "#/components/layout/action-bar.tsx";
 import { AppShell } from "#/components/layout/app-shell.tsx";
@@ -109,7 +110,7 @@ import { cn } from "#/lib/utils.ts";
 // 컬렉션 설정 — profile-frontend-guide.md §3.2 필드명(ASCII 계약)에 맞춤.
 // ─────────────────────────────────────────────────────────────────────
 
-type FieldKind = "text" | "year" | "select" | "ref";
+type FieldKind = "text" | "year" | "select" | "pills" | "ref";
 /** ref 자동완성 소스(레지스트리 엔드포인트가 있는 것만). */
 type RefSourceKey = "medical_school" | "society" | "clinic";
 type ColField = {
@@ -194,7 +195,7 @@ const COLLECTIONS: CollConfig[] = [
 			{
 				name: "degree_type",
 				label: "학위",
-				kind: "select",
+				kind: "pills",
 				options: [...SELECT.degree],
 			},
 			{
@@ -217,7 +218,7 @@ const COLLECTIONS: CollConfig[] = [
 			{
 				name: "license_type",
 				label: "구분",
-				kind: "select",
+				kind: "pills",
 				options: [...SELECT.license],
 			},
 			{
@@ -243,7 +244,7 @@ const COLLECTIONS: CollConfig[] = [
 			{
 				name: "training_type",
 				label: "구분",
-				kind: "select",
+				kind: "pills",
 				options: [...SELECT.training],
 			},
 			{
@@ -409,7 +410,7 @@ const COLL_TITLES: Record<string, string> = {
 	affiliations: "소속 병원 · 진료 일정",
 };
 
-/** 진료 일정 그리드 — 요일 × 시간대(am/pm) boolean(true=진료가능, false=휴진) + schedule.note. */
+/** 진료 일정 그리드 — 요일 × 시간대(am/pm) boolean(true=진료, false=휴진) + schedule.note. */
 const GRID_DAYS = [
 	{ key: "mon", label: "월" },
 	{ key: "tue", label: "화" },
@@ -634,7 +635,7 @@ function withRows(
 	return { ...state, colls: { ...state.colls, [coll]: fn(state.colls[coll]) } };
 }
 
-/** 그리드 셀(요일×시간대) boolean 설정 — true=진료가능, false=휴진. */
+/** 그리드 셀(요일×시간대) boolean 설정 — true=진료, false=휴진. */
 function setGridCell(
 	row: Row,
 	action: { day: string; band: string; value: boolean },
@@ -2311,7 +2312,7 @@ function RowSummary({
 		<span className="flex min-w-0 flex-1 items-baseline gap-2 pr-2">
 			<span
 				className={cn(
-					"text-[16px] font-semibold text-ink sm:text-[17px]",
+					"text-lg font-semibold text-ink",
 					// 잘리는 쪽은 flex-1+min-w-0로 남은 공간만 차지해 …로 줄이고,
 					// 고정 쪽은 shrink-0로 끝까지 보여준다.
 					titleTrunc ? "min-w-0 flex-1 truncate" : "shrink-0 whitespace-nowrap",
@@ -2389,7 +2390,7 @@ function CollectionSection({
 							<AccordionItem
 								key={row.id}
 								value={row.id}
-								className="rounded-xl border border-line"
+								className="rounded-xl border border-line bg-muted/40"
 							>
 								<AccordionTrigger className="items-center px-4 py-3.5 hover:no-underline">
 									<RowSummary
@@ -2398,8 +2399,8 @@ function CollectionSection({
 										truncate={config.key === "paper" ? "title" : "subtitle"}
 									/>
 								</AccordionTrigger>
-								<AccordionContent className="px-4">
-									<div className="grid gap-3">
+								<AccordionContent className="px-4 pt-4 pb-4">
+									<div className="grid gap-6">
 										{config.fields.map((f) =>
 											f.showWhen && !f.showWhen(row.values) ? null : (
 												<CollField
@@ -2579,6 +2580,23 @@ function CollField({
 			</Field>
 		);
 	}
+	if (field.kind === "pills") {
+		// Figma(1:18531)처럼 라벨 없이 알약만 — 스크린리더용 이름은 aria-label로 남긴다.
+		return (
+			<OptionGroup
+				aria-label={label}
+				value={str || undefined}
+				onValueChange={(v) => setField(field.name, v)}
+				className="gap-2"
+			>
+				{(field.options ?? []).map((o) => (
+					<OptionButton key={o.value} value={o.value} variant="pill">
+						{o.label}
+					</OptionButton>
+				))}
+			</OptionGroup>
+		);
+	}
 	return (
 		<Field>
 			<FieldLabel>{label}</FieldLabel>
@@ -2657,14 +2675,14 @@ function AffiliationsSection({
 							<AccordionItem
 								key={row.id}
 								value={row.id}
-								className="rounded-xl border border-line"
+								className="rounded-xl border border-line bg-muted/40"
 							>
 								<AccordionTrigger className="items-center px-4 py-3.5 hover:no-underline">
 									<RowSummary title={title} subtitle={subtitle} />
 								</AccordionTrigger>
-								<AccordionContent className="flex flex-col gap-4 px-4">
+								<AccordionContent className="flex flex-col gap-6 px-4 pt-4 pb-4">
 									<AffiliationInstitutionField row={row} dispatch={dispatch} />
-									<div className="grid gap-3">
+									<div className="grid gap-6">
 										<AffField
 											row={row}
 											field="title"
@@ -2841,7 +2859,7 @@ function ScheduleGrid({
 		);
 
 	return (
-		<div className="flex flex-col gap-4">
+		<div className="flex flex-col gap-6">
 			<span className="text-base font-medium text-body">진료 일정</span>
 
 			{/* 진료 주기 — 비어 있으면 매주, 선택 시 해당 주차만 */}
@@ -2864,7 +2882,7 @@ function ScheduleGrid({
 			</div>
 
 			{/* 시간대 라벨(오전/오후) */}
-			<div className="grid gap-3 sm:grid-cols-2">
+			<div className="grid gap-6 sm:grid-cols-2">
 				<Field>
 					<FieldLabel>오전 시간대</FieldLabel>
 					<FieldInput
@@ -2897,7 +2915,7 @@ function ScheduleGrid({
 				</Field>
 			</div>
 
-			{/* 데스크탑/태블릿: 보더 테이블 + 진료가능/휴진 알약 토글 */}
+			{/* 데스크탑/태블릿: 보더 테이블 + 진료/휴진 알약 토글 */}
 			<div className="hidden overflow-hidden rounded-xl border border-line-soft md:block">
 				<table className="w-full border-collapse text-center text-base">
 					<thead>
@@ -2943,7 +2961,7 @@ function ScheduleGrid({
 														: "bg-muted text-body-soft hover:bg-line-soft",
 												)}
 											>
-												{on ? "진료가능" : "휴진"}
+												{on ? "진료" : "휴진"}
 											</button>
 										</td>
 									);
@@ -2996,7 +3014,7 @@ function ScheduleGrid({
 			</div>
 
 			<p className="text-[15px] text-muted-fg">
-				※ 셀을 눌러 요일·시간대별 진료 여부(진료가능/휴진)를 설정하세요.
+				※ 셀을 눌러 요일·시간대별 진료 여부(진료/휴진)를 설정하세요.
 			</p>
 
 			<Field>

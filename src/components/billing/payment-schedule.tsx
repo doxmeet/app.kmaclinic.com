@@ -540,32 +540,32 @@ function VRow({ spec }: { spec: CycleSpec }) {
 	);
 }
 
+const annual: CycleSpec = {
+	tone: "brand",
+	pill: "연간 구독",
+	recommended: true,
+	firstText: `연 ${won(firstAmountForCycle("annual"))}`,
+	renewText: `연 ${won(amountForCycle("annual"))} 자동 결제`,
+	midSegLabel: "12개월 이용",
+};
+const monthly: CycleSpec = {
+	tone: "success",
+	pill: "월간 구독",
+	firstText: `최초 1년간 월 ${won(firstAmountForCycle("monthly"))}`,
+	renewText: `월 ${won(amountForCycle("monthly"))} 자동 결제`,
+};
+
+const label =
+	`결제 일정. 연간 구독(추천): 오늘 카드 등록 후 무료 이용 1개월, 1개월 후 첫 결제 ${annual.firstText}, ` +
+	`12개월 이용 뒤 1년 1개월 후부터 ${annual.renewText}. ` +
+	`월간 구독: 오늘 카드 등록 후 무료 이용 1개월, 1개월 후 첫 결제 ${monthly.firstText}, ` +
+	`1년 1개월 후부터 ${monthly.renewText}.`;
+
+const vMonthlyOffset = vRowHeight(annual) + 26;
+const vHeight = vMonthlyOffset + vRowHeight(monthly);
+
 /** 결제 일정 안내 카드 — 연간(파랑·추천)/월간(초록) 타임라인(시안 SVG 재작성본). */
 export function PaymentSchedule({ className }: { className?: string }) {
-	const annual: CycleSpec = {
-		tone: "brand",
-		pill: "연간 구독",
-		recommended: true,
-		firstText: `연 ${won(firstAmountForCycle("annual"))}`,
-		renewText: `연 ${won(amountForCycle("annual"))} 자동 결제`,
-		midSegLabel: "12개월 이용",
-	};
-	const monthly: CycleSpec = {
-		tone: "success",
-		pill: "월간 구독",
-		firstText: `최초 1년간 월 ${won(firstAmountForCycle("monthly"))}`,
-		renewText: `월 ${won(amountForCycle("monthly"))} 자동 결제`,
-	};
-
-	const label =
-		`결제 일정. 연간 구독(추천): 오늘 카드 등록 후 무료 이용 1개월, 1개월 후 첫 결제 ${annual.firstText}, ` +
-		`12개월 이용 뒤 1년 1개월 후부터 ${annual.renewText}. ` +
-		`월간 구독: 오늘 카드 등록 후 무료 이용 1개월, 1개월 후 첫 결제 ${monthly.firstText}, ` +
-		`1년 1개월 후부터 ${monthly.renewText}.`;
-
-	const vMonthlyOffset = vRowHeight(annual) + 26;
-	const vHeight = vMonthlyOffset + vRowHeight(monthly);
-
 	return (
 		<section
 			className={cn(
