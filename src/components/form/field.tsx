@@ -4,13 +4,15 @@ import { cn } from "#/lib/utils.ts";
 /**
  * Field — 디자인 공통 폼 필드 레이아웃.
  * 라벨(필수 표시 *) + 컨트롤 + 설명/에러 텍스트를 세로로 쌓는다.
- * Figma "병의원" 폼 기준: 라벨↔컨트롤 간격 16px, 컨트롤↔설명 12px.
+ * 간격 위계(의사프로필 Figma 1:18531, 전 페이지 공통): 라벨↔컨트롤(8px)
+ * < 필드↔필드(24px~, FieldGroup) < 섹션 제목↔본문 — 라벨은 컨트롤에 붙여
+ * 한 덩어리로 읽히게 한다.
  */
 function Field({ className, ...props }: React.ComponentProps<"div">) {
 	return (
 		<div
 			data-slot="field"
-			className={cn("flex w-full min-w-0 flex-col gap-4", className)}
+			className={cn("flex w-full min-w-0 flex-col gap-2", className)}
 			{...props}
 		/>
 	);
@@ -68,7 +70,7 @@ function FieldDescription({ className, ...props }: React.ComponentProps<"p">) {
 	return (
 		<p
 			data-slot="field-description"
-			className={cn("text-sm text-body", className)}
+			className={cn("text-base text-body", className)}
 			{...props}
 		/>
 	);
@@ -84,7 +86,7 @@ function FieldError({
 		<p
 			data-slot="field-error"
 			role="alert"
-			className={cn("text-sm text-danger-strong", className)}
+			className={cn("text-base text-danger-strong", className)}
 			{...props}
 		>
 			{children}

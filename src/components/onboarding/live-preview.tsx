@@ -28,9 +28,6 @@ export function LivePreview({
 }) {
 	const iframeRef = useRef<HTMLIFrameElement>(null);
 	const readyRef = useRef(false);
-	// 최신 payload를 ref로 들고 있어, ready 수신 시점에 즉시 현재 값을 보낼 수 있게 한다.
-	const payloadRef = useRef(payload);
-	payloadRef.current = payload;
 
 	// iframe으로 현재 payload 전체 스냅샷 전송. Effect Event라 deps에 안 들어가
 	// (콜백이 매 렌더 바뀌어도 effect가 재구독/재실행되지 않음).
@@ -45,6 +42,8 @@ export function LivePreview({
 			PREVIEW_ORIGIN,
 		);
 	});
+	// Effect Event는 호출 시점의 최신 props를 읽으므로 ready 수신 때 현재 payload를 바로 보낼 수 있다.
+	const postLatest = useEffectEvent(() => post(payload));
 
 	// ready 핸드셰이크 — 수신 후부터 전송 시작(ready 전 전송은 유실될 수 있음).
 	useEffect(() => {
@@ -52,7 +51,7 @@ export function LivePreview({
 			if (e.origin !== PREVIEW_ORIGIN) return; // origin 검증
 			if (!isReadyMessage(e.data)) return;
 			readyRef.current = true;
-			post(payloadRef.current); // 준비되면 현재 값 즉시 1회 전송
+			postLatest(); // 준비되면 현재 값 즉시 1회 전송
 		}
 		window.addEventListener("message", onMessage);
 		return () => window.removeEventListener("message", onMessage);

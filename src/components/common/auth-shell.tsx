@@ -30,14 +30,14 @@ function AuthShell({
 		>
 			<AppHeader hideAuthCta />
 			<main className="flex-1">
-				<div className="mx-auto w-full max-w-[1120px] px-4 py-12 sm:px-6 sm:py-16">
+				<div className="mx-auto w-full max-w-300 px-4 py-12 sm:px-6 sm:py-16">
 					<div className="flex flex-col gap-2">
 						<p className="text-[15px] text-body">{eyebrow}</p>
 						<h1 className="text-3xl font-bold tracking-[0.5px] text-ink sm:text-[40px] sm:leading-[60px]">
 							{title}
 						</h1>
 					</div>
-					<hr className="mt-10 border-t border-body-soft" />
+					<hr className="mt-10 border-t border-brand" />
 					<div className={cn("pt-10", contentClassName)}>{children}</div>
 				</div>
 			</main>

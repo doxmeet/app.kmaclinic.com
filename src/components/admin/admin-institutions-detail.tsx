@@ -80,12 +80,12 @@ function formatAmount(value: unknown): string {
 	return `₩ ${n.toLocaleString("ko-KR")}`;
 }
 
-/** ISO 문자열 → ko-KR 날짜. 값 없으면 "-". */
+/** ISO 문자열 → ko-KR 날짜. 값 없으면 "-". SSR과 브라우저가 같은 날짜를 그리도록 KST 고정. */
 function formatDate(value: unknown): string {
 	if (value === undefined || value === null || value === "") return "-";
 	const d = new Date(String(value));
 	if (Number.isNaN(d.getTime())) return str(value);
-	return d.toLocaleDateString("ko-KR");
+	return d.toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" });
 }
 
 /** 읽기 전용 정보 필드 (라벨 + 입력형 박스) — 상세 페이지 전용 소품 */
@@ -102,7 +102,7 @@ function ReadField({
 }) {
 	return (
 		<div className={cn("flex min-w-0 flex-col gap-2", className)}>
-			<span className="text-sm text-body">{label}</span>
+			<span className="text-base text-body">{label}</span>
 			<div
 				className={cn(
 					"flex min-h-14 items-center rounded-lg border border-line-soft bg-app-bg px-4 text-base text-ink sm:px-5 sm:text-[17px]",
@@ -180,6 +180,8 @@ function PaymentsTable({ payments }: { payments: AdminPayment[] }) {
 									: str(p.failure_code);
 							return (
 								<TableRow
+									// 정상 경로는 백엔드 PK(no/order_id) 키 — idx는 id 없는 행 방어 폴백(읽기 전용 표).
+									// react-doctor-disable-next-line no-array-index-as-key
 									key={String(p.no ?? p.order_id ?? `pay-${idx}`)}
 									className="border-b-line-strong/50"
 								>

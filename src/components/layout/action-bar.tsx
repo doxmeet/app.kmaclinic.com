@@ -18,6 +18,8 @@ function StickyActionBar({
 }) {
 	return (
 		<div
+			// 카카오톡 FAB(우하단)가 이 바를 감지해 위로 비켜나는 마커.
+			data-sticky-action-bar=""
 			className={cn(
 				"sticky bottom-0 z-30 border-t border-line bg-surface/95 backdrop-blur",
 				className,
@@ -25,7 +27,7 @@ function StickyActionBar({
 		>
 			<div className="mx-auto flex max-w-[1100px] items-center gap-2 px-3 py-3 sm:gap-3 sm:px-6">
 				<div className="flex shrink-0 items-center gap-2">{left}</div>
-				<div className="hidden flex-1 justify-center text-center text-sm text-body sm:flex">
+				<div className="hidden flex-1 justify-center text-center text-base text-body sm:flex">
 					{center}
 				</div>
 				<div className="ml-auto flex shrink-0 items-center gap-2 sm:ml-0">

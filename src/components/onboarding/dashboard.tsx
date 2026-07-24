@@ -1,32 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import {
-	ArrowRight,
-	Building2,
-	CreditCard,
-	ExternalLink,
-	IdCard,
-	Loader2,
-	MessageSquareText,
-	Palette,
-	PenLine,
-	Plus,
-	Trash2,
-} from "lucide-react";
+import { ArrowRight, Building2, IdCard, Loader2, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { CardShell } from "#/components/common/card-shell.tsx";
 import { InfoCallout } from "#/components/common/info-callout.tsx";
-import { InfoRows } from "#/components/common/info-rows.tsx";
+import { KakaoTalkIcon } from "#/components/common/kakao-icon.tsx";
 import { KakaoSupportLink } from "#/components/common/kakao-support-link.tsx";
-import { SectionCard } from "#/components/common/section-card.tsx";
-import { ProfileLivePreview } from "#/components/doctor/profile-live-preview.tsx";
-import { DesignPreviewScreen } from "#/components/onboarding/design-preview.tsx";
 import { isSlugValid } from "#/components/onboarding/slug.ts";
 import { SlugField } from "#/components/onboarding/slug-field.tsx";
 import { Badge } from "#/components/ui/badge.tsx";
 import { Button } from "#/components/ui/button.tsx";
-import { setProfileSlug } from "#/lib/api/billing.ts";
+import {
+	publishHospital,
+	setHospitalSlug,
+	setProfileSlug,
+} from "#/lib/api/billing.ts";
 import type {
 	OnboardingMode,
 	Overview,
@@ -38,28 +27,26 @@ import type {
 import { deleteHospital, resetSession } from "#/lib/api/onboarding.ts";
 import {
 	getProfile,
-	patchProfile,
 	publishProfile,
 	unpublishProfile,
 } from "#/lib/api/profile.ts";
 import { toastApiError } from "#/lib/api-error-message.ts";
-import {
-	buildProfilePreviewBundleFromDoc,
-	PROFILE_TEMPLATE_SWATCHES,
-} from "#/lib/profile-preview.ts";
+import { KAKAO_CHANNEL_URL } from "#/lib/support.ts";
 import { cn } from "#/lib/utils.ts";
 
+const OVERVIEW_KEY = ["onboarding", "overview"] as const;
+
 /**
- * 온보딩 대시보드 — 내 병원/프로필 카드 목록.
- * 진행중 draft(최대 1)와 생성된 병원 카드를 상태별 액션과 함께 보여준다.
- * 하위 흐름(대화/결제/게시)은 부모 오케스트레이터(`/onboarding`)가 모드로 전환한다.
+ * 온보딩 대시보드 — 내 병원/프로필 목록.
+ * PC(lg+)에서 좌측 2/3는 병원(진행중 draft 포함), 우측 1/3은 의사 프로필 카드로 나눈다.
+ * 하위 흐름(대화/결제)은 부모 오케스트레이터(`/onboarding`)가 모드로 전환하고,
+ * 공개 주소 설정(게시)은 병원 카드 안에서 인라인으로 처리한다.
  */
 export function OnboardingDashboard({
 	overview,
 	onStartConversation,
 	onContinueDraft,
 	onPay,
-	onPublish,
 	onRefetch,
 }: {
 	overview: Overview;
@@ -69,14 +56,10 @@ export function OnboardingDashboard({
 	onContinueDraft: () => void;
 	/** 병원 카드 "결제하기" → payment 모드. */
 	onPay: (payment: PaymentIntent) => void;
-	/** 병원 카드 "게시하기" → publish 모드. */
-	onPublish: (hospital: OverviewHospital) => void;
-	/** 액션(삭제 등) 후 overview 새로고침. */
+	/** 액션(삭제/게시 등) 후 overview 새로고침. */
 	onRefetch: () => void;
 }) {
-	const navigate = useNavigate();
 	const queryClient = useQueryClient();
-	const [menuOpen, setMenuOpen] = useState(false);
 
 	const draft = overview.draft ?? null;
 	const profile = overview.profile ?? null;
@@ -90,16 +73,11 @@ export function OnboardingDashboard({
 	const resetMutation = useMutation({
 		mutationFn: resetSession,
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["onboarding", "overview"] });
+			queryClient.invalidateQueries({ queryKey: OVERVIEW_KEY });
 			onRefetch();
 		},
 		onError: (err) => toastApiError(err),
 	});
-
-	function handleNewButtonClick() {
-		if (!canStartNewDraft) return;
-		setMenuOpen((v) => !v);
-	}
 
 	function handleDeleteDraft() {
 		const ok = window.confirm(
@@ -111,147 +89,75 @@ export function OnboardingDashboard({
 
 	const isEmpty = !hasDraft && hospitals.length === 0 && profile == null;
 
+	// 빈 상태 — 선택 카드 2장은 좁은 폭이 보기 좋아 720px로 가운데 정렬.
+	if (isEmpty) {
+		return (
+			<div className="mx-auto flex w-full max-w-[720px] flex-col gap-6">
+				<h1 className="text-2xl font-bold text-ink">내 병원·프로필</h1>
+				<EmptyStateCard onStartConversation={onStartConversation} />
+			</div>
+		);
+	}
+
 	return (
 		<div className="flex flex-col gap-6">
 			{/* 헤더 */}
-			<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-				<div className="flex flex-col gap-1">
-					<h1 className="text-2xl font-bold text-ink">내 병원·프로필</h1>
-					<p className="text-sm text-body-soft">
-						만든 병원 홈페이지와 진행 중인 작업을 한곳에서 관리하세요.
-					</p>
-				</div>
-				<div className="flex flex-col items-stretch gap-1.5 sm:items-end">
-					<div className="relative w-full sm:w-auto">
-						<Button
-							variant="brand"
-							size="2xl"
-							onClick={handleNewButtonClick}
-							disabled={!canStartNewDraft}
-							aria-expanded={menuOpen}
-							aria-haspopup="menu"
-							className="w-full sm:w-auto"
-						>
-							<Plus className="size-5" />
-							새로 작성
-						</Button>
+			<h1 className="text-2xl font-bold text-ink">내 병원·프로필</h1>
 
-						{/* 대화형 / 직접입력 선택 메뉴 */}
-						{menuOpen ? (
-							<>
-								{/* 바깥 클릭으로 닫기 */}
-								<button
-									type="button"
-									aria-hidden
-									tabIndex={-1}
-									className="fixed inset-0 z-10 cursor-default"
-									onClick={() => setMenuOpen(false)}
-								/>
-								<div className="absolute right-0 z-20 mt-2 w-full overflow-hidden rounded-xl border border-line bg-surface p-1.5 shadow-[0_16px_40px_-12px_rgba(0,0,0,0.25)] sm:w-64">
-									<p className="px-3 pt-1.5 pb-1 text-xs font-medium text-muted-fg">
-										병원 홈페이지
-									</p>
-									<button
-										type="button"
-										onClick={() => {
-											setMenuOpen(false);
-											onStartConversation("hospital");
-										}}
-										className="flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-brand-50"
-									>
-										<MessageSquareText className="mt-0.5 size-5 shrink-0 text-brand" />
-										<span className="flex flex-col">
-											<span className="text-sm font-semibold text-ink">
-												대화형으로 만들기
-											</span>
-											<span className="text-xs text-body-soft">
-												질문에 답하며 차근차근 입력
-											</span>
-										</span>
-									</button>
-									<div className="my-1.5 h-px bg-line" />
-									<p className="px-3 pt-0.5 pb-1 text-xs font-medium text-muted-fg">
-										의사 프로필
-									</p>
-									{/* 의사 프로필은 대화형 작성을 노출하지 않고 직접 입력만 제공. */}
-									<button
-										type="button"
-										onClick={() => {
-											setMenuOpen(false);
-											navigate({ to: "/doctor/profile" });
-										}}
-										className="flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-brand-50"
-									>
-										{profile == null ? (
-											<PenLine className="mt-0.5 size-5 shrink-0 text-brand" />
-										) : (
-											<IdCard className="mt-0.5 size-5 shrink-0 text-brand" />
-										)}
-										<span className="flex flex-col">
-											<span className="text-sm font-semibold text-ink">
-												{profile == null
-													? "프로필 직접 입력"
-													: "프로필 작성·관리"}
-											</span>
-											<span className="text-xs text-body-soft">
-												{profile == null
-													? "프로필 정보를 한 폼에 입력"
-													: "의사 프로필을 직접 작성·수정"}
-											</span>
-										</span>
-									</button>
-								</div>
-							</>
-						) : null}
-					</div>
-					{!canStartNewDraft ? (
-						<p className="text-xs text-body-soft sm:text-right">
-							진행 중인 작성을 먼저 완료하거나 삭제해 주세요.
-						</p>
+			<div className="grid items-start gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+				{/* ── 좌측 2/3: 병원 ─────────────────────────────── */}
+				<div className="flex min-w-0 flex-col gap-5">
+					{draft ? (
+						<DraftCard
+							draft={draft}
+							onContinue={onContinueDraft}
+							onDelete={handleDeleteDraft}
+							deleting={resetMutation.isPending}
+						/>
 					) : null}
-				</div>
-			</div>
 
-			{/* 빈 상태 */}
-			{isEmpty ? (
-				<EmptyStateCard onStartConversation={onStartConversation} />
-			) : null}
-
-			{/* draft 카드 */}
-			{draft ? (
-				<DraftCard
-					draft={draft}
-					onContinue={onContinueDraft}
-					onDelete={handleDeleteDraft}
-					deleting={resetMutation.isPending}
-				/>
-			) : null}
-
-			{/* 의사 프로필 카드 (overview.profile) */}
-			{profile ? <ProfileCard profile={profile} onRefetch={onRefetch} /> : null}
-
-			{/* 병원 카드 목록 */}
-			{hospitals.length > 0 ? (
-				<div className="flex flex-col gap-4">
 					{hospitals.map((h) => (
 						<HospitalCard
 							key={h.hospital_no ?? h.slug ?? h.name}
 							hospital={h}
 							onPay={onPay}
-							onPublish={onPublish}
 							onRefetch={onRefetch}
 						/>
 					))}
+
+					{/* 최하단 네이비 배너로 병원 (추가) 제작 진입.
+					    진행 중 draft가 있으면 새 대화를 시작할 수 없어 숨긴다. */}
+					{canStartNewDraft ? (
+						<HospitalCreateCard
+							hasHospital={hospitals.length > 0}
+							onClick={() => onStartConversation("hospital")}
+						/>
+					) : null}
 				</div>
-			) : null}
+
+				{/* ── 우측 1/3: 의사 프로필 — 모바일(단일 컬럼)에서는 맨 위로 ── */}
+				<div className="order-first min-w-0 lg:order-0">
+					{profile ? (
+						<ProfileCard profile={profile} onRefetch={onRefetch} />
+					) : (
+						<ProfileEmptyCard />
+					)}
+				</div>
+			</div>
 		</div>
 	);
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// 빈 상태 카드 — 병원은 대화형, 프로필은 직접 입력으로 바로 시작한다.
+// 빈 상태 — 병원(네이비)/프로필(흰색) 선택 카드 2장 + 카카오톡 채널 문의 CTA.
+// 병원은 대화형, 프로필은 직접 입력으로 바로 시작한다.
 // (의사 프로필 대화형 작성은 노출하지 않음.)
 // ─────────────────────────────────────────────────────────────────────
+
+// 두 카드의 아이콘/제목/설명이 같은 높이에 놓이도록 상단 기준으로 정렬한다
+// (본문 줄 수가 달라 justify-center로는 행이 어긋난다).
+const choiceCardBase =
+	"flex min-h-64 cursor-pointer flex-col items-center gap-5 rounded-2xl px-6 pt-16 pb-10 text-center shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-brand/40 sm:min-h-96 sm:pt-24";
 
 function EmptyStateCard({
 	onStartConversation,
@@ -261,38 +167,110 @@ function EmptyStateCard({
 	const navigate = useNavigate();
 
 	return (
-		<SectionCard className="flex flex-col items-center gap-5 py-12 text-center">
-			<div className="flex size-14 items-center justify-center rounded-full bg-brand-50">
-				<Plus className="size-7 text-brand" />
-			</div>
-			<div className="flex flex-col gap-1.5">
-				<p className="text-lg font-semibold text-ink">아직 만든 항목이 없어요</p>
-				<p className="text-sm text-body-soft">
-					병원 홈페이지와 의사 프로필을 만들 수 있어요. 무엇을 만들지 선택해
-					주세요.
-				</p>
-			</div>
-			<div className="flex w-full flex-col flex-wrap justify-center gap-2 sm:w-auto sm:flex-row">
-				<Button
-					variant="brand"
-					size="2xl"
-					className="w-full sm:w-auto"
+		<div className="flex flex-col gap-10">
+			<div className="grid gap-5 sm:grid-cols-2">
+				{/* 병원 홈페이지 제작 — 대화형 시작 */}
+				<button
+					type="button"
 					onClick={() => onStartConversation("hospital")}
+					className={cn(choiceCardBase, "bg-[#1f3a63] hover:bg-[#264778]")}
 				>
-					<Building2 className="size-5" />
-					병원 만들기
-				</Button>
-				<Button
-					variant="neutral-outline"
-					size="2xl"
-					className="w-full sm:w-auto"
+					<span className="flex size-14 items-center justify-center rounded-full bg-white/10">
+						<Building2 className="size-7 text-white" />
+					</span>
+					<span className="flex flex-col gap-2">
+						<span className="text-xl font-bold text-white">
+							병원 홈페이지 제작
+						</span>
+						<span className="text-base leading-7 text-white/85">
+							병원 정보를 입력하고 1분만에 제작해요
+						</span>
+					</span>
+				</button>
+
+				{/* 내 프로필 제작 — 직접 입력 폼으로 이동 */}
+				<button
+					type="button"
 					onClick={() => navigate({ to: "/doctor/profile" })}
+					className={cn(
+						choiceCardBase,
+						"border border-line-soft bg-surface hover:border-brand-200 hover:bg-brand-50/50",
+					)}
 				>
-					<IdCard className="size-5" />
-					프로필 만들기
-				</Button>
+					<span className="flex size-14 items-center justify-center rounded-full bg-brand-50">
+						<IdCard className="size-7 text-brand" />
+					</span>
+					<span className="flex flex-col gap-2">
+						<span className="text-xl font-bold text-brand">내 프로필 제작</span>
+						<span className="text-base leading-7 text-brand/80">
+							프로필을 정리하세요.
+							<br />
+							회원님 전용 페이지로
+							<br />
+							외부에도 간편하게 공유
+							<br />
+							다국어도 지원 예정입니다.
+						</span>
+					</span>
+				</button>
 			</div>
-		</SectionCard>
+
+			<KakaoChannelCta />
+		</div>
+	);
+}
+
+/** 이용 안내 — 카카오톡 채널 문의 (온보딩은 FAB 대신 이 CTA 하나로 유도). */
+function KakaoChannelCta() {
+	return (
+		<div className="flex flex-col items-center gap-3.5">
+			<p className="text-base font-bold text-ink">이용 방법이 궁금하신가요?</p>
+			<a
+				href={KAKAO_CHANNEL_URL}
+				target="_blank"
+				rel="noreferrer noopener"
+				className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#fee500] px-6 py-3.5 text-base font-semibold text-[#191919] transition-[filter] hover:brightness-95 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-brand/40"
+			>
+				<KakaoTalkIcon className="size-5" />
+				카카오톡 채널 문의
+			</a>
+		</div>
+	);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// 병원 홈페이지 제작 카드 — 병원 목록 최하단의 새 병원 제작 진입점.
+// 병원을 이미 만든 사용자에게는 "추가 제작"으로 문구를 바꿔 보여준다.
+// ─────────────────────────────────────────────────────────────────────
+
+function HospitalCreateCard({
+	hasHospital,
+	onClick,
+}: {
+	/** 이미 만든 병원이 있는지 — 있으면 추가 제작 문구로 노출. */
+	hasHospital: boolean;
+	onClick: () => void;
+}) {
+	return (
+		<button
+			type="button"
+			onClick={onClick}
+			className="flex cursor-pointer flex-col items-center gap-5 rounded-2xl bg-[#1f3a63] px-6 py-6 text-center shadow-sm transition-colors hover:bg-[#264778] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-brand/40"
+		>
+			<span className="flex size-14 items-center justify-center rounded-full bg-white/10">
+				<Building2 className="size-7 text-white" />
+			</span>
+			<span className="flex flex-col gap-2">
+				<span className="text-xl font-bold text-white">
+					{hasHospital ? "병원 홈페이지 추가 제작" : "병원 홈페이지 제작"}
+				</span>
+				<span className="text-base leading-7 text-white/85">
+					{hasHospital
+						? "새 병원 정보를 입력하고 홈페이지를 하나 더 만들어요"
+						: "병원 정보를 입력하고 1분만에 제작해요"}
+				</span>
+			</span>
+		</button>
 	);
 }
 
@@ -327,6 +305,7 @@ function DraftCard({
 	return (
 		<CardShell
 			title={title}
+			variant="form"
 			action={
 				<div className="flex flex-wrap items-center justify-end gap-2">
 					<Badge variant="warning">작성 중</Badge>
@@ -338,11 +317,11 @@ function DraftCard({
 				</div>
 			}
 		>
-			<div className="flex flex-col gap-4 p-5 sm:p-8">
+			<div className="flex flex-col gap-4 px-5 pb-5 sm:px-8 sm:pb-8">
 				<div className="flex flex-col gap-2">
 					<div className="flex items-center justify-between gap-3">
-						<span className="text-sm text-body-soft">진행률</span>
-						<span className="text-sm font-medium text-body-soft">
+						<span className="text-base text-body-soft">진행률</span>
+						<span className="text-base font-medium text-body-soft">
 							{progress}% 완료
 						</span>
 					</div>
@@ -356,8 +335,8 @@ function DraftCard({
 
 				{nextQuestion ? (
 					<div className="rounded-xl border border-line bg-app-bg px-4 py-3">
-						<p className="text-xs font-medium text-body-soft">다음 질문</p>
-						<p className="mt-1 text-sm text-body">{nextQuestion}</p>
+						<p className="text-[15px] font-medium text-body-soft">다음 질문</p>
+						<p className="mt-1 text-base text-body">{nextQuestion}</p>
 					</div>
 				) : null}
 
@@ -387,9 +366,9 @@ function DraftCard({
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// 의사 프로필 카드 (overview.profile)
-//  게시 가능 여부는 status로 판단(editing → 발행, published → 공개 링크).
-//  완성도(%)는 프로필이 아닌 draft에만 오므로 여기서는 표시하지 않는다.
+// 의사 프로필 카드 (우측 1/3 열)
+//  사진·대표 진료과는 overview에 없어 /profile/me에서 가져온다(React Query 캐시 공유).
+//  게시 가능 여부는 status로 판단(editing → 공개하기, published → url 복사).
 // ─────────────────────────────────────────────────────────────────────
 
 function ProfileCard({
@@ -404,45 +383,31 @@ function ProfileCard({
 		profile.status === "published" || profile.is_published === true;
 	const slug = profile.slug?.trim() || null;
 	const name = profile.display_name?.trim() || "원장님";
-	const kmadocUrl = slug ? `https://${slug}.kmadoc.com` : null;
 	const [slugInput, setSlugInput] = useState("");
 	const needsSlug = !slug;
 	const validSlug = isSlugValid(slugInput);
 
-	// 공개 전 디자인 시안 선택(전체화면). 열릴 때만 /profile/me 를 불러 미리보기.
-	const [designOpen, setDesignOpen] = useState(false);
-	const [pickedTemplate, setPickedTemplate] = useState<string | null>(null);
-	const { data: previewDoc } = useQuery({
+	const { data: doc } = useQuery({
 		queryKey: ["profile", "me"],
 		queryFn: getProfile,
-		enabled: designOpen,
 	});
-	const currentTemplate =
-		pickedTemplate ??
-		(typeof previewDoc?.template_key === "string"
-			? previewDoc.template_key
-			: "blue");
-	const templateMutation = useMutation({
-		mutationFn: (tk: string) => patchProfile({ template_key: tk }),
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["profile", "me"] });
-			queryClient.invalidateQueries({ queryKey: ["onboarding", "overview"] });
-			setDesignOpen(false);
-			setPickedTemplate(null);
-			toast.success("디자인 시안을 저장했어요.");
-			onRefetch();
-		},
-		onError: (err) => toastApiError(err),
-	});
+	const photoUrl =
+		typeof doc?.photo_url === "string" && doc.photo_url.trim()
+			? doc.photo_url
+			: null;
+	const department =
+		typeof doc?.primary_department_text === "string"
+			? doc.primary_department_text.trim()
+			: "";
 
-	// 발행하기 → 프로필 발행 API(병원 publish와 대칭). slug 미설정 시 먼저 설정 후 공개.
+	// 공개하기 → 프로필 발행 API(병원 publish와 대칭). slug 미설정 시 먼저 설정 후 공개.
 	const publishMutation = useMutation({
 		mutationFn: async () => {
 			if (needsSlug) await setProfileSlug(slugInput.trim());
 			return publishProfile();
 		},
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["onboarding", "overview"] });
+			queryClient.invalidateQueries({ queryKey: OVERVIEW_KEY });
 			toast.success("프로필을 공개했어요.");
 			onRefetch();
 		},
@@ -451,192 +416,168 @@ function ProfileCard({
 	const unpublishMutation = useMutation({
 		mutationFn: unpublishProfile,
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["onboarding", "overview"] });
+			queryClient.invalidateQueries({ queryKey: OVERVIEW_KEY });
 			toast.success("프로필 공개를 해제했어요.");
 			onRefetch();
 		},
 		onError: (err) => toastApiError(err),
 	});
 
-	const rows: Array<{ label: string; value: string }> = [];
-	if (slug) rows.push({ label: "공개 주소", value: `${slug}.kmadoc.com` });
-
-	// 전체화면 디자인 시안 선택 — 저장된 프로필로 미리보며 시안을 고르고 바로 저장.
-	if (designOpen) {
-		return (
-			<DesignPreviewScreen
-				swatches={PROFILE_TEMPLATE_SWATCHES}
-				templateKey={currentTemplate}
-				preview={
-					<ProfileLivePreview
-						payload={buildProfilePreviewBundleFromDoc(
-							previewDoc,
-							currentTemplate,
-						)}
-					/>
-				}
-				onTemplateChange={setPickedTemplate}
-				onBack={() => {
-					setDesignOpen(false);
-					setPickedTemplate(null);
-				}}
-				onConfirm={() => templateMutation.mutate(currentTemplate)}
-				confirming={templateMutation.isPending}
-				confirmLabel="이 디자인 저장"
-			/>
-		);
+	async function copyProfileUrl() {
+		if (!slug) return;
+		const url = `https://${slug}.kmadoc.com`;
+		try {
+			await navigator.clipboard.writeText(url);
+			toast.success("프로필 주소를 복사했어요.");
+		} catch {
+			toast.error(`복사하지 못했어요. 주소: ${url}`);
+		}
 	}
 
 	return (
-		<CardShell
-			title={`${name} 프로필`}
-			action={
-				<Badge variant={published ? "success" : "soft"}>
-					{published ? "공개 중" : "작성 중"}
-				</Badge>
-			}
-		>
-			{/* 공개 주소 — 구독 상태 카드와 동일한 InfoRows */}
-			{rows.length > 0 ? <InfoRows rows={rows} /> : null}
+		<section className="flex flex-col items-center gap-6 rounded-xl border border-line-soft bg-surface p-6 text-center shadow-sm sm:p-8">
+			{photoUrl ? (
+				<img
+					src={photoUrl}
+					alt={`${name} 사진`}
+					className="size-44 rounded-xl bg-muted object-cover"
+				/>
+			) : (
+				<img src="/profile.png" alt="" className="w-40" />
+			)}
 
-			{/* 상태별 게시 액션 — status 기준 */}
-			<div
-				className={cn(
-					"flex flex-col gap-3 p-5 sm:p-8",
-					rows.length > 0 && "border-t border-line-soft",
-				)}
-			>
-				{published ? (
-					<>
-						<InfoCallout tone="success">
-							<p className="text-sm">
-								의사 프로필이 공개 중입니다. 내용 편집은 "프로필 관리"에서 할 수
-								있어요.
-							</p>
-						</InfoCallout>
-						<div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-							<Button
-								nativeButton={false}
-								render={<Link to="/doctor/profile" />}
-								variant="neutral-outline"
-								size="xl"
-							>
-								<PenLine className="size-4" />
-								프로필 관리
-							</Button>
-							{kmadocUrl ? (
-								<Button
-									nativeButton={false}
-									render={
-										// biome-ignore lint/a11y/useAnchorContent: Button이 자식으로 콘텐츠를 주입한다.
-										<a
-											href={kmadocUrl}
-											target="_blank"
-											rel="noreferrer"
-											aria-label="공개 페이지 보기"
-										/>
-									}
-									variant="brand-outline"
-									size="xl"
-								>
-									<ExternalLink className="size-4" />
-									공개 페이지 보기
-								</Button>
-							) : null}
-							<Button
-								variant="neutral-outline"
-								size="xl"
-								onClick={() => unpublishMutation.mutate()}
-								disabled={unpublishMutation.isPending}
-							>
-								{unpublishMutation.isPending ? (
-									<Loader2 className="size-4 animate-spin" />
-								) : null}
-								공개 해제
-							</Button>
-						</div>
-					</>
+			<div className="flex flex-col gap-1">
+				<p className="text-xl font-bold text-ink">{name}</p>
+				{department ? (
+					<p className="text-base text-body-soft">{department}</p>
+				) : null}
+			</div>
+
+			<div className="flex w-full flex-col gap-2.5">
+				{/* 좁은 카드에서 파란 글로우가 도드라져 그림자는 뺀다. */}
+				<Button
+					nativeButton={false}
+					render={<Link to="/doctor/profile" />}
+					variant="brand"
+					size="xl"
+					className="w-full shadow-none"
+				>
+					프로필 수정하기
+				</Button>
+
+				{published && slug ? (
+					<Button
+						variant="neutral-outline"
+						size="xl"
+						className="w-full"
+						onClick={copyProfileUrl}
+					>
+						프로필 URL 복사
+					</Button>
 				) : (
 					<>
-						<InfoCallout tone="info">
-							<p className="text-sm">
-								의사 프로필이 아직 비공개예요. "프로필 관리"에서 내용을 채운 뒤
-								공개 주소를 정하고 공개하면 게시됩니다.
-							</p>
-						</InfoCallout>
 						{needsSlug ? (
-							<SlugField
-								label="공개 주소"
-								domain=".kmadoc.com"
-								value={slugInput}
-								onChange={setSlugInput}
-								placeholder="예: hong-gildong"
-								invalid={slugInput.length > 0 && !validSlug}
-								description="공개 시 사용할 주소예요. 한 번 정하면 바꿀 수 없어요."
-							/>
+							<div className="text-left">
+								<SlugField
+									label="공개 주소"
+									domain=".kmadoc.com"
+									value={slugInput}
+									onChange={setSlugInput}
+									placeholder="예: hong-gildong"
+									disabled={publishMutation.isPending}
+									invalid={slugInput.length > 0 && !validSlug}
+									description={
+										<>
+											공개 시 사용할 주소예요.
+											<br />한 번 정하면 바꿀 수 없어요.
+										</>
+									}
+								/>
+							</div>
 						) : null}
-						<div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-							<Button
-								variant="neutral-outline"
-								size="xl"
-								onClick={() => setDesignOpen(true)}
-							>
-								<Palette className="size-4" />
-								디자인 선택
-							</Button>
-							<Button
-								nativeButton={false}
-								render={<Link to="/doctor/profile" />}
-								variant="neutral-outline"
-								size="xl"
-							>
-								<PenLine className="size-4" />
-								프로필 관리
-							</Button>
-							<Button
-								variant="brand"
-								size="xl"
-								onClick={() => publishMutation.mutate()}
-								disabled={
-									publishMutation.isPending || (needsSlug && !validSlug)
-								}
-							>
-								{publishMutation.isPending ? (
-									<Loader2 className="size-4 animate-spin" />
-								) : null}
-								공개하기
-							</Button>
-						</div>
+						<Button
+							variant="neutral-outline"
+							size="xl"
+							className="w-full"
+							onClick={() => publishMutation.mutate()}
+							disabled={publishMutation.isPending || (needsSlug && !validSlug)}
+						>
+							{publishMutation.isPending ? (
+								<Loader2 className="size-4 animate-spin" />
+							) : null}
+							프로필 공개하기
+						</Button>
 					</>
 				)}
 			</div>
-		</CardShell>
+
+			{published ? (
+				<button
+					type="button"
+					onClick={() => unpublishMutation.mutate()}
+					disabled={unpublishMutation.isPending}
+					className="cursor-pointer text-[15px] text-body-soft underline-offset-4 hover:underline disabled:opacity-50"
+				>
+					공개 해제
+				</button>
+			) : null}
+		</section>
+	);
+}
+
+/** 프로필이 아직 없을 때 — 일러스트 + 제작 유도 (public/profile.png). */
+function ProfileEmptyCard() {
+	return (
+		<section className="flex flex-col items-center gap-6 rounded-xl border border-line-soft bg-surface p-6 text-center shadow-sm sm:p-8">
+			<img src="/profile.png" alt="" className="w-40" />
+			<div className="flex flex-col gap-2">
+				<h2 className="text-xl font-bold text-ink">내 프로필</h2>
+				<p className="text-base leading-7 break-keep text-body-soft">
+					프로필을 추가해야
+					<br />
+					병원 의료진 소개에
+					<br />
+					추가하실 수 있습니다.
+				</p>
+			</div>
+			<Button
+				nativeButton={false}
+				render={<Link to="/doctor/profile" />}
+				variant="brand"
+				size="xl"
+				className="w-full shadow-none"
+			>
+				내 프로필 추가하기
+			</Button>
+		</section>
 	);
 }
 
 // ─────────────────────────────────────────────────────────────────────
 // 병원 카드
+//  published: 홈페이지 주소 행 + 관리 버튼 행.
+//  ready_to_publish: 카드 안에서 바로 주소 입력 + "주소 정하기"(인라인 게시).
+//  pending_payment: 결제 유도(삭제/결제하기).
 // ─────────────────────────────────────────────────────────────────────
 
 function HospitalCard({
 	hospital,
 	onPay,
-	onPublish,
 	onRefetch,
 }: {
 	hospital: OverviewHospital;
 	onPay: (payment: PaymentIntent) => void;
-	onPublish: (hospital: OverviewHospital) => void;
 	onRefetch: () => void;
 }) {
 	const queryClient = useQueryClient();
 	const status = hospital.status;
 	const title = hospital.name?.trim() ? hospital.name : "이름 미정 병원";
+	const slug = hospital.slug?.trim() || null;
 
 	const deleteMutation = useMutation({
 		mutationFn: (no: number) => deleteHospital(no),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ["onboarding", "overview"] });
+			queryClient.invalidateQueries({ queryKey: OVERVIEW_KEY });
 			onRefetch();
 		},
 		onError: (err) => toastApiError(err),
@@ -651,151 +592,224 @@ function HospitalCard({
 		deleteMutation.mutate(hospital.hospital_no);
 	}
 
-	const rows = hospitalRows(hospital);
-	const hasActions =
-		status === "pending_payment" ||
-		status === "ready_to_publish" ||
-		status === "published";
+	// ── 인라인 게시(공개 주소 설정) — ready_to_publish 카드 안에서 바로 처리 ──
+	const [slugInput, setSlugInput] = useState(() => slug ?? "");
+	const [touched, setTouched] = useState(false);
+	const validSlug = isSlugValid(slugInput.trim());
+
+	const publishMutation = useMutation({
+		mutationFn: async () => {
+			if (hospital.hospital_no == null) {
+				throw new Error("병원 정보를 찾을 수 없습니다.");
+			}
+			await setHospitalSlug(hospital.hospital_no, slugInput.trim());
+			await publishHospital(hospital.hospital_no);
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: OVERVIEW_KEY });
+			toast.success("병원 홈페이지를 공개했어요.");
+			onRefetch();
+		},
+		onError: (err) => toastApiError(err),
+	});
+
+	function handlePublish() {
+		if (!validSlug || publishMutation.isPending) return;
+		const ok = window.confirm(
+			`'${slugInput.trim()}.kmaclinic.com' 주소로 홈페이지를 공개할까요?\n주소는 한번 정해지면 바꿀 수 없습니다.`,
+		);
+		if (!ok) return;
+		publishMutation.mutate();
+	}
 
 	return (
-		<CardShell title={title} action={<HospitalStatusBadge status={status} />}>
-			{/* 메타 정보 — 구독 상태 카드와 동일한 InfoRows */}
-			{rows.length > 0 ? <InfoRows rows={rows} /> : null}
-
-			{/* 상태별 액션 */}
-			{hasActions ? (
-				<div
-					className={cn(
-						"flex flex-col gap-3 p-5 sm:p-8",
-						rows.length > 0 && "border-t border-line-soft",
-					)}
-				>
-					{status === "pending_payment" ? (
-						<>
-							<InfoCallout tone="warning">
-								<p className="text-sm">
-									아직 결제 전이에요. 정기 결제 카드를 등록하면 병원 홈페이지를
-									공개할 수 있습니다.
-								</p>
-								<KakaoSupportLink
-									variant="inline"
-									className="mt-1.5 text-sm"
-									label="결제가 안 되면 카카오톡으로 문의하기"
-								/>
-							</InfoCallout>
-							<div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-								<Button
-									variant="destructive"
-									size="xl"
-									className="border-[#fee2e2] bg-white text-[#f87171] hover:bg-[#fef2f2]"
-									onClick={handleDelete}
-									disabled={deleteMutation.isPending}
-								>
-									{deleteMutation.isPending ? (
-										<Loader2 className="size-4 animate-spin" />
-									) : (
-										<Trash2 className="size-4" />
-									)}
-									삭제
-								</Button>
-								<Button
-									variant="brand"
-									size="xl"
-									disabled={!hospital.payment}
-									onClick={() => hospital.payment && onPay(hospital.payment)}
-								>
-									결제하기
-									<ArrowRight className="size-4" />
-								</Button>
-							</div>
-						</>
+		// 대시보드 카드는 헤더-본문 구분선 없이 한 덩어리로 보여준다(variant="form").
+		// 본문 상단 여백은 헤더의 하단 패딩이 담당하므로 pt는 주지 않는다.
+		<CardShell
+			title={title}
+			action={<HospitalStatusBadge status={status} />}
+			variant="form"
+		>
+			{status === "published" ? (
+				<div className="flex flex-col gap-4 px-5 pb-5 sm:gap-5 sm:px-8 sm:pb-8">
+					{slug ? (
+						<div className="flex flex-col gap-1 sm:flex-row sm:items-center">
+							<span className="text-[15px] text-body-soft sm:w-35 sm:shrink-0 sm:text-[17px]">
+								홈페이지 주소
+							</span>
+							<span className="text-[16px] text-ink sm:text-[17px]">
+								{slug}.kmaclinic.com
+							</span>
+						</div>
 					) : null}
-
-					{status === "ready_to_publish" ? (
-						<>
-							<InfoCallout tone="info">
-								<p className="text-sm">
-									결제가 완료됐어요. 공개 주소를 정하고 공개하면 병원 홈페이지가
-									공개됩니다.
-								</p>
-							</InfoCallout>
-							<div className="flex justify-end">
-								<Button
-									variant="brand"
-									size="xl"
-									onClick={() => onPublish(hospital)}
-								>
-									공개하기
-									<ArrowRight className="size-4" />
-								</Button>
-							</div>
-						</>
+					{hospital.subscription_status === "past_due" ? (
+						<InfoCallout tone="warning">
+							<p className="text-base">
+								정기 결제가 연체된 상태입니다. 구독 관리에서 결제수단을 갱신해
+								주세요.
+							</p>
+							<KakaoSupportLink
+								variant="inline"
+								className="mt-1.5 text-base"
+								label="결제가 안 되면 카카오톡으로 문의하기"
+							/>
+						</InfoCallout>
 					) : null}
+					<HospitalActionPills hospital={hospital} published />
+				</div>
+			) : null}
 
-					{status === "published" ? (
-						<>
-							{hospital.subscription_status === "past_due" ? (
-								<InfoCallout tone="warning">
-									<p className="text-sm">
-										정기 결제가 연체된 상태입니다. 구독 관리에서 결제수단을
-										갱신해 주세요.
-									</p>
-									<KakaoSupportLink
-										variant="inline"
-										className="mt-1.5 text-sm"
-										label="결제가 안 되면 카카오톡으로 문의하기"
-									/>
-								</InfoCallout>
+			{status === "ready_to_publish" ? (
+				<div className="flex flex-col gap-5 px-5 pb-5 sm:px-8 sm:pb-8">
+					<SlugField
+						label="홈페이지 주소"
+						domain=".kmaclinic.com"
+						value={slugInput}
+						onChange={(v) => {
+							setSlugInput(v);
+							setTouched(true);
+						}}
+						placeholder="예: hong-gildong"
+						disabled={publishMutation.isPending}
+						invalid={touched && slugInput.trim().length > 0 && !validSlug}
+						description="주소는 한번 정해지면 바꿀 수 없어요."
+					/>
+					<div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+						<HospitalActionPills hospital={hospital} published={false} />
+						<Button
+							variant="brand"
+							size="xl"
+							onClick={handlePublish}
+							disabled={!validSlug || publishMutation.isPending}
+						>
+							{publishMutation.isPending ? (
+								<Loader2 className="size-4 animate-spin" />
+							) : null}
+							주소 정하기
+							<ArrowRight className="size-4" />
+						</Button>
+					</div>
+				</div>
+			) : null}
+
+			{status === "pending_payment" ? (
+				<div className="flex flex-col gap-3 px-5 pb-5 sm:px-8 sm:pb-8">
+					<InfoCallout tone="warning">
+						<p className="text-base">
+							아직 결제 전이에요. 정기 결제 카드를 등록하면 병원 홈페이지를
+							공개할 수 있습니다.
+						</p>
+						<KakaoSupportLink
+							variant="inline"
+							className="mt-1.5 text-base"
+							label="결제가 안 되면 카카오톡으로 문의하기"
+						/>
+					</InfoCallout>
+					<div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+						<Button
+							variant="destructive"
+							size="xl"
+							className="border-[#fee2e2] bg-white text-[#f87171] hover:bg-[#fef2f2]"
+							onClick={handleDelete}
+							disabled={deleteMutation.isPending}
+						>
+							{deleteMutation.isPending ? (
+								<Loader2 className="size-4 animate-spin" />
 							) : (
-								<InfoCallout tone="success">
-									<p className="text-sm">
-										병원 홈페이지가 공개 중입니다. 콘텐츠 등 일상 관리는 별도
-										관리자 페이지에서 진행해 주세요.
-									</p>
-								</InfoCallout>
+								<Trash2 className="size-4" />
 							)}
-							<div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-								{hospital.hospital_no != null ? (
-									<Button
-										nativeButton={false}
-										render={
-											<Link
-												to="/subscription/$hospitalNo"
-												params={{ hospitalNo: String(hospital.hospital_no) }}
-											/>
-										}
-										variant="neutral-outline"
-										size="xl"
-									>
-										<CreditCard className="size-4" />
-										구독 관리
-									</Button>
-								) : null}
-								{hospital.slug?.trim() ? (
-									<Button
-										nativeButton={false}
-										render={
-											// biome-ignore lint/a11y/useAnchorContent: Button이 자식으로 콘텐츠를 주입한다.
-											<a
-												href={`https://${hospital.slug}.kmaclinic.com`}
-												target="_blank"
-												rel="noreferrer"
-												aria-label="공개 페이지 보기"
-											/>
-										}
-										variant="brand-outline"
-										size="xl"
-									>
-										<ExternalLink className="size-4" />
-										공개 페이지 보기
-									</Button>
-								) : null}
-							</div>
-						</>
-					) : null}
+							삭제
+						</Button>
+						<Button
+							variant="brand"
+							size="xl"
+							disabled={!hospital.payment}
+							onClick={() => hospital.payment && onPay(hospital.payment)}
+						>
+							결제하기
+							<ArrowRight className="size-4" />
+						</Button>
+					</div>
 				</div>
 			) : null}
 		</CardShell>
+	);
+}
+
+/**
+ * 병원 관리 버튼 행 — 구독관리/관리페이지/페이지보기.
+ * 관리페이지는 공개 사이트의 `/admin`. slug가 없으면(공개 전) 페이지보기와 함께 비활성.
+ */
+function HospitalActionPills({
+	hospital,
+	published,
+}: {
+	hospital: OverviewHospital;
+	published: boolean;
+}) {
+	const slug = hospital.slug?.trim() || null;
+	return (
+		<div className="flex flex-wrap gap-2">
+			{hospital.hospital_no != null ? (
+				<Button
+					nativeButton={false}
+					render={
+						<Link
+							to="/subscription/$hospitalNo"
+							params={{ hospitalNo: String(hospital.hospital_no) }}
+						/>
+					}
+					variant="neutral-outline"
+					size="xl"
+				>
+					구독관리
+				</Button>
+			) : null}
+			{slug ? (
+				<Button
+					nativeButton={false}
+					render={
+						// biome-ignore lint/a11y/useAnchorContent: Button이 자식으로 콘텐츠를 주입한다.
+						<a
+							href={`https://${slug}.kmaclinic.com/admin`}
+							target="_blank"
+							rel="noreferrer"
+							aria-label="관리페이지"
+						/>
+					}
+					variant="neutral-outline"
+					size="xl"
+				>
+					관리페이지
+				</Button>
+			) : (
+				<Button variant="neutral-outline" size="xl" disabled>
+					관리페이지
+				</Button>
+			)}
+			{published && slug ? (
+				<Button
+					nativeButton={false}
+					render={
+						// biome-ignore lint/a11y/useAnchorContent: Button이 자식으로 콘텐츠를 주입한다.
+						<a
+							href={`https://${slug}.kmaclinic.com`}
+							target="_blank"
+							rel="noreferrer"
+							aria-label="페이지보기"
+						/>
+					}
+					variant="neutral-outline"
+					size="xl"
+				>
+					페이지보기
+				</Button>
+			) : (
+				<Button variant="neutral-outline" size="xl" disabled>
+					페이지보기
+				</Button>
+			)}
+		</div>
 	);
 }
 
@@ -829,32 +843,6 @@ function HospitalStatusBadge({ status }: { status: string }) {
 	);
 }
 
-/** 병원 카드 InfoRows용 라벨/값 행 (지역·공개 주소·구독 상태·다음 갱신). */
-function hospitalRows(
-	hospital: OverviewHospital,
-): Array<{ label: string; value: string }> {
-	const rows: Array<{ label: string; value: string }> = [];
-
-	if (hospital.region?.trim()) {
-		rows.push({ label: "지역", value: hospital.region });
-	}
-	if (hospital.slug?.trim()) {
-		rows.push({ label: "공개 주소", value: `${hospital.slug}.kmaclinic.com` });
-	}
-	if (hospital.subscription_status?.trim()) {
-		rows.push({
-			label: "구독 상태",
-			value: subscriptionStatusLabel(hospital.subscription_status),
-		});
-	}
-	const periodEnd = formatDate(hospital.current_period_end);
-	if (periodEnd) {
-		rows.push({ label: "다음 갱신 예정", value: periodEnd });
-	}
-
-	return rows;
-}
-
 // ─────────────────────────────────────────────────────────────────────
 // 헬퍼
 // ─────────────────────────────────────────────────────────────────────
@@ -862,27 +850,4 @@ function hospitalRows(
 function clampPercent(value: number | undefined): number {
 	if (typeof value !== "number" || Number.isNaN(value)) return 0;
 	return Math.max(0, Math.min(100, Math.round(value)));
-}
-
-function subscriptionStatusLabel(status: string): string {
-	const map: Record<string, string> = {
-		active: "이용 중",
-		past_due: "결제 연체",
-		canceled: "해지됨",
-		paused: "일시 정지",
-	};
-	return map[status] ?? status;
-}
-
-const dateFormatter = new Intl.DateTimeFormat("ko-KR", {
-	year: "numeric",
-	month: "long",
-	day: "numeric",
-});
-
-function formatDate(value: string | null | undefined): string | null {
-	if (!value) return null;
-	const date = new Date(value);
-	if (Number.isNaN(date.getTime())) return null;
-	return dateFormatter.format(date);
 }

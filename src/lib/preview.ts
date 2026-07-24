@@ -202,10 +202,16 @@ export function buildHospitalPreviewPayload(
 
 	const payload: PreviewPayload = { hospital };
 
-	const departments = (input.departments ?? [])
-		.map((d) => d.trim())
-		.filter(Boolean)
-		.map((nm, i) => ({ no: i + 1, name: nm, sort: i }));
+	const departments: PreviewDepartment[] = [];
+	for (const d of input.departments ?? []) {
+		const nm = d.trim();
+		if (nm)
+			departments.push({
+				no: departments.length + 1,
+				name: nm,
+				sort: departments.length,
+			});
+	}
 	if (departments.length > 0) payload.departments = departments;
 
 	const treatments = (input.treatments ?? [])
@@ -222,10 +228,12 @@ export function buildHospitalPreviewPayload(
 		.filter((t): t is PreviewTreatment => t !== null);
 	if (treatments.length > 0) payload.treatments = treatments;
 
-	const photos = (input.photos ?? [])
-		.map((url) => url.trim())
-		.filter(Boolean)
-		.map((url, i) => ({ no: i + 1, url, sort: i }));
+	const photos: PreviewPhoto[] = [];
+	for (const url of input.photos ?? []) {
+		const trimmed = url.trim();
+		if (trimmed)
+			photos.push({ no: photos.length + 1, url: trimmed, sort: photos.length });
+	}
 	if (photos.length > 0) payload.photos = photos;
 
 	return payload;
@@ -420,22 +428,22 @@ function onlyStringValues(
 	return out;
 }
 
-/** string[] 또는 {name}[] → 이름 문자열 배열(빈값/중복 제거 없이 순서 유지). */
+/** string[] 또는 {name}[] → 이름 문자열 배열(빈값 제외, 순서 유지). */
 function nameList(value: unknown): string[] {
 	if (!Array.isArray(value)) return [];
-	return value
-		.map((item) =>
-			typeof item === "string" ? item.trim() : strOrEmpty(asObject(item)?.name),
-		)
-		.filter(Boolean);
+	return value.flatMap((item) => {
+		const name =
+			typeof item === "string" ? item.trim() : strOrEmpty(asObject(item)?.name);
+		return name ? [name] : [];
+	});
 }
 
 /** string[] 또는 {url}[] → URL 문자열 배열(빈값 제외, 순서 유지). */
 function urlList(value: unknown): string[] {
 	if (!Array.isArray(value)) return [];
-	return value
-		.map((item) =>
-			typeof item === "string" ? item.trim() : strOrEmpty(asObject(item)?.url),
-		)
-		.filter(Boolean);
+	return value.flatMap((item) => {
+		const url =
+			typeof item === "string" ? item.trim() : strOrEmpty(asObject(item)?.url);
+		return url ? [url] : [];
+	});
 }

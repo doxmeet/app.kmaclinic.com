@@ -336,7 +336,7 @@ function SubscriptionManagePage({ hospitalNo }: { hospitalNo: number }) {
 				<header className="flex flex-col gap-3">
 					<Link
 						to="/onboarding"
-						className="flex w-fit items-center gap-1.5 text-sm font-medium text-body-soft transition-colors hover:text-brand"
+						className="flex w-fit items-center gap-1.5 text-base font-medium text-body-soft transition-colors hover:text-brand"
 					>
 						<ArrowLeft className="size-4" />
 						대시보드
@@ -378,7 +378,7 @@ function SubscriptionManagePage({ hospitalNo }: { hospitalNo: number }) {
 						<p className="text-[15px] text-ink">
 							이 병원에는 아직 구독이 없습니다.
 						</p>
-						<p className="text-sm text-body-soft">
+						<p className="text-base text-body-soft">
 							병원 홈페이지를 공개하려면 대시보드에서 결제를 진행해 주세요.
 						</p>
 						<Button
@@ -452,7 +452,7 @@ const paymentColumns: Array<DataTableColumn<Payment>> = [
 		render: (p) => (
 			<div className="flex flex-col gap-0.5">
 				<span>{formatDate(p.paid_at ?? p.created_at)}</span>
-				<span className="text-[13px] text-body-soft sm:hidden">
+				<span className="text-[15px] text-body-soft sm:hidden">
 					{p.method?.trim() || "-"}
 				</span>
 			</div>
@@ -579,7 +579,7 @@ function StatusSection({
 			{trialing ? (
 				<div className="border-b border-line-soft p-5 sm:p-8">
 					<InfoCallout tone="info">
-						<p className="text-sm">
+						<p className="text-base">
 							지금은 <span className="font-semibold text-ink">무료체험 중</span>
 							이에요. {formatDate(subscription.trial_end_at)}까지 무료로 모든
 							기능을 이용하고, 그 뒤 첫 결제({money(subscription.amount)})가
@@ -593,7 +593,7 @@ function StatusSection({
 				<div className="border-b border-line-soft p-5 sm:p-8">
 					<InfoCallout tone="warning">
 						<div className="flex flex-col gap-3">
-							<p className="text-sm">
+							<p className="text-base">
 								정기 결제에 실패해 구독이 연체 상태입니다. 결제수단을 변경하면
 								다음 재시도에 정상 결제됩니다.
 								{subscription.last_payment_error
@@ -661,7 +661,7 @@ function CycleSection({
 			<div className="flex flex-col gap-4 p-5 sm:p-8">
 				{hasPending && pendingCycle ? (
 					<InfoCallout tone="info">
-						<p className="text-sm">
+						<p className="text-base">
 							<span className="font-semibold text-ink">{nextDate}</span>부터{" "}
 							<span className="font-semibold text-ink">
 								{billingCycleMeta(pendingCycle).label} 구독(
@@ -684,14 +684,14 @@ function CycleSection({
 
 				{isPastDue ? (
 					<InfoCallout tone="warning">
-						<p className="text-sm">
+						<p className="text-base">
 							현재 결제가 연체된 상태예요. 결제수단을 먼저 정상화해야 변경이
 							실제 적용됩니다.
 						</p>
 					</InfoCallout>
 				) : null}
 
-				<p className="text-center text-sm text-muted-fg">
+				<p className="text-center text-base text-muted-fg">
 					변경은 지금 결제되지 않고 다음 결제일({nextDate})부터 적용돼요.
 				</p>
 
@@ -767,7 +767,9 @@ function CardSection({
 				</>
 			) : (
 				<div className="flex flex-col gap-5 p-5 sm:p-8">
-					<p className="text-sm text-body-soft">등록된 결제 카드가 없습니다.</p>
+					<p className="text-base text-body-soft">
+						등록된 결제 카드가 없습니다.
+					</p>
 					{changeButton}
 				</div>
 			)}
@@ -816,7 +818,7 @@ function ActionsSection({
 				{resubscribable ? (
 					<div className="flex flex-col gap-3">
 						<InfoCallout tone="info">
-							<p className="text-sm">
+							<p className="text-base">
 								{status === "canceled"
 									? canceledAt
 										? `${formatDate(periodEnd)}까지 이용할 수 있어요. 계속 이용하려면 재구독하세요.`
@@ -844,7 +846,7 @@ function ActionsSection({
 
 				{cancelable ? (
 					<div className="flex flex-col gap-5 sm:gap-8">
-						<p className="text-sm text-body-soft sm:text-base">
+						<p className="text-base text-body-soft">
 							구독을 해지하면 현재 결제 기간이 끝난 뒤 자동 결제가 중단되고 병원
 							홈페이지가 비공개로 전환될 수 있어요.
 						</p>

@@ -59,7 +59,7 @@ function AppHeader({
 				className,
 			)}
 		>
-			<div className="mx-auto flex h-full w-full max-w-[1120px] items-center justify-between gap-4 px-4 sm:px-6">
+			<div className="mx-auto flex h-full w-full max-w-300 items-center justify-between gap-4 px-4 sm:px-6">
 				<BrandLogo label="KMA CLINIC" to="/" />
 
 				{nav?.length ? (

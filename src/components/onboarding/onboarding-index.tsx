@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { ArrowLeft, Loader2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AuthGuard } from "#/components/auth/auth-guard.tsx";
 import { InfoCallout } from "#/components/common/info-callout.tsx";
 import { KakaoSupportLink } from "#/components/common/kakao-support-link.tsx";
@@ -41,7 +42,10 @@ type Mode = "dashboard" | "conversation" | "payment" | "publish";
 export function OnboardingPage() {
 	return (
 		<AuthGuard>
-			<OnboardingOrchestrator />
+			{/* 온보딩은 화면 안 문의 CTA로 유도하므로 우하단 카카오 FAB을 숨긴다. */}
+			<div data-hide-support-fab className="contents">
+				<OnboardingOrchestrator />
+			</div>
 		</AuthGuard>
 	);
 }
@@ -74,6 +78,23 @@ function OnboardingOrchestrator() {
 		queryKey: OVERVIEW_KEY,
 		queryFn: getOverview,
 	});
+
+	// 결제 완료 화면의 "홈페이지 주소 정하기" 딥링크(?publish=병원번호) 처리 —
+	// overview 조회가 끝나길 기다렸다가 해당 병원으로 publish 모드에 바로 진입한다.
+	// (목록에 없어도 hospital_no만으로 진입 가능 — PublishPanel은 번호만 필수)
+	const { publish: publishParam } = useSearch({ from: "/onboarding/" });
+	const navigate = useNavigate();
+	useEffect(() => {
+		if (publishParam == null || isLoading) return;
+		const found =
+			overview?.hospitals?.find((h) => h.hospital_no === publishParam) ?? null;
+		setPublishTarget(
+			found ?? ({ hospital_no: publishParam } as OverviewHospital),
+		);
+		setMode("publish");
+		// 새로고침·뒤로가기에서 다시 트리거되지 않도록 파라미터는 소비 후 지운다.
+		navigate({ to: "/onboarding", search: {}, replace: true });
+	}, [publishParam, isLoading, overview, navigate]);
 
 	function refetchOverview() {
 		queryClient.invalidateQueries({ queryKey: OVERVIEW_KEY });
@@ -131,19 +152,20 @@ function OnboardingOrchestrator() {
 	}
 
 	// ── dashboard 모드(기본) ────────────────────────────────────────
+	// 목록은 좌 2/3(병원)·우 1/3(프로필) 그리드라 1200px 전체 폭을 쓴다.
 	return (
-		<AppShell userName={userName} maxWidth="1280px" innerMaxWidth="720px">
+		<AppShell userName={userName} maxWidth="1200px">
 			{isLoading ? (
 				<div className="flex flex-col items-center gap-4 py-24 text-center">
 					<Loader2 className="size-7 animate-spin text-brand" />
 					<p className="text-base text-body">불러오는 중이에요…</p>
 				</div>
 			) : isError ? (
-				<SectionCard className="flex flex-col items-center gap-5 text-center">
+				<SectionCard className="mx-auto flex w-full max-w-[720px] flex-col items-center gap-5 text-center">
 					<p className="text-lg font-semibold text-ink">
 						대시보드를 불러오지 못했습니다.
 					</p>
-					<p className="text-sm text-body">
+					<p className="text-base text-body">
 						{error instanceof ApiError
 							? apiErrorMessage(error)
 							: "네트워크 상태를 확인한 뒤 다시 시도해 주세요."}
@@ -172,10 +194,6 @@ function OnboardingOrchestrator() {
 						setPaymentTarget(payment);
 						setMode("payment");
 					}}
-					onPublish={(hospital) => {
-						setPublishTarget(hospital);
-						setMode("publish");
-					}}
 					onRefetch={refetchOverview}
 				/>
 			) : null}
@@ -192,7 +210,7 @@ function BackToDashboardLink({ onClick }: { onClick: () => void }) {
 		<button
 			type="button"
 			onClick={onClick}
-			className="flex w-fit items-center gap-1.5 text-sm font-medium text-body-soft transition-colors hover:text-brand"
+			className="flex w-fit items-center gap-1.5 text-base font-medium text-body-soft transition-colors hover:text-brand"
 		>
 			<ArrowLeft className="size-4" />
 			대시보드
@@ -215,7 +233,7 @@ function PublishPanel({
 
 	// 병원 slug는 기존 hospital.slug prefill 유지.
 	const [hospitalSlug, setHospitalSlugValue] = useState(
-		hospital.slug?.trim() ?? "",
+		() => hospital.slug?.trim() ?? "",
 	);
 	const [touched, setTouched] = useState(false);
 
@@ -249,7 +267,7 @@ function PublishPanel({
 	return (
 		<SectionCard className="flex flex-col gap-6">
 			<div className="flex flex-col gap-2">
-				<SectionTitle>병원 홈페이지 공개</SectionTitle>
+				<SectionTitle>병원 홈페이지 주소 설정</SectionTitle>
 				<p className="text-[15px] leading-7 text-body-soft">
 					<span className="font-semibold text-ink">{title}</span> 홈페이지를
 					공개합니다. 방문자에게 보일 공개 주소를 정해 주세요.
@@ -272,9 +290,10 @@ function PublishPanel({
 				/>
 
 				<InfoCallout tone="warning">
-					<p className="text-sm">
-						공개 주소는 한 번 정하면 바꿀 수 없어요. 공개하려면 활성
-						구독(결제)이 필요합니다.
+					<p className="text-base break-keep">
+						사이트 주소는 한 번 정하면 바꿀 수 없어요.
+						<br />
+						주소를 정한 후 네이버지도에 등록하면 더욱 빠르게 노출돼요.
 					</p>
 				</InfoCallout>
 
@@ -288,7 +307,7 @@ function PublishPanel({
 					{publishMutation.isPending ? (
 						<Loader2 className="size-5 animate-spin" />
 					) : null}
-					공개하기
+					사이트 주소 정하기
 				</Button>
 			</form>
 		</SectionCard>

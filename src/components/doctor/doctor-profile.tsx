@@ -39,6 +39,7 @@ import {
 	FieldLabel,
 } from "#/components/form/field.tsx";
 import { FieldInput } from "#/components/form/field-input.tsx";
+import { OptionButton, OptionGroup } from "#/components/form/option-group.tsx";
 import { FieldSelect } from "#/components/form/select-field.tsx";
 import { StickyActionBar } from "#/components/layout/action-bar.tsx";
 import { AppShell } from "#/components/layout/app-shell.tsx";
@@ -109,7 +110,7 @@ import { cn } from "#/lib/utils.ts";
 // 컬렉션 설정 — profile-frontend-guide.md §3.2 필드명(ASCII 계약)에 맞춤.
 // ─────────────────────────────────────────────────────────────────────
 
-type FieldKind = "text" | "year" | "select" | "ref";
+type FieldKind = "text" | "year" | "select" | "pills" | "ref";
 /** ref 자동완성 소스(레지스트리 엔드포인트가 있는 것만). */
 type RefSourceKey = "medical_school" | "society" | "clinic";
 type ColField = {
@@ -194,7 +195,7 @@ const COLLECTIONS: CollConfig[] = [
 			{
 				name: "degree_type",
 				label: "학위",
-				kind: "select",
+				kind: "pills",
 				options: [...SELECT.degree],
 			},
 			{
@@ -217,7 +218,7 @@ const COLLECTIONS: CollConfig[] = [
 			{
 				name: "license_type",
 				label: "구분",
-				kind: "select",
+				kind: "pills",
 				options: [...SELECT.license],
 			},
 			{
@@ -243,7 +244,7 @@ const COLLECTIONS: CollConfig[] = [
 			{
 				name: "training_type",
 				label: "구분",
-				kind: "select",
+				kind: "pills",
 				options: [...SELECT.training],
 			},
 			{
@@ -409,7 +410,7 @@ const COLL_TITLES: Record<string, string> = {
 	affiliations: "소속 병원 · 진료 일정",
 };
 
-/** 진료 일정 그리드 — 요일 × 시간대(am/pm) boolean(true=진료가능, false=휴진) + schedule.note. */
+/** 진료 일정 그리드 — 요일 × 시간대(am/pm) boolean(true=진료, false=휴진) + schedule.note. */
 const GRID_DAYS = [
 	{ key: "mon", label: "월" },
 	{ key: "tue", label: "화" },
@@ -634,7 +635,7 @@ function withRows(
 	return { ...state, colls: { ...state.colls, [coll]: fn(state.colls[coll]) } };
 }
 
-/** 그리드 셀(요일×시간대) boolean 설정 — true=진료가능, false=휴진. */
+/** 그리드 셀(요일×시간대) boolean 설정 — true=진료, false=휴진. */
 function setGridCell(
 	row: Row,
 	action: { day: string; band: string; value: boolean },
@@ -789,8 +790,9 @@ function isRowEmpty(
 	fields: ColField[],
 	ignore?: readonly string[],
 ): boolean {
+	const ignoreSet = ignore ? new Set(ignore) : undefined;
 	return fields.every((f) => {
-		if (ignore?.includes(f.name)) return true;
+		if (ignoreSet?.has(f.name)) return true;
 		const v = row.values[f.name];
 		return v == null || (typeof v === "string" && v.trim() === "");
 	});
@@ -1215,7 +1217,7 @@ function ProfileEditor() {
 							<RotateCcw className="size-4" />
 							다시 시도
 						</Button>
-						<KakaoSupportLink variant="inline" className="text-sm" />
+						<KakaoSupportLink variant="inline" className="text-base" />
 					</div>
 				</SectionCard>
 			</AppShell>
@@ -1265,7 +1267,7 @@ function ProfileEditor() {
 						<Button
 							variant="neutral-outline"
 							size="2xl"
-							className="h-11 gap-1.5 px-2.5 text-sm font-semibold sm:h-14 sm:gap-2 sm:px-6 sm:text-[17px]"
+							className="h-11 gap-1.5 px-2.5 text-base font-semibold sm:h-14 sm:gap-2 sm:px-6 sm:text-[17px]"
 							onClick={() => setVisibilityOpen(true)}
 						>
 							<Eye className="size-4 sm:size-5" />
@@ -1277,7 +1279,7 @@ function ProfileEditor() {
 							<Button
 								variant="neutral-outline"
 								size="2xl"
-								className="h-11 gap-1.5 px-2.5 text-sm font-semibold sm:h-14 sm:gap-2 sm:px-6 sm:text-[17px]"
+								className="h-11 gap-1.5 px-2.5 text-base font-semibold sm:h-14 sm:gap-2 sm:px-6 sm:text-[17px]"
 								onClick={() => {
 									setSelectedTemplate(state.core.template_key || "blue");
 									setDesignOpen(true);
@@ -1289,7 +1291,7 @@ function ProfileEditor() {
 							<Button
 								variant="brand"
 								size="2xl"
-								className="h-11 gap-1.5 px-2.5 text-sm font-semibold sm:h-14 sm:gap-2 sm:px-8 sm:text-[17px]"
+								className="h-11 gap-1.5 px-2.5 text-base font-semibold sm:h-14 sm:gap-2 sm:px-8 sm:text-[17px]"
 								disabled={saveMutation.isPending}
 								onClick={() => saveMutation.mutate(undefined)}
 							>
@@ -1361,7 +1363,7 @@ function ProfileHeader({ completion }: { completion?: number }) {
 			</div>
 			{pct !== null ? (
 				<div className="flex flex-col gap-2">
-					<div className="flex items-center justify-between text-sm">
+					<div className="flex items-center justify-between text-base">
 						<span className="text-body-soft">입력 완료도</span>
 						<span className="font-semibold text-brand">{pct}%</span>
 					</div>
@@ -1411,7 +1413,7 @@ function PhotoSection({
 
 			{/* 프로필 사진 — 전체폭, 원본은 contain으로 보이고 양옆 여백은 블러로 채움 */}
 			<div className="flex flex-col gap-3">
-				<span className="text-sm font-medium text-body">프로필 사진</span>
+				<span className="text-base font-medium text-body">프로필 사진</span>
 				<div className="relative flex aspect-5/2 w-full items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-line-strong bg-muted text-body-soft">
 					{photoUrl ? (
 						<>
@@ -1692,7 +1694,7 @@ function DocumentAnalysisSection({
 					) : null}
 					<p
 						className={cn(
-							"text-sm",
+							"text-base",
 							progress?.slow ? "text-amber-600" : "text-muted-fg",
 						)}
 					>
@@ -1724,7 +1726,7 @@ function DocumentAnalysisSection({
 						<span className="text-base font-semibold text-ink">
 							문서 선택 (여러 개 가능)
 						</span>
-						<span className="text-sm text-muted-fg">
+						<span className="text-base text-muted-fg">
 							클릭해서 이력서·경력기술서·논문 목록 등을 올려 주세요
 						</span>
 					</button>
@@ -1738,10 +1740,10 @@ function DocumentAnalysisSection({
 									className="flex items-center gap-3 rounded-lg border border-line-soft bg-surface px-4 py-3"
 								>
 									<FileText className="size-5 shrink-0 text-body-soft" />
-									<span className="min-w-0 flex-1 truncate text-sm text-ink">
+									<span className="min-w-0 flex-1 truncate text-base text-ink">
 										{f.name}
 									</span>
-									<span className="shrink-0 text-xs text-muted-fg">
+									<span className="shrink-0 text-[15px] text-muted-fg">
 										{formatFileSize(f.size)}
 									</span>
 									<button
@@ -1887,7 +1889,7 @@ function AnalysisSelection({
 					분석으로 찾은 내용입니다. 프로필에 반영할 항목을 선택해 주세요. 선택한
 					내용은 폼에 채워지며, 하단 “프로필 저장”을 눌러야 실제로 저장됩니다.
 				</DialogDescription>
-				<span className="border border-brand/40 mt-1 inline-flex w-fit items-center gap-1.5 rounded-full bg-brand-50 px-4 py-2 text-sm font-semibold text-brand">
+				<span className="border border-brand/40 mt-1 inline-flex w-fit items-center gap-1.5 rounded-full bg-brand-50 px-4 py-2 text-base font-semibold text-brand">
 					<span className="size-2 rounded-full bg-brand" />
 					{selectedCount} / {totalCount} 항목 선택됨
 				</span>
@@ -1904,7 +1906,7 @@ function AnalysisSelection({
 							<p className="text-base text-ink">
 								문서에서 추출된 내용이 없습니다.
 							</p>
-							<p className="text-sm text-muted-fg">
+							<p className="text-base text-muted-fg">
 								다른 파일로 시도하거나 직접 입력해 주세요.
 							</p>
 						</div>
@@ -1949,10 +1951,10 @@ function AnalysisSelection({
 						<Sparkles className="size-5 text-brand" />
 					</span>
 					<div className="flex flex-col">
-						<p className="text-sm font-semibold text-brand">
+						<p className="text-base font-semibold text-brand">
 							선택한 {selectedCount}개 항목이 폼에 채워집니다
 						</p>
-						<p className="text-xs text-muted-fg">
+						<p className="text-[15px] text-muted-fg">
 							반영 후 내용을 확인하고 “프로필 저장”을 눌러 주세요
 						</p>
 					</div>
@@ -1987,7 +1989,7 @@ function AnalysisGroupHeader({
 	return (
 		<div className="flex items-center gap-5 rounded-r-md border-l-[3px] border-brand bg-muted/50 px-5 py-4">
 			<span className="text-base font-bold text-ink">{title}</span>
-			<span className="text-sm text-muted-fg">{count}개 항목</span>
+			<span className="text-base text-muted-fg">{count}개 항목</span>
 		</div>
 	);
 }
@@ -2015,7 +2017,7 @@ function AnalysisCoreRow({
 			<SelectBox checked={checked} />
 			<span className="flex min-w-0 flex-1 flex-col gap-0.5">
 				<span className="text-[15px] font-semibold text-ink">{cand.label}</span>
-				<span className="flex flex-wrap items-center gap-1.5 text-sm">
+				<span className="flex flex-wrap items-center gap-1.5 text-base">
 					{cand.current ? (
 						<span className="text-muted-fg line-through">{cand.current}</span>
 					) : (
@@ -2055,12 +2057,12 @@ function AnalysisItemRow({
 					{item.title}
 				</span>
 				{item.subtitle ? (
-					<span className="truncate text-sm text-muted-fg">
+					<span className="truncate text-base text-muted-fg">
 						{item.subtitle}
 					</span>
 				) : null}
 				{item.dup ? (
-					<span className="mt-1 inline-flex w-fit items-center gap-1 rounded-full bg-warning-50 px-2.5 py-0.5 text-xs font-medium text-warning-strong">
+					<span className="mt-1 inline-flex w-fit items-center gap-1 rounded-full bg-warning-50 px-2.5 py-0.5 text-[15px] font-medium text-warning-strong">
 						<AlertCircle className="size-3" />
 						{item.dup}
 					</span>
@@ -2247,7 +2249,7 @@ function SpecialtyTagsField({
 				{tags.map((tag) => (
 					<span
 						key={tag}
-						className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-3 py-1 text-sm text-brand"
+						className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-3 py-1 text-base text-brand"
 					>
 						{tag}
 						<button
@@ -2310,7 +2312,7 @@ function RowSummary({
 		<span className="flex min-w-0 flex-1 items-baseline gap-2 pr-2">
 			<span
 				className={cn(
-					"text-[16px] font-semibold text-ink sm:text-[17px]",
+					"text-lg font-semibold text-ink",
 					// 잘리는 쪽은 flex-1+min-w-0로 남은 공간만 차지해 …로 줄이고,
 					// 고정 쪽은 shrink-0로 끝까지 보여준다.
 					titleTrunc ? "min-w-0 flex-1 truncate" : "shrink-0 whitespace-nowrap",
@@ -2373,7 +2375,7 @@ function CollectionSection({
 		<SectionCard className="flex flex-col gap-5">
 			<SectionTitle>{config.title}</SectionTitle>
 			{visible.length === 0 ? (
-				<p className="text-sm text-muted-fg">
+				<p className="text-base text-muted-fg">
 					추가 버튼을 눌러 {config.title} 정보를 입력하세요.
 				</p>
 			) : (
@@ -2388,7 +2390,7 @@ function CollectionSection({
 							<AccordionItem
 								key={row.id}
 								value={row.id}
-								className="rounded-xl border border-line"
+								className="rounded-xl border border-line bg-muted/40"
 							>
 								<AccordionTrigger className="items-center px-4 py-3.5 hover:no-underline">
 									<RowSummary
@@ -2397,8 +2399,8 @@ function CollectionSection({
 										truncate={config.key === "paper" ? "title" : "subtitle"}
 									/>
 								</AccordionTrigger>
-								<AccordionContent className="px-4">
-									<div className="grid gap-3">
+								<AccordionContent className="px-4 pt-4 pb-4">
+									<div className="grid gap-6">
 										{config.fields.map((f) =>
 											f.showWhen && !f.showWhen(row.values) ? null : (
 												<CollField
@@ -2578,6 +2580,23 @@ function CollField({
 			</Field>
 		);
 	}
+	if (field.kind === "pills") {
+		// Figma(1:18531)처럼 라벨 없이 알약만 — 스크린리더용 이름은 aria-label로 남긴다.
+		return (
+			<OptionGroup
+				aria-label={label}
+				value={str || undefined}
+				onValueChange={(v) => setField(field.name, v)}
+				className="gap-2"
+			>
+				{(field.options ?? []).map((o) => (
+					<OptionButton key={o.value} value={o.value} variant="pill">
+						{o.label}
+					</OptionButton>
+				))}
+			</OptionGroup>
+		);
+	}
 	return (
 		<Field>
 			<FieldLabel>{label}</FieldLabel>
@@ -2638,7 +2657,7 @@ function AffiliationsSection({
 		<SectionCard className="flex flex-col gap-5">
 			<SectionTitle>소속 병원 · 진료 일정</SectionTitle>
 			{visible.length === 0 ? (
-				<p className="text-sm text-muted-fg">
+				<p className="text-base text-muted-fg">
 					근무 중인 병원과 진료 일정을 추가하세요.
 				</p>
 			) : (
@@ -2656,14 +2675,14 @@ function AffiliationsSection({
 							<AccordionItem
 								key={row.id}
 								value={row.id}
-								className="rounded-xl border border-line"
+								className="rounded-xl border border-line bg-muted/40"
 							>
 								<AccordionTrigger className="items-center px-4 py-3.5 hover:no-underline">
 									<RowSummary title={title} subtitle={subtitle} />
 								</AccordionTrigger>
-								<AccordionContent className="flex flex-col gap-4 px-4">
+								<AccordionContent className="flex flex-col gap-6 px-4 pt-4 pb-4">
 									<AffiliationInstitutionField row={row} dispatch={dispatch} />
-									<div className="grid gap-3">
+									<div className="grid gap-6">
 										<AffField
 											row={row}
 											field="title"
@@ -2840,12 +2859,12 @@ function ScheduleGrid({
 		);
 
 	return (
-		<div className="flex flex-col gap-4">
-			<span className="text-sm font-medium text-body">진료 일정</span>
+		<div className="flex flex-col gap-6">
+			<span className="text-base font-medium text-body">진료 일정</span>
 
 			{/* 진료 주기 — 비어 있으면 매주, 선택 시 해당 주차만 */}
 			<div className="flex flex-col gap-2">
-				<span className="text-xs text-body-soft">진료 주기</span>
+				<span className="text-[15px] text-body-soft">진료 주기</span>
 				<div className="flex flex-wrap gap-2">
 					<ToggleChip active={weeks.length === 0} onClick={() => setWeeks([])}>
 						매주
@@ -2863,7 +2882,7 @@ function ScheduleGrid({
 			</div>
 
 			{/* 시간대 라벨(오전/오후) */}
-			<div className="grid gap-3 sm:grid-cols-2">
+			<div className="grid gap-6 sm:grid-cols-2">
 				<Field>
 					<FieldLabel>오전 시간대</FieldLabel>
 					<FieldInput
@@ -2896,9 +2915,9 @@ function ScheduleGrid({
 				</Field>
 			</div>
 
-			{/* 데스크탑/태블릿: 보더 테이블 + 진료가능/휴진 알약 토글 */}
+			{/* 데스크탑/태블릿: 보더 테이블 + 진료/휴진 알약 토글 */}
 			<div className="hidden overflow-hidden rounded-xl border border-line-soft md:block">
-				<table className="w-full border-collapse text-center text-sm">
+				<table className="w-full border-collapse text-center text-base">
 					<thead>
 						<tr className="bg-app-bg">
 							<th className="border-b border-line-soft px-4 py-3 text-left font-medium text-body-soft">
@@ -2936,13 +2955,13 @@ function ScheduleGrid({
 												aria-pressed={on}
 												aria-label={`${day.label} ${band.label}`}
 												className={cn(
-													"inline-flex min-w-[64px] items-center justify-center rounded-full px-3 py-1.5 text-xs font-semibold transition-colors",
+													"inline-flex min-w-[64px] items-center justify-center rounded-full px-3 py-1.5 text-[15px] font-semibold transition-colors",
 													on
 														? "bg-brand text-brand-foreground"
 														: "bg-muted text-body-soft hover:bg-line-soft",
 												)}
 											>
-												{on ? "진료가능" : "휴진"}
+												{on ? "진료" : "휴진"}
 											</button>
 										</td>
 									);
@@ -2955,7 +2974,7 @@ function ScheduleGrid({
 
 			{/* 모바일: 요일 헤더 + 시간대별 체크박스 줄 */}
 			<div className="flex flex-col gap-3 md:hidden">
-				<div className="grid grid-cols-7 gap-1 px-1 text-center text-xs font-medium">
+				<div className="grid grid-cols-7 gap-1 px-1 text-center text-[15px] font-medium">
 					{GRID_DAYS.map((d) => (
 						<span
 							key={d.key}
@@ -2970,7 +2989,7 @@ function ScheduleGrid({
 						key={band.key}
 						className="flex flex-col gap-2 rounded-xl border border-line-soft p-2"
 					>
-						<div className="rounded-md bg-app-bg px-3 py-1.5 text-center text-xs font-medium text-body">
+						<div className="rounded-md bg-app-bg px-3 py-1.5 text-center text-[15px] font-medium text-body">
 							{band.label}
 						</div>
 						<div className="grid grid-cols-7 gap-1 py-1">
@@ -2994,8 +3013,8 @@ function ScheduleGrid({
 				))}
 			</div>
 
-			<p className="text-xs text-muted-fg">
-				※ 셀을 눌러 요일·시간대별 진료 여부(진료가능/휴진)를 설정하세요.
+			<p className="text-[15px] text-muted-fg">
+				※ 셀을 눌러 요일·시간대별 진료 여부(진료/휴진)를 설정하세요.
 			</p>
 
 			<Field>
@@ -3035,7 +3054,7 @@ function FieldHeader({ label, vis }: { label: string; vis?: VisProps }) {
 /** 기본정보 필드별 공개/비공개 토글(field_visibility). */
 function VisibilityToggle({ on, onToggle, label }: VisProps) {
 	return (
-		<span className="flex shrink-0 items-center gap-1.5 text-xs font-medium">
+		<span className="flex shrink-0 items-center gap-1.5 text-[15px] font-medium">
 			<span className={on ? "text-brand" : "text-muted-fg"}>
 				{on ? "공개" : "비공개"}
 			</span>
@@ -3065,7 +3084,7 @@ function ToggleChip({
 			onClick={onClick}
 			aria-pressed={active}
 			className={cn(
-				"rounded-full px-3 py-1.5 text-xs font-semibold transition-colors",
+				"rounded-full px-3 py-1.5 text-[15px] font-semibold transition-colors",
 				active
 					? "bg-brand text-brand-foreground"
 					: "bg-muted text-body-soft hover:bg-line-soft",
@@ -3344,7 +3363,7 @@ function VisibilityDialog({
 						공개 프로필 페이지에 표시(노출)할 정보를 직접 선택해 주세요. 체크된
 						항목만 페이지에 안전하게 노출됩니다.
 					</DialogDescription>
-					<span className="border border-brand/40 mt-1 inline-flex w-fit items-center gap-1.5 rounded-full bg-brand-50 px-4 py-2 text-sm font-semibold text-brand">
+					<span className="border border-brand/40 mt-1 inline-flex w-fit items-center gap-1.5 rounded-full bg-brand-50 px-4 py-2 text-base font-semibold text-brand">
 						<span className="size-2 rounded-full bg-brand" />
 						{exposed} / {total} 항목 노출 선택됨
 					</span>
@@ -3361,7 +3380,7 @@ function VisibilityDialog({
 									<span className="text-base font-bold text-ink">
 										{group.title}
 									</span>
-									<span className="text-sm text-muted-fg">
+									<span className="text-base text-muted-fg">
 										{group.items.length}개 항목
 									</span>
 								</div>
@@ -3379,10 +3398,10 @@ function VisibilityDialog({
 							<Eye className="size-5 text-brand" />
 						</span>
 						<div className="flex flex-col">
-							<p className="text-sm font-semibold text-brand">
+							<p className="text-base font-semibold text-brand">
 								총 {exposed}개 항목이 공개 프로필에 노출됩니다
 							</p>
-							<p className="text-xs text-muted-fg">
+							<p className="text-[15px] text-muted-fg">
 								{total - exposed}개 항목은 비공개 상태 · 언제든 변경 가능합니다
 							</p>
 						</div>
@@ -3442,14 +3461,14 @@ function VisibilityRow({ item }: { item: VisRowItem }) {
 					{item.title}
 				</span>
 				{item.subtitle ? (
-					<span className="truncate text-sm text-muted-fg">
+					<span className="truncate text-base text-muted-fg">
 						{item.subtitle}
 					</span>
 				) : null}
 			</span>
 			<span
 				className={cn(
-					"shrink-0 rounded-full px-4 py-1.5 text-sm font-semibold",
+					"shrink-0 rounded-full px-4 py-1.5 text-base font-semibold",
 					item.checked
 						? "bg-brand text-brand-foreground"
 						: "bg-muted text-muted-fg",

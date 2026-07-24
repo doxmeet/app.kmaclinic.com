@@ -290,13 +290,15 @@ function NotificationsPage() {
 										const rowKey = getField(row, ["no"]) ?? `row-${idx}`;
 										return (
 											<TableRow
+												// 정상 경로는 발송 PK(no) 키 — idx는 id 없는 행 방어 폴백(읽기 전용 표).
+												// react-doctor-disable-next-line no-array-index-as-key
 												key={String(rowKey)}
 												className="border-b-line-strong/50"
 											>
 												<TableCell className="text-[15px] text-ink">
 													{CHANNEL_LABEL[channelValue] ?? str(channelValue)}
 												</TableCell>
-												<TableCell className="font-mono text-[13px] text-body">
+												<TableCell className="font-mono text-[15px] text-body">
 													{template}
 												</TableCell>
 												<TableCell className="text-body">{toAddr}</TableCell>

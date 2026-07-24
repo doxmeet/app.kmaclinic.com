@@ -47,7 +47,7 @@ function DataTable<T>({
 	minWidth?: string;
 }) {
 	if (data.length === 0) {
-		return <p className="text-sm text-body-soft">{emptyText}</p>;
+		return <p className="text-base text-body-soft">{emptyText}</p>;
 	}
 
 	return (

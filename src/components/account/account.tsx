@@ -66,7 +66,7 @@ function HospitalSubscriptionRow({ hospital }: { hospital: AccountHospital }) {
 				<span className="truncate text-[16px] font-semibold text-ink sm:text-[17px]">
 					{hospital.name?.trim() || "내 병원"}
 				</span>
-				<span className="truncate text-[13px] text-body-soft sm:text-sm">
+				<span className="truncate text-[15px] text-body-soft sm:text-base">
 					{subscriptionSummary(hospital)}
 				</span>
 			</div>

@@ -221,10 +221,10 @@ export function OnboardingConversation({
 					payload={conv.previewPayload}
 					templateKey={conv.templateKey}
 					onTemplateChange={conv.setTemplateKey}
-					onBack={conv.closeDesign}
 					onConfirm={conv.confirmDesign}
 					confirming={conv.designConfirming}
 					confirmLabel="이 디자인으로 계속"
+					showGuides
 				/>
 				<AdminCredentialsDialog
 					open={adminDialogOpen}
@@ -813,7 +813,7 @@ function BackToDashboardLink({ onClick }: { onClick: () => void }) {
 		<button
 			type="button"
 			onClick={onClick}
-			className="flex w-fit items-center gap-1.5 text-sm font-medium text-body-soft transition-colors hover:text-brand"
+			className="flex w-fit items-center gap-1.5 text-base font-medium text-body-soft transition-colors hover:text-brand"
 		>
 			<ArrowLeft className="size-4" />
 			대시보드
@@ -838,7 +838,7 @@ function StartErrorState({
 				<p className="text-lg font-semibold text-ink">
 					대화형 작성을 시작하지 못했습니다.
 				</p>
-				<p className="text-sm text-body">
+				<p className="text-base text-body">
 					{error instanceof ApiError
 						? apiErrorMessage(error)
 						: "네트워크 상태를 확인한 뒤 다시 시도해 주세요."}
@@ -846,7 +846,7 @@ function StartErrorState({
 				<Button variant="brand" size="2xl" onClick={onRetry}>
 					다시 시도
 				</Button>
-				<KakaoSupportLink variant="button" size="xl" />
+				<KakaoSupportLink variant="button" size="xl" className="text-[17px]" />
 			</SectionCard>
 		</div>
 	);
@@ -875,7 +875,7 @@ function ProgressHeader({
 }) {
 	return (
 		<div className="flex flex-col gap-2">
-			<div className="flex items-center justify-between text-sm">
+			<div className="flex items-center justify-between text-base">
 				<span className="font-semibold text-ink">대화로 작성하기</span>
 				<div className="flex items-center gap-3">
 					<span className="text-body-soft">{progress}% 완료</span>
@@ -883,7 +883,7 @@ function ProgressHeader({
 					{!isClinicOwner && (
 						<Link
 							to="/doctor/profile"
-							className="text-xs font-medium text-brand transition-colors hover:underline"
+							className="text-[15px] font-medium text-brand transition-colors hover:underline"
 						>
 							한 번에 입력하기
 						</Link>
@@ -897,7 +897,7 @@ function ProgressHeader({
 				/>
 			</div>
 			<div>
-				<Badge variant="soft">
+				<Badge variant="soft" className="text-[15px]">
 					{isClinicOwner ? "병원 홈페이지" : "프로필"}
 				</Badge>
 			</div>
@@ -978,7 +978,7 @@ function ChatScroll({
 			viewportClassName="flex max-h-[52vh] min-h-[280px] flex-col gap-3 pr-3"
 		>
 			{isEmpty ? (
-				<p className="m-auto text-center text-sm text-muted-fg">
+				<p className="m-auto text-center text-base text-muted-fg">
 					대화를 시작하면 여기에 표시됩니다.
 				</p>
 			) : (
@@ -1004,7 +1004,7 @@ function ChatScroll({
 					{/* 전송 중: 유저 텍스트를 낙관적으로(실제 말풍선과 동일 크기) */}
 					{isSending ? (
 						<div className="ml-auto flex max-w-[85%] items-end gap-2">
-							<div className="whitespace-pre-wrap wrap-break-word rounded-2xl rounded-br-sm bg-brand px-4 py-3 text-[15px] leading-relaxed text-brand-foreground opacity-70">
+							<div className="whitespace-pre-wrap wrap-break-word rounded-2xl rounded-br-sm bg-brand px-4 py-3 text-[17px] leading-relaxed text-brand-foreground opacity-70">
 								{pendingMessage?.trim() ? pendingMessage : "전송 중…"}
 							</div>
 							<Loader2 className="size-4 shrink-0 animate-spin text-muted-fg" />
@@ -1014,10 +1014,12 @@ function ChatScroll({
 					{/* 파일 전송 상황: 업로드/전송 중인 파일명을 낙관적으로 표시 */}
 					{isUploading && uploadingFileName ? (
 						<div className="ml-auto flex max-w-[85%] items-end gap-2">
-							<div className="flex items-center gap-2 rounded-2xl rounded-br-sm bg-brand px-4 py-3 text-[15px] leading-relaxed text-brand-foreground opacity-70">
+							<div className="flex items-center gap-2 rounded-2xl rounded-br-sm bg-brand px-4 py-3 text-[17px] leading-relaxed text-brand-foreground opacity-70">
 								<Paperclip className="size-4 shrink-0" />
 								<span className="truncate">{uploadingFileName}</span>
-								<span className="shrink-0 text-xs opacity-80">업로드 중…</span>
+								<span className="shrink-0 text-[15px] opacity-80">
+									업로드 중…
+								</span>
 							</div>
 							<Loader2 className="size-4 shrink-0 animate-spin text-muted-fg" />
 						</div>
@@ -1025,7 +1027,7 @@ function ChatScroll({
 
 					{/* 분석/대기 표시등: 막지 않음. waiting이면 폴링이 자동으로 다음 단계로 넘긴다(§1). */}
 					{isAnalyzing || waiting ? (
-						<div className="mr-auto flex max-w-[90%] items-center gap-2 rounded-2xl rounded-bl-sm bg-app-bg px-4 py-2.5 text-xs text-body-soft">
+						<div className="mr-auto flex max-w-[90%] items-center gap-2 rounded-2xl rounded-bl-sm bg-app-bg px-4 py-2.5 text-[15px] text-body-soft">
 							<Loader2 className="size-3.5 shrink-0 animate-spin" />
 							{processingFile > 0
 								? `올려주신 파일을 분석하고 있어요 (${processingFile}개)`
@@ -1042,14 +1044,14 @@ function ChatScroll({
 							<button
 								type="button"
 								onClick={onManualRefresh}
-								className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-2 text-xs font-medium text-body transition-colors hover:bg-muted"
+								className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-2 text-[15px] font-medium text-body transition-colors hover:bg-muted"
 							>
 								<Loader2 className="size-3.5 shrink-0" />
 								아직 처리 중이에요. 새로고침해서 확인하기
 							</button>
 							<KakaoSupportLink
 								variant="inline"
-								className="text-xs"
+								className="text-[15px]"
 								label="계속 안 되면 카카오톡으로 문의하기"
 							/>
 						</div>
@@ -1118,7 +1120,7 @@ function Composer({
 			    단, 백엔드가 충돌을 select 질문(options)으로 내려주면 아래 보기 버튼이 처리하므로 중복 노출 방지. */}
 			{pickConflicts.length > 0 && !isSelect ? (
 				<div className="flex flex-col gap-3">
-					<p className="text-sm font-semibold text-ink">
+					<p className="text-base font-semibold text-ink">
 						입력하신 값과 분석 결과가 다릅니다. 사용할 값을 선택해 주세요.
 					</p>
 					{pickConflicts.map((c) => (
@@ -1144,6 +1146,7 @@ function Composer({
 							type="button"
 							variant="brand-outline"
 							size="xl"
+							className="text-[17px]"
 							disabled={pending.sending}
 							onClick={() => {
 								const v = (o.value ?? "").trim();
@@ -1158,6 +1161,7 @@ function Composer({
 							type="button"
 							variant="brand-outline"
 							size="xl"
+							className="text-[17px]"
 							onClick={() => onSendOption("건너뛰기")}
 						>
 							건너뛰기
@@ -1317,15 +1321,17 @@ function ChatBubble({
 	if (!text && !hasFiles) return null;
 
 	const bubbleClass = isUser
-		? "ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-brand px-4 py-3 text-[15px] leading-relaxed text-brand-foreground"
+		? "ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-brand px-4 py-3 text-[17px] leading-relaxed text-brand-foreground"
 		: interrupt
-			? "mr-auto max-w-[85%] rounded-2xl rounded-bl-sm border border-amber-300 bg-amber-50 px-4 py-3 text-[15px] leading-relaxed text-ink"
-			: "mr-auto max-w-[85%] rounded-2xl rounded-bl-sm bg-app-bg px-4 py-3 text-[15px] leading-relaxed text-body";
+			? "mr-auto max-w-[85%] rounded-2xl rounded-bl-sm border border-amber-300 bg-amber-50 px-4 py-3 text-[17px] leading-relaxed text-ink"
+			: "mr-auto max-w-[85%] rounded-2xl rounded-bl-sm bg-app-bg px-4 py-3 text-[17px] leading-relaxed text-body";
 
 	return (
 		<div className={bubbleClass}>
 			{interrupt ? (
-				<p className="mb-1 text-xs font-bold text-amber-700">확인이 필요해요</p>
+				<p className="mb-1 text-[15px] font-bold text-amber-700">
+					확인이 필요해요
+				</p>
 			) : null}
 			{text ? (
 				<p className="whitespace-pre-wrap wrap-break-word">{text}</p>
@@ -1344,7 +1350,7 @@ function ChatBubble({
 								rel="noreferrer"
 								title={`${name} (새 탭에서 열기)`}
 								className={cn(
-									"inline-flex max-w-[220px] items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs transition-colors",
+									"inline-flex max-w-[220px] items-center gap-1.5 rounded-lg px-2.5 py-1 text-[15px] transition-colors",
 									isUser
 										? "bg-white/15 text-brand-foreground hover:bg-white/25"
 										: "border border-line bg-surface text-body hover:bg-muted",
@@ -1375,7 +1381,7 @@ function ConflictCard({
 	const fromFile = formatValue(conflict.from_file);
 	return (
 		<div className="rounded-xl border border-line bg-surface p-4">
-			<p className="mb-3 text-xs font-medium text-body-soft">
+			<p className="mb-3 text-[15px] font-medium text-body-soft">
 				{conflict.field}
 			</p>
 			<div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -1385,8 +1391,10 @@ function ConflictCard({
 					onClick={() => onPick(current)}
 					className="flex flex-col items-start gap-1 rounded-lg border border-line p-3 text-left transition-colors hover:border-brand hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-50"
 				>
-					<span className="text-xs text-muted-fg">입력한 값</span>
-					<span className="text-sm font-medium text-ink">{current || "—"}</span>
+					<span className="text-[15px] text-muted-fg">입력한 값</span>
+					<span className="text-base font-medium text-ink">
+						{current || "—"}
+					</span>
 				</button>
 				<button
 					type="button"
@@ -1394,8 +1402,8 @@ function ConflictCard({
 					onClick={() => onPick(fromFile)}
 					className="flex flex-col items-start gap-1 rounded-lg border border-line p-3 text-left transition-colors hover:border-brand hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-50"
 				>
-					<span className="text-xs text-muted-fg">파일에서 추출한 값</span>
-					<span className="text-sm font-medium text-ink">
+					<span className="text-[15px] text-muted-fg">파일에서 추출한 값</span>
+					<span className="text-base font-medium text-ink">
 						{fromFile || "—"}
 					</span>
 				</button>
@@ -1446,9 +1454,7 @@ function AdminCredentialsDialog({
 			<DialogContent className="sm:max-w-md">
 				<DialogHeader>
 					<DialogTitle>병원 관리자 계정 설정</DialogTitle>
-					<DialogDescription>
-						병원 홈페이지를 관리할 관리자 아이디와 비밀번호를 설정합니다.
-					</DialogDescription>
+					<DialogDescription className="text-[17px]"></DialogDescription>
 				</DialogHeader>
 
 				<form onSubmit={handleSubmit} className="contents">
@@ -1456,7 +1462,7 @@ function AdminCredentialsDialog({
 						<div className="flex flex-col gap-2">
 							<label
 								htmlFor={loginIdId}
-								className="text-[15px] font-medium text-ink"
+								className="text-[17px] font-medium text-ink"
 							>
 								관리자 아이디
 							</label>
@@ -1473,8 +1479,8 @@ function AdminCredentialsDialog({
 							<p
 								className={
 									loginIdInvalid
-										? "text-sm text-danger-strong"
-										: "text-sm text-body-soft"
+										? "text-base text-danger-strong"
+										: "text-base text-body-soft"
 								}
 							>
 								{LOGIN_ID_HINT}
@@ -1483,7 +1489,7 @@ function AdminCredentialsDialog({
 						<div className="flex flex-col gap-2">
 							<label
 								htmlFor={pwId}
-								className="text-[15px] font-medium text-ink"
+								className="text-[17px] font-medium text-ink"
 							>
 								관리자 비밀번호
 							</label>
@@ -1499,7 +1505,7 @@ function AdminCredentialsDialog({
 						<div className="flex flex-col gap-2">
 							<label
 								htmlFor={confirmId}
-								className="text-[15px] font-medium text-ink"
+								className="text-[17px] font-medium text-ink"
 							>
 								비밀번호 확인
 							</label>
@@ -1513,7 +1519,7 @@ function AdminCredentialsDialog({
 								aria-invalid={mismatch || undefined}
 							/>
 							{mismatch ? (
-								<p className="text-sm text-danger-strong">
+								<p className="text-base text-danger-strong">
 									비밀번호가 일치하지 않습니다.
 								</p>
 							) : null}

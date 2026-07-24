@@ -252,6 +252,16 @@ html:has([data-slot='dialog-content'][data-fullscreen]) {
   scrollbar-gutter: auto !important;
 }
 
+/*
+ * 전체화면 디자인 미리보기(fixed inset-0)가 떠 있는 동안 배경 스크롤 잠금.
+ * JS 인라인 스타일 대신 :has 규칙을 쓰는 이유 — 인라인으로 body.overflow를 걸면
+ * 그 위의 Base UI Dialog 스크롤 잠금이 "hidden"을 원래 값으로 캡처했다가
+ * 동시 언마운트 시 마지막에 다시 복원해 이후 화면의 스크롤이 영구히 잠긴다.
+ */
+body:has([data-design-preview]) {
+  overflow: hidden;
+}
+
 /* 한글 줄바꿈: 제목은 단어 단위 유지 */
 h1,
 h2,

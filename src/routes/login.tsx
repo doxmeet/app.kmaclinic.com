@@ -1,5 +1,4 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { LogIn } from "lucide-react";
 import { useEffect } from "react";
 import { toast } from "sonner";
 import { AuthShell } from "#/components/common/auth-shell.tsx";
@@ -27,26 +26,31 @@ function LoginPage() {
 	}, [isAuthenticated, navigate]);
 
 	return (
-		<AuthShell title="로그인" eyebrow="K CLINIC">
+		<AuthShell title="경기도의사회 계정으로 로그인" eyebrow="K CLINIC">
 			<div className="mx-auto flex max-w-[480px] flex-col gap-6">
-				<div className="flex flex-col gap-2">
-					<h2 className="text-xl font-medium text-ink">
-						경기도의사회에서 시작하기
+				<div className="flex flex-col gap-2.5">
+					<h2 className="text-[19px] font-bold text-ink">
+						경기도의사회에서 제공해요
 					</h2>
-					<p className="text-base text-body">
-						병원 홈페이지·프로필 제작은 경기도의사회 계정으로 진행할 수
-						있습니다. 로그인 후 의료진을 위한 프로필·병원 홈페이지 자동 생성을
-						경험해보세요.
+					<p className="text-[17px] leading-relaxed text-body break-keep">
+						<span className="block">
+							병원 홈페이지를 만들거나, 개별 CV 페이지는 제작은
+						</span>
+						<span className="block">
+							경기도의사회 계정으로 로그인 후 제작 가능해요.
+						</span>
+						<span className="block">
+							회원님의 소중한 정보는 안전하게 공유됩니다.
+						</span>
 					</p>
 				</div>
 
 				<Button
 					variant="brand"
 					size="cta"
-					className="w-full"
+					className="w-full rounded-xl"
 					onClick={handleLogin}
 				>
-					<LogIn className="size-5" />
 					경기도의사회 계정으로 로그인
 				</Button>
 			</div>

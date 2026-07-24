@@ -36,7 +36,7 @@ function FieldInput({
 	return (
 		<div className={cn("relative w-full", containerClassName)}>
 			{input}
-			<div className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-sm">
+			<div className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-base">
 				{endAdornment}
 			</div>
 		</div>
