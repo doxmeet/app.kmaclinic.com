@@ -135,8 +135,8 @@ export function OnboardingDashboard({
 					) : null}
 				</div>
 
-				{/* ── 우측 1/3: 의사 프로필 ──────────────────────── */}
-				<div className="min-w-0">
+				{/* ── 우측 1/3: 의사 프로필 — 모바일(단일 컬럼)에서는 맨 위로 ── */}
+				<div className="order-first min-w-0 lg:order-0">
 					{profile ? (
 						<ProfileCard profile={profile} onRefetch={onRefetch} />
 					) : (
